@@ -1,128 +1,156 @@
 package de.rhaeus.dndsync;
 
-
-import android.content.ComponentName;
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.service.notification.NotificationListenerService;
+import android.os.Handler;
+import android.os.PowerManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.util.Log;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.android.gms.tasks.Task;
-import com.google.android.gms.tasks.Tasks;
-import com.google.android.gms.wearable.CapabilityClient;
-import com.google.android.gms.wearable.CapabilityInfo;
-import com.google.android.gms.wearable.Node;
-import com.google.android.gms.wearable.Wearable;
+import com.google.android.gms.wearable.MessageEvent;
+import com.google.android.gms.wearable.WearableListenerService;
 
-import java.util.Set;
-import java.util.concurrent.ExecutionException;
-
-public class DNDNotificationService extends NotificationListenerService {
-    private static final String TAG = "DNDNotificationService";
-    private static final String DND_SYNC_CAPABILITY_NAME = "dnd_sync";
+public class DNDSyncListenerService extends WearableListenerService {
+    private static final String TAG = "DNDSyncListenerService";
     private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
 
-    public static boolean running = false;
+    // --- 新增：冷却时间控制，防止同步回环 ---
+    private static long lastExecutionTime = 0;
+    private static final long COOLDOWN_MS = 5000; // 5秒内不再重复执行相同逻辑
+    // ------------------------------------
 
     @Override
-    public void onListenerConnected() {
-        Log.d(TAG, "listener connected");
-        running = true;
-
-        //TODO enable/disable service based on app setting to save battery
-//        // We don't want to run a background service so disable and stop it
-//        // to avoid running this service in the background
-//        disableServiceComponent();
-//        Log.i(TAG, "Disabling service");
-//
-//        try {
-//            stopSelf();
-//        } catch(SecurityException e) {
-//            Log.e(TAG, "Failed to stop service");
-//        }
-    }
-//    private void disableServiceComponent() {
-//        PackageManager p = getPackageManager();
-//        ComponentName componentName = new ComponentName(this, DNDNotificationService.class);
-//        p.setComponentEnabledSetting(componentName,PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
-//    }
-
-    @Override
-    public void onListenerDisconnected() {
-        Log.d(TAG, "listener disconnected");
-        running = false;
-    }
-
-
-    @Override
-    public void onInterruptionFilterChanged (int interruptionFilter) {
-        Log.d(TAG, "interruption filter changed to " + interruptionFilter);
-
+    public void onMessageReceived (@NonNull MessageEvent messageEvent) {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "onMessageReceived: " + messageEvent);
+        }
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean syncDnd = prefs.getBoolean("dnd_sync_key", true);
-        if(syncDnd) {
-            new Thread(new Runnable() {
-                public void run() {
-                    sendDNDSync(interruptionFilter);
+
+        if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
+            Log.d(TAG, "received path: " + DND_SYNC_MESSAGE_PATH);
+
+            // --- 核心逻辑：冷却时间校验 ---
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+                Log.d(TAG, "忽略：处于冷却时间内，可能由于系统回调或重复消息引起。");
+                return;
+            }
+            // ---------------------------
+
+            boolean vibrate = prefs.getBoolean("vibrate_key", false);
+            Log.d(TAG, "vibrate: " + vibrate);
+            if (vibrate) {
+                vibrate();
+            }
+
+            byte[] data = messageEvent.getData();
+            // data[0] contains dnd mode of phone
+            // 0 = INTERRUPTION_FILTER_UNKNOWN
+            // 1 = INTERRUPTION_FILTER_ALL (all notifications pass)
+            // 2 = INTERRUPTION_FILTER_PRIORITY
+            // 3 = INTERRUPTION_FILTER_NONE (no notification passes)
+            // 4 = INTERRUPTION_FILTER_ALARMS
+            byte dndStatePhone = data[0];
+            Log.d(TAG, "dndStatePhone: " + dndStatePhone);
+
+            // get dnd state
+            NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+
+            int filterState = mNotificationManager.getCurrentInterruptionFilter();
+            if (filterState < 0 || filterState > 4) {
+                Log.d(TAG, "DNDSync weird current dnd state: " + filterState);
+            }
+            byte currentDndState = (byte) filterState;
+            Log.d(TAG, "currentDndState: " + currentDndState);
+
+            if (dndStatePhone != currentDndState) {
+                // --- 更新最后执行时间，锁定操作 ---
+                lastExecutionTime = currentTime;
+                // -----------------------------
+
+                Log.d(TAG, "dndStatePhone != currentDndState: " + dndStatePhone + " != " + currentDndState);
+                boolean useBedtimeMode = prefs.getBoolean("bedtime_key", true);
+                Log.d(TAG, "useBedtimeMode: " + useBedtimeMode);
+                
+                if (useBedtimeMode) {
+                    toggleBedtimeMode();
                 }
-            }).start();
-        }
-    }
-
-    private void sendDNDSync(int dndState) {
-        // https://developer.android.com/training/wearables/data/messages
-
-        // search nodes for sync
-        CapabilityInfo capabilityInfo = null;
-        try {
-            capabilityInfo = Tasks.await(
-                    Wearable.getCapabilityClient(this).getCapability(
-                            DND_SYNC_CAPABILITY_NAME, CapabilityClient.FILTER_REACHABLE));
-        } catch (ExecutionException e) {
-            e.printStackTrace();
-            Log.e(TAG, "execution error while searching nodes", e);
-            return;
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-            Log.e(TAG, "interruption error while searching nodes", e);
-            return;
-        }
-
-        // send request to all reachable nodes
-        // capabilityInfo has the reachable nodes with the dnd sync capability
-        Set<Node> connectedNodes = capabilityInfo.getNodes();
-        if (connectedNodes.isEmpty()) {
-            // Unable to retrieve node with transcription capability
-            Log.d(TAG, "Unable to retrieve node with sync capability!");
-        } else {
-            for (Node node : connectedNodes) {
-                if (node.isNearby()) {
-                    byte[] data = new byte[2];
-                    data[0] = (byte) dndState;
-                    Task<Integer> sendTask =
-                            Wearable.getMessageClient(this).sendMessage(node.getId(), DND_SYNC_MESSAGE_PATH, data);
-
-                    sendTask.addOnSuccessListener(new OnSuccessListener<Integer>() {
-                        @Override
-                        public void onSuccess(Integer integer) {
-                            Log.d(TAG, "send successful! Receiver node id: " + node.getId());
-                        }
-                    });
-
-                    sendTask.addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            Log.d(TAG, "send failed! Receiver node id: " + node.getId());
-                        }
-                    });
+                
+                // set DND anyways, also in case bedtime toggle does not work to have at least DND
+                if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                    mNotificationManager.setInterruptionFilter(dndStatePhone);
+                    Log.d(TAG, "DND set to " + dndStatePhone);
+                } else {
+                    Log.d(TAG, "attempting to set DND but access not granted");
                 }
             }
+
+        } else {
+            super.onMessageReceived(messageEvent);
         }
+    }
+
+    private void toggleBedtimeMode() {
+        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
+        if (serv == null) {
+            Log.d(TAG, "accessibility not connected");
+            Handler mHandler = new Handler(getMainLooper());
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(getApplicationContext(), getResources().getString(R.string.acc_not_connected), Toast.LENGTH_LONG).show();
+                }
+            });
+            return;
+        }
+
+        Log.d(TAG, "accessibility connected. Perform toggle.");
+        PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
+        PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:MyWakeLock");
+        wakeLock.acquire(2*60*1000L /*2 minutes*/);
+
+        Handler mHandler = new Handler(getMainLooper());
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(getApplicationContext(), getResources().getString(R.string.bedtime_toggle), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        serv.swipeDown();
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        serv.clickIcon1_2();
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        serv.goBack();
+        wakeLock.release();
+    }
+
+    private void vibrate() {
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
     }
 }
