@@ -20,6 +20,11 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "DNDSyncListenerService";
     private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
 
+    // --- 新增：冷却时间控制，防止同步回环 ---
+    private static long lastExecutionTime = 0;
+    private static final long COOLDOWN_MS = 5000; // 5秒内不再重复执行相同逻辑
+    // ------------------------------------
+
     @Override
     public void onMessageReceived (@NonNull MessageEvent messageEvent) {
         if (Log.isLoggable(TAG, Log.DEBUG)) {
@@ -29,6 +34,14 @@ public class DNDSyncListenerService extends WearableListenerService {
 
         if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
             Log.d(TAG, "received path: " + DND_SYNC_MESSAGE_PATH);
+
+            // --- 核心逻辑：冷却时间校验 ---
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+                Log.d(TAG, "忽略：处于冷却时间内，可能由于系统回调或重复消息引起。");
+                return;
+            }
+            // ---------------------------
 
             boolean vibrate = prefs.getBoolean("vibrate_key", false);
             Log.d(TAG, "vibrate: " + vibrate);
@@ -57,12 +70,18 @@ public class DNDSyncListenerService extends WearableListenerService {
             Log.d(TAG, "currentDndState: " + currentDndState);
 
             if (dndStatePhone != currentDndState) {
+                // --- 更新最后执行时间，锁定操作 ---
+                lastExecutionTime = currentTime;
+                // -----------------------------
+
                 Log.d(TAG, "dndStatePhone != currentDndState: " + dndStatePhone + " != " + currentDndState);
                 boolean useBedtimeMode = prefs.getBoolean("bedtime_key", true);
                 Log.d(TAG, "useBedtimeMode: " + useBedtimeMode);
+                
                 if (useBedtimeMode) {
                     toggleBedtimeMode();
                 }
+                
                 // set DND anyways, also in case bedtime toggle does not work to have at least DND
                 if (mNotificationManager.isNotificationPolicyAccessGranted()) {
                     mNotificationManager.setInterruptionFilter(dndStatePhone);
@@ -81,7 +100,6 @@ public class DNDSyncListenerService extends WearableListenerService {
         DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
         if (serv == null) {
             Log.d(TAG, "accessibility not connected");
-            // create a handler to post messages to the main thread
             Handler mHandler = new Handler(getMainLooper());
             mHandler.post(new Runnable() {
                 @Override
@@ -93,12 +111,10 @@ public class DNDSyncListenerService extends WearableListenerService {
         }
 
         Log.d(TAG, "accessibility connected. Perform toggle.");
-        // turn on screen
         PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
         PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:MyWakeLock");
         wakeLock.acquire(2*60*1000L /*2 minutes*/);
 
-        // create a handler to post messages to the main thread
         Handler mHandler = new Handler(getMainLooper());
         mHandler.post(new Runnable() {
             @Override
@@ -107,44 +123,34 @@ public class DNDSyncListenerService extends WearableListenerService {
             }
         });
 
-
-        // wait a bit before touch input to make sure screen is on
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
-        // open quick panel
         serv.swipeDown();
 
-        // wait for quick panel to open
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
-        // click on the middle icon in the first row
         serv.clickIcon1_2();
 
-        // wait a bit
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
-        // close quick panel
         serv.goBack();
-
         wakeLock.release();
     }
-
 
     private void vibrate() {
         Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
     }
-
 }
