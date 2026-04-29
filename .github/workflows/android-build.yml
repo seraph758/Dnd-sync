@@ -1,4 +1,4 @@
-name: Build Wear OS Only
+name: Build Mobile and Wear APKs
 
 on:
   push:
@@ -24,14 +24,16 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 關鍵修改：只編譯 wear 模組的 Debug 版 APK
-    - name: Build Wear APK Only
-      run: ./gradlew :wear:assembleDebug
+    # 执行全局编译，生成所有模块的 APK
+    - name: Build All APKs
+      run: ./gradlew assembleDebug
 
-    # 只上傳手錶端的 APK 文件
-    - name: Upload Wear APK
+    # 将手机端 APK 和手錶端 APK 一起上传
+    - name: Upload APKs
       uses: actions/upload-artifact@v4
       with:
-        name: DND-Sync-Wear-Only
-        path: wear/build/outputs/apk/debug/*.apk
-
+        name: DND-Sync-Full-Build
+        path: |
+          app/build/outputs/apk/debug/*.apk
+          wear/build/outputs/apk/debug/*.apk
+          
