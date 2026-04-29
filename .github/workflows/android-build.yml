@@ -24,16 +24,16 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 执行全局编译，生成所有模块的 APK
+    # 同時編譯手機端和手錶端
     - name: Build All APKs
       run: ./gradlew assembleDebug
 
-    # 将手机端 APK 和手錶端 APK 一起上传
-    - name: Upload APKs
+    # 根據你的目錄結構上傳 APK
+    - name: Upload All APKs
       uses: actions/upload-artifact@v4
       with:
         name: DND-Sync-Full-Build
         path: |
-          app/build/outputs/apk/debug/*.apk
+          Mobile/build/outputs/apk/debug/*.apk
           wear/build/outputs/apk/debug/*.apk
-          
+
