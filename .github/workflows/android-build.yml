@@ -24,16 +24,21 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 同時編譯手機端和手錶端
+    # 1. 执行全局编译 (会同时编译 mobile 和 wear 模块)
     - name: Build All APKs
       run: ./gradlew assembleDebug
 
-    # 根據你的目錄結構上傳 APK
+    # 2. 列出所有 APK 路径 (用于调试，确保能在日志中看到路径)
+    - name: List APKs
+      run: find . -name "*.apk"
+
+    # 3. 按照 settings.gradle 里的模块名上传
     - name: Upload All APKs
       uses: actions/upload-artifact@v4
       with:
         name: DND-Sync-Full-Build
         path: |
-          Mobile/build/outputs/apk/debug/*.apk
+          mobile/build/outputs/apk/debug/*.apk
           wear/build/outputs/apk/debug/*.apk
+        if-no-files-found: error
 
