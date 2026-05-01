@@ -22,7 +22,7 @@ public class DNDSyncListenerService extends WearableListenerService {
 
     // 新增：防抖冷却逻辑变量
     private static long lastExecutionTime = 0;
-    private static final long COOLDOWN_MS = 1000; // 500毫秒冷却，防止死循环
+    private static final long COOLDOWN_MS = 10000; // 500毫秒冷却，防止死循环
 
     @Override
     public void onMessageReceived (@NonNull MessageEvent messageEvent) {
