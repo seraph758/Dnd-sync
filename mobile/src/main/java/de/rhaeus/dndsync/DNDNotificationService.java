@@ -42,7 +42,10 @@ public class DNDNotificationService extends NotificationListenerService {
     @Override
     public void onInterruptionFilterChanged (int interruptionFilter) {
         Log.d(TAG, "interruption filter changed to " + interruptionFilter);
-
+        if (DNDSyncListenerService.isInternalUpdate) {
+        Log.d(TAG, "檢測到內部同步觸發，攔截發送以防止死循環");
+        return;
+        }
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean syncDnd = prefs.getBoolean("dnd_sync_key", true);
         if(syncDnd) {
