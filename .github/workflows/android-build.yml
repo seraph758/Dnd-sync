@@ -1,0 +1,43 @@
+name: Build Mobile and Wear APKs
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    # 1. 执行全局编译 (会同时编译 mobile 和 wear 模块)
+    - name: Build All APKs
+      run: ./gradlew assembleDebug
+
+    # 2. 列出所有 APK 路径 (用于调试，确保能在日志中看到路径)
+    - name: List APKs
+      run: find . -name "*.apk"
+
+    # 3. 按照 settings.gradle 里的模块名上传
+    - name: Upload All APKs
+      uses: actions/upload-artifact@v4
+      with:
+        name: DND-Sync-Full-Build
+        path: |
+          mobile/*.apk
+          wear/*.apk
+        if-no-files-found: error
