@@ -63,6 +63,11 @@ public class DNDNotificationService extends NotificationListenerService {
     @Override
     public void onInterruptionFilterChanged (int interruptionFilter) {
         Log.d(TAG, "interruption filter changed to " + interruptionFilter);
+        // 【核心修改】：攔截由接收指令觸發的狀態變化，防止回傳給手機造成死循環
+        if (DNDSyncListenerService.isInternalUpdate) {
+        Log.d(TAG, "檢測到手錶內部同步觸發，攔截回傳給手機的動作");
+        return;
+    }
 
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean syncDnd = prefs.getBoolean("dnd_sync_key", true);
