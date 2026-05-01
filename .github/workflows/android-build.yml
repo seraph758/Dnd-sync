@@ -38,7 +38,7 @@ jobs:
       with:
         name: DND-Sync-Full-Build
         path: |
-          mobile/build/outputs/apk/debug/*.apk
-          wear/build/outputs/apk/debug/*.apk
+          mobile/*.apk
+          wear/*.apk
         if-no-files-found: error
 
