@@ -28,33 +28,6 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final Handler handler = new Handler(android.os.Looper.getMainLooper());
     @Override
     public void onMessageReceived (@NonNull MessageEvent messageEvent) {
-        if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
-            // ... 解析 dndStatePhone 的邏輯 ...
-
-            if (dndStatePhone != currentDndState) {
-                if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-                    
-                    // 【核心修改】：立起攔截牌子
-                    isInternalUpdate = true;
-                    Log.d(TAG, "收到手機同步請求，鎖定手錶回傳邏輯");
-
-                    mNotificationManager.setInterruptionFilter((int)dndStatePhone);
-                    
-                    // 執行就寢模式切換
-                    if (prefs.getBoolean("bedtime_key", true)) {
-                        toggleBedtimeMode();
-                    }
-
-                    // 2秒後解除鎖定
-                    handler.postDelayed(() -> {
-                        isInternalUpdate = false;
-                        Log.d(TAG, "手錶內部更新完成，恢復監聽發送");
-                    }, 2000);
-
-                }
-            }
-        }
-    
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "onMessageReceived: " + messageEvent);
         }
@@ -64,53 +37,54 @@ public class DNDSyncListenerService extends WearableListenerService {
         if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
             Log.d(TAG, "received path: " + DND_SYNC_MESSAGE_PATH);
 
-            // 1. 冷却逻辑检查
+            // 1. 基礎冷卻檢查 (保留原有邏輯)
             long currentTime = System.currentTimeMillis();
             if (currentTime - lastExecutionTime < COOLDOWN_MS) {
-                Log.d(TAG, "检测到极短时间内的重复触发，忽略此指令（防止同步死循环）");
+                Log.d(TAG, "檢測到極短時間內的重複觸發，忽略此指令");
                 return;
             }
             lastExecutionTime = currentTime;
 
-            // 2. 原版逻辑：震动
-            boolean vibrate = prefs.getBoolean("vibrate_key", false);
-            if (vibrate) {
-                vibrate();
-            }
-
-            // 3. 原版逻辑：解析 DND 状态
+            // 2. 解析數據
             byte[] data = messageEvent.getData();
             byte dndStatePhone = data[0];
-            Log.d(TAG, "dndStatePhone: " + dndStatePhone);
-
             NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             int filterState = mNotificationManager.getCurrentInterruptionFilter();
             byte currentDndState = (byte) filterState;
-            Log.d(TAG, "currentDndState: " + currentDndState);
 
-            // 4. 核心逻辑判断
+            // 3. 核心邏輯：狀態不一致時執行同步
             if (dndStatePhone != currentDndState) {
-                Log.d(TAG, "状态不一致，开始同步流程");
-                
-                // 执行就寝模式切换（原版模拟点击逻辑）
-                boolean useBedtimeMode = prefs.getBoolean("bedtime_key", true);
-                if (useBedtimeMode) {
-                    toggleBedtimeMode();
-                }
-
-                // 执行勿扰模式设置（原版 API 逻辑）
                 if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                    
+                    // 【關鍵修正】：立起標誌位，防止回傳手機
+                    isInternalUpdate = true;
+                    Log.d(TAG, "收到手機同步請求，鎖定手錶回傳邏輯");
+
+                    // 執行震動
+                    if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
+
+                    // 執行就寢模式切換 (模擬點擊)
+                    if (prefs.getBoolean("bedtime_key", true)) { toggleBedtimeMode(); }
+
+                    // 執行勿擾設置
                     mNotificationManager.setInterruptionFilter((int)dndStatePhone);
-                    Log.d(TAG, "DND 成功设置为 " + dndStatePhone);
+                    Log.d(TAG, "手錶 DND 成功設置為 " + dndStatePhone);
+
+                    // 2秒後解除鎖定
+                    handler.postDelayed(() -> {
+                        isInternalUpdate = false;
+                        Log.d(TAG, "手錶內部更新完成，恢復監聽發送");
+                    }, 2000);
+
                 } else {
-                    Log.d(TAG, "尝试设置 DND 但缺少权限 (allow_dnd)");
+                    Log.d(TAG, "嘗試設置 DND 但缺少權限");
                 }
             }
-
         } else {
             super.onMessageReceived(messageEvent);
         }
     }
+
 
     // --- 以下完整保留原版所有功能函数 ---
 
