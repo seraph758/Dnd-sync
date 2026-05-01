@@ -23,9 +23,38 @@ public class DNDSyncListenerService extends WearableListenerService {
     // 新增：防抖冷却逻辑变量
     private static long lastExecutionTime = 0;
     private static final long COOLDOWN_MS = 10000; // 500毫秒冷却，防止死循环
-
+    // 【新增】：用於標記是否為內部觸發的更新，讓 NotificationService 讀取
+    public static boolean isInternalUpdate = false;
+    private static final Handler handler = new Handler(android.os.Looper.getMainLooper());
     @Override
     public void onMessageReceived (@NonNull MessageEvent messageEvent) {
+        if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
+            // ... 解析 dndStatePhone 的邏輯 ...
+
+            if (dndStatePhone != currentDndState) {
+                if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                    
+                    // 【核心修改】：立起攔截牌子
+                    isInternalUpdate = true;
+                    Log.d(TAG, "收到手機同步請求，鎖定手錶回傳邏輯");
+
+                    mNotificationManager.setInterruptionFilter((int)dndStatePhone);
+                    
+                    // 執行就寢模式切換
+                    if (prefs.getBoolean("bedtime_key", true)) {
+                        toggleBedtimeMode();
+                    }
+
+                    // 2秒後解除鎖定
+                    handler.postDelayed(() -> {
+                        isInternalUpdate = false;
+                        Log.d(TAG, "手錶內部更新完成，恢復監聽發送");
+                    }, 2000);
+
+                }
+            }
+        }
+    
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "onMessageReceived: " + messageEvent);
         }
