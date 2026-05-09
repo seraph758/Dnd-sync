@@ -1,60 +1,75 @@
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
-    app:iconSpaceReserved="false">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
-        app:iconSpaceReserved="false"
-        app:title="@string/sync_header">
+        android:title="@string/sync_header"
+        app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:iconSpaceReserved="false"
-            app:key="dnd_sync_key"
-            app:title="Sync DND"
-            app:summaryOn="@string/sync_summary_on"
-            app:summaryOff="@string/sync_summary_off"
-            />
+            android:defaultValue="true"
+            android:key="dnd_sync_key"
+            android:title="同步勿扰模式"
+            android:summaryOn="@string/sync_summary_on"
+            android:summaryOff="@string/sync_summary_off"
+            app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-            app:iconSpaceReserved="false"
-            app:key="bedtime_key"
-            app:defaultValue="false"
-            app:summaryOn="@string/bedtime_summary_on"
-            app:summaryOff="@string/bedtime_summary_off"
-            app:title="@string/bedtime_title" />
+            android:defaultValue="true"
+            android:key="bedtime_key"
+            android:title="组合拳模式"
+            android:summary="开启勿扰时自动关闭屏幕显示与唤醒"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
 
+    <PreferenceCategory 
+        android:title="退出勿扰后自动恢复"
+        app:iconSpaceReserved="false">
+        
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:dependency="bedtime_key"
+            android:key="restore_aod_key"
+            android:title="恢复息屏提醒 (AOD)"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:dependency="bedtime_key"
+            android:key="restore_wake_key"
+            android:title="恢复抬腕唤醒"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:dependency="bedtime_key"
+            android:key="restore_touch_key"
+            android:title="恢复触摸屏幕唤醒"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
     <PreferenceCategory
-        app:iconSpaceReserved="false"
-        app:title="@string/other_header">
+        android:title="@string/other_header"
+        app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
-            app:defaultValue="false"
-            app:iconSpaceReserved="false"
-            app:key="vibrate_key"
-            app:title="@string/vibrate_title"
-            app:summaryOn="@string/vibrate_summary_on"
-            app:summaryOff="@string/vibrate_summary_off"
-            />
-
+            android:defaultValue="false"
+            android:key="vibrate_key"
+            android:title="@string/vibrate_title"
+            android:summaryOn="@string/vibrate_summary_on"
+            android:summaryOff="@string/vibrate_summary_off"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
     <PreferenceCategory
-        app:iconSpaceReserved="false"
-        app:title="@string/permission_header">
+        android:title="@string/permission_header"
+        app:iconSpaceReserved="false">
 
         <Preference
-            app:iconSpaceReserved="false"
-            app:key="dnd_permission_key"
-            app:summary="summary"
-            app:title="@string/dnd_permission_title" />
-
-        <Preference
-            app:iconSpaceReserved="false"
-            app:key="acc_permission_key"
-            app:summary="summary"
-            app:title="@string/acc_permission_title" />
-
-    </PreferenceCategory>
+            android:key="dnd_permission_key"
+            android:summary="勿扰同步需要此权限，请点击查看"
+            android:title="@string/dnd_permission_title"
+            app:iconSpaceReserved="false" />
+            
+        </PreferenceCategory>
 
 </PreferenceScreen>
