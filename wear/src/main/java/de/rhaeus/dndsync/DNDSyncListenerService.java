@@ -21,7 +21,9 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
 
     private static long lastExecutionTime = 0;
-    private static final long COOLDOWN_MS = 2000; // API操作极快，冷却可缩短
+    private static final long COOLDOWN_MS = 2000; 
+    
+    // 关键变量：供 DNDNotificationService 读取以防止同步死循环
     public static boolean isInternalUpdate = false;
     private static final Handler handler = new Handler(android.os.Looper.getMainLooper());
 
@@ -36,25 +38,27 @@ public class DNDSyncListenerService extends WearableListenerService {
             byte[] data = messageEvent.getData();
             if (data == null || data.length == 0) return;
             
-            byte dndStatePhone = data[0]; // 假设 1 为开启(DND)，其他为关闭
+            byte dndStatePhone = data[0]; 
             NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 
+            // 状态不同步时才执行
             if (dndStatePhone != (byte) mNotificationManager.getCurrentInterruptionFilter()) {
                 if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-                    isInternalUpdate = true;
+                    
+                    isInternalUpdate = true; // 开启内部更新锁
 
-                    // 1. 同步就寝模式 (API 方式)
+                    // 1. 设置就寝模式 (不再调用 DNDSyncAccessService)
                     if (prefs.getBoolean("bedtime_key", true)) {
                         setBedtimeMode(dndStatePhone == 1);
                     }
 
-                    // 2. 同步勿扰模式
+                    // 2. 设置勿扰模式
                     mNotificationManager.setInterruptionFilter((int) dndStatePhone);
                     
                     // 3. 震动反馈
                     if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
 
-                    // 延迟解锁，防止回环同步
+                    // 2秒后解锁，允许再次同步
                     handler.postDelayed(() -> isInternalUpdate = false, 2000);
                 }
             }
@@ -62,22 +66,22 @@ public class DNDSyncListenerService extends WearableListenerService {
     }
 
     /**
-     * 高效设置就寝模式：直接写入系统安全设置并发送广播
+     * 通过系统 Secure Settings 直接控制就寝模式，无需模拟点击
      */
     private void setBedtimeMode(boolean enable) {
         int value = enable ? 1 : 0;
         try {
-            // 修改设置
+            // 直接修改数据库
             Settings.Secure.putInt(getContentResolver(), "bedtime_mode_enabled", value);
             
-            // 发送系统广播通知 UI 刷新（部分 Wear OS 设备需要）
+            // 发送系统广播以刷新 UI 图标状态
             Intent intent = new Intent("com.google.android.apps.wearable.settings.action.BEDTIME_MODE_SETTINGS_CHANGED");
             intent.putExtra("bedtime_mode_state", value);
             sendBroadcast(intent);
             
-            Log.d(TAG, "Bedtime mode set to: " + enable);
+            Log.d(TAG, "就寝模式已同步至: " + enable);
         } catch (Exception e) {
-            Log.e(TAG, "Failed to set bedtime mode via API", e);
+            Log.e(TAG, "API 写入失败，请确保已通过 ADB 授予 WRITE_SECURE_SETTINGS 权限");
         }
     }
 
