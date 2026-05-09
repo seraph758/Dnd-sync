@@ -88,37 +88,37 @@ public class DNDSyncListenerService extends WearableListenerService {
 
     // --- 以下完整保留原版所有功能函数 ---
 
-    private void toggleBedtimeMode() {
-        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-        if (serv == null) {
-            Log.d(TAG, "accessibility not connected");
-            Handler mHandler = new Handler(getMainLooper());
-            mHandler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.acc_not_connected), Toast.LENGTH_LONG).show());
-            return;
+    
+    // 在 DNDSyncListenerService.java 中修改 toggleBedtimeMode 方法
+   private void toggleBedtimeMode(byte targetState) {
+    // targetState: 1 代表开启，0 代表关闭 (对应手机传来的 DND 状态)
+    // 或者根据你的逻辑判断，如果手机是 DND，手錶就开启就寝模式
+    
+    try {
+        // 使用 Settings.Secure 直接写入状态
+        // 这里的 1 是开启，0 是关闭
+        boolean success = android.provider.Settings.Secure.putInt(
+                getContentResolver(), 
+                "bedtime_mode_enabled", 
+                targetState == 1 ? 1 : 0
+        );
+        
+        if (success) {
+            Log.d(TAG, "成功通过系统设置切换就寝模式为: " + targetState);
+        } else {
+            // 如果普通权限写入失败，可能是因为 Wear OS 的版本限制
+            Log.e(TAG, "写入就寝模式设置失败");
         }
+        
+        // 可选：发送一个系统广播，确保 UI 刷新（部分系统需要）
+        android.content.Intent intent = new android.content.Intent("com.google.android.apps.wearable.settings.action.BEDTIME_MODE_SETTINGS_CHANGED");
+        intent.putExtra("bedtime_mode_state", targetState == 1 ? 1 : 0);
+        sendBroadcast(intent);
 
-        Log.d(TAG, "accessibility connected. Perform toggle.");
-        // 唤醒屏幕
-        PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
-        PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:MyWakeLock");
-        wakeLock.acquire(2*60*1000L);
-
-        Handler mHandler = new Handler(getMainLooper());
-        mHandler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.bedtime_toggle), Toast.LENGTH_SHORT).show());
-
-        try {
-            Thread.sleep(1000);
-            serv.swipeDown();    // 下拉面板
-            Thread.sleep(1000);
-            serv.clickIcon1_2(); // 点击就寝模式图标
-            Thread.sleep(1000);
-            serv.goBack();       // 返回
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
-            if (wakeLock.isHeld()) wakeLock.release();
-        }
+    } catch (Exception e) {
+        Log.e(TAG, "切换就寝模式出错: " + e.getMessage());
     }
+}
 
     private void vibrate() {
         Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
