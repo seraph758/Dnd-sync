@@ -2,9 +2,7 @@ package de.rhaeus.dndsync;
 
 import android.app.NotificationManager;
 import android.content.Context;
-import android.content.Intent;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.widget.Toast;
 
 import androidx.preference.Preference;
@@ -13,18 +11,16 @@ import androidx.preference.SwitchPreferenceCompat;
 
 public class MainFragment extends PreferenceFragmentCompat {
     private Preference dndPref;
-    private Preference accPref;
     private SwitchPreferenceCompat bedtimePref;
-
 
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
         dndPref = findPreference("dnd_permission_key");
-        accPref = findPreference("acc_permission_key");
         bedtimePref = (SwitchPreferenceCompat) findPreference("bedtime_key");
 
+        // 移除 accPref 相關初始化，因為不再需要無障礙服務
 
         dndPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
             public boolean onPreferenceClick(Preference preference) {
@@ -35,32 +31,7 @@ public class MainFragment extends PreferenceFragmentCompat {
             }
         });
 
-        accPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-        public boolean onPreferenceClick(Preference preference) {
-            if (!checkAccessibilityService()) {
-                openAccessibility();
-            }
-            return true;
-            }
-        });
-
         checkDNDPermission();
-        checkAccessibilityService();
-
-    }
-
-    private boolean checkAccessibilityService() {
-        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-        boolean connected = serv != null;
-        if (connected) {
-            accPref.setSummary(R.string.acc_permission_allowed);
-            bedtimePref.setEnabled(true);
-        } else {
-            accPref.setSummary(R.string.acc_permission_not_allowed);
-            bedtimePref.setEnabled(false);
-            bedtimePref.setChecked(false);
-        }
-        return connected;
     }
 
     private boolean checkDNDPermission() {
@@ -72,10 +43,5 @@ public class MainFragment extends PreferenceFragmentCompat {
             dndPref.setSummary(R.string.dnd_permission_not_allowed);
         }
         return allowed;
-    }
-
-    private void openAccessibility() {
-        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
-        startActivity(intent);
     }
 }
