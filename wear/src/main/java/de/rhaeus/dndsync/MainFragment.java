@@ -13,7 +13,7 @@ public class MainFragment extends PreferenceFragmentCompat {
     private Preference dndPref;
     private SwitchPreferenceCompat bedtimePref;
     
-    // 新增：恢复选项的 UI 变量
+    // 对应 XML 中的 Key
     private SwitchPreferenceCompat restoreAodPref;
     private SwitchPreferenceCompat restoreWakePref;
     private SwitchPreferenceCompat restoreTouchPref;
@@ -22,36 +22,40 @@ public class MainFragment extends PreferenceFragmentCompat {
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
+        // 1. 正确赋值成员变量（注意：不要在前面加 Preference 声明）
         dndPref = findPreference("dnd_permission_key");
-        bedtimePref = (SwitchPreferenceCompat) findPreference("bedtime_key");
-        
-        // 绑定新增的恢复选项开关
+        bedtimePref = findPreference("bedtime_key");
         restoreAodPref = findPreference("restore_aod_key");
         restoreWakePref = findPreference("restore_wake_key");
         restoreTouchPref = findPreference("restore_touch_key");
 
-        // 移除所有关于 accPref (无障碍) 的初始化代码
-
-        dndPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-            public boolean onPreferenceClick(Preference preference) {
+        // 2. 绑定权限点击
+        if (dndPref != null) {
+            dndPref.setOnPreferenceClickListener(preference -> {
                 if (!checkDNDPermission()) {
                     Toast.makeText(getContext(), "请通过 ADB 授予必要权限！", Toast.LENGTH_SHORT).show();
                 }
                 return true;
-            }
-        });
+            });
+        }
 
-        // 当“组合拳模式”总开关关闭时，禁用细分恢复选项
-        bedtimePref.setOnPreferenceChangeListener((preference, newValue) -> {
-            boolean enabled = (boolean) newValue;
-            toggleRestorePrefs(enabled);
-            return true;
-        });
+        // 3. 手动监听组合拳开关，用于即时控制下方选项的可用状态
+        if (bedtimePref != null) {
+            bedtimePref.setOnPreferenceChangeListener((preference, newValue) -> {
+                boolean isChecked = (boolean) newValue;
+                toggleRestorePrefs(isChecked);
+                return true;
+            });
+        }
 
+        // 初始化状态检查
         checkDNDPermission();
-        toggleRestorePrefs(bedtimePref.isChecked());
+        if (bedtimePref != null) {
+            toggleRestorePrefs(bedtimePref.isChecked());
+        }
     }
 
+    // 统一控制下游选项状态
     private void toggleRestorePrefs(boolean enabled) {
         if (restoreAodPref != null) restoreAodPref.setEnabled(enabled);
         if (restoreWakePref != null) restoreWakePref.setEnabled(enabled);
@@ -59,8 +63,11 @@ public class MainFragment extends PreferenceFragmentCompat {
     }
 
     private boolean checkDNDPermission() {
+        if (getContext() == null || dndPref == null) return false;
+        
         NotificationManager mNotificationManager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
         boolean allowed = mNotificationManager.isNotificationPolicyAccessGranted();
+        
         if (allowed) {
             dndPref.setSummary(R.string.dnd_permission_allowed);
         } else {
