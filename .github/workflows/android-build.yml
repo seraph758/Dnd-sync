@@ -11,13 +11,16 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 1. 解决 Node.js 20 弃用警告
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
 
     steps:
-    # 1. 拉取代碼
+    # 1. 拉代码
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. 安裝 Java 環境
+    # 2. 安装 Java 环境
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -25,53 +28,61 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # 3. 授予執行權限
+    # 3. 授予执行权限
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 4. 從 Secret 恢復 keystore 文件
+    # 4. 从 Secret 恢复 keystore 文件 (放在根目录)
     - name: Decode Keystore
       run: |
         echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
-    # 5. 創建簽名配置文件
+    # 5. 分别为 mobile 和 wear 模块创建签名配置文件
     - name: Create signing properties
       run: |
-        echo "STORE_FILE=../release.keystore" >> signing.properties
-        echo "STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> signing.properties
-        echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> signing.properties
-        echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> signing.properties
+        # 为 mobile 模块创建
+        echo "STORE_FILE=../../release.keystore" > mobile/signing.properties
+        echo "STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> mobile/signing.properties
+        echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> mobile/signing.properties
+        echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> mobile/signing.properties
+        
+        # 为 wear 模块创建
+        echo "STORE_FILE=../../release.keystore" > wear/signing.properties
+        echo "STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> wear/signing.properties
+        echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> wear/signing.properties
+        echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> wear/signing.properties
 
-    # 6. 編譯 Release 版本 APK
+    # 6. 编译 Release 版本 APK
     - name: Build Release APKs
       env:
         GITHUB_RUN_NUMBER: ${{ github.run_number }}
       run: ./gradlew clean assembleRelease
 
-    # 7. 智能提取並重命名 APK (核心修改處)
+    # 7. 提取并重命名 APK
     - name: Rename APKs
       run: |
         echo "正在搜索生成的 APK 文件..."
-        
-        # 搜索 mobile 模塊的 APK
-        # 優先找簽名後的，找不到則找未簽名的
-        MOBILE_PATH=$(find . -path "*/build/outputs/apk/release/*" -name "*.apk" | grep "mobile" | head -n 1)
-        if [ -z "$MOBILE_PATH" ]; then MOBILE_PATH=$(find . -path "*/build/outputs/apk/release/*" -name "*.apk" | head -n 1); fi
-        
-        # 搜索 wear 模塊的 APK
-        WEAR_PATH=$(find . -path "*/build/outputs/apk/release/*" -name "*.apk" | grep "wear" | head -n 1)
+        MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
+        WEAR_PATH=$(find . -path "*/wear/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
 
-        echo "找到 Mobile APK 路徑: $MOBILE_PATH"
-        echo "找到 Wear APK 路徑: $WEAR_PATH"
+        echo "找到 Mobile APK 路径: $MOBILE_PATH"
+        echo "找到 Wear APK 路径: $WEAR_PATH"
 
-        # 執行複製重命名
-        if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" mobile-release.apk; else echo "錯誤: 找不到 Mobile APK"; exit 1; fi
-        if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" wear-release.apk; else echo "錯誤: 找不到 Wear APK"; exit 1; fi
-
-        # 列出目前目錄文件以便調試
+        if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
+        if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" wear-release.apk; else echo "错误: 找不到 Wear APK"; exit 1; fi
         ls -lh *.apk
 
-    # 8. 創建 GitHub Release 並上傳附件
+    # 8. 上传 Artifact (在 Action 页面显示的附件)
+    - name: Upload APK Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dnd-sync-apks-v1.0.${{ github.run_number }}
+        path: |
+          mobile-release.apk
+          wear-release.apk
+        retention-days: 7 # 附件保存 7 天
+
+    # 9. 创建 GitHub Release (正式发布页面)
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v2
@@ -79,9 +90,6 @@ jobs:
         tag_name: v1.0.${{ github.run_number }}
         name: Release v1.0.${{ github.run_number }}
         generate_release_notes: true
-        draft: false
-        prerelease: false
-        fail_on_unmatched_files: true
         files: |
           mobile-release.apk
           wear-release.apk
