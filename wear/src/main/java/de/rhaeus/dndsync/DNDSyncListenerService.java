@@ -80,53 +80,47 @@ public class DNDSyncListenerService extends WearableListenerService {
     }
 
     private void toggleBedtimeMode() {
-        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-        if (serv == null) {
-            Log.d(TAG, "accessibility not connected");
-            handler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.acc_not_connected), Toast.LENGTH_LONG).show());
-            return;
-        }
+    DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
+    if (serv == null) {
+        Log.e(TAG, "辅助功能未连接");
+        return;
+    }
 
-        // 開啟新線程執行耗時的模擬點擊，防止阻塞接收信號
-        new Thread(() -> {
-            Log.d(TAG, "accessibility connected. Perform toggle in background thread.");
-            
-            // 喚醒螢幕 (Wear OS 上可能需多次嘗試或配合其他方式，這裡保留 Wakelock)
+    // 建议放在新线程运行，避免阻塞消息接收
+    new Thread(() -> {
+        try {
+            // 1. 获取唤醒锁并点亮屏幕
             PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
             PowerManager.WakeLock wakeLock = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
-                    "dndsync:MyWakeLock"
+                PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
+                "dndsync:MyWakeLock"
             );
-            
-            try {
-                wakeLock.acquire(10*1000L); // 只需要保持 10 秒亮屏即可
-                handler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.bedtime_toggle), Toast.LENGTH_SHORT).show());
+            wakeLock.acquire(5000L); 
 
-                Thread.sleep(500);
-                
-                // 【關鍵修改】：不再用手指滑動，直接呼叫系統層打開快捷面板
-                serv.openQuickSettings(); 
-                Log.d(TAG, "已打開快捷面板");
-                
-                Thread.sleep(1500); // 面板動畫需要一點時間，給予 1.5 秒緩衝
-                
-                serv.clickIcon1_2(); // 點擊就寢模式圖標
-                Log.d(TAG, "已點擊圖標");
-                
-                Thread.sleep(1000);
-                
-                serv.goBack();       // 返回，收起面板
-                Log.d(TAG, "已返回");
-                
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                if (wakeLock != null && wakeLock.isHeld()) {
-                    wakeLock.release();
-                }
-            }
-        }).start();
-    }
+            // 2. 等待屏幕完全亮起
+            Thread.sleep(800);
+
+            // 3. 【核心修改】调用你 AccessService 里定义的原生下拉方法
+            serv.openQuickSettings(); 
+            Log.d(TAG, "已触发原生下拉 (GLOBAL_ACTION_QUICK_SETTINGS)");
+
+            // 4. 下拉面板弹出需要动画时间，等待 1.2 秒
+            Thread.sleep(1200);
+
+            // 5. 执行点击（请确保 icon 坐标在屏幕 40% 高度处是准的）
+            serv.clickIcon1_2();
+            Log.d(TAG, "已尝试点击图标");
+
+            // 6. 等待点击生效后收起面板
+            Thread.sleep(800);
+            serv.goBack();
+
+            if (wakeLock.isHeld()) wakeLock.release();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }).start();
+}
 
     private void vibrate() {
         Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
