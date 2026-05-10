@@ -20,103 +20,112 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "DNDSyncListenerService";
     private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
 
-    // 新增：防抖冷却逻辑变量
+    // 修改：縮短冷卻時間到 5000ms，提高反應靈敏度
     private static long lastExecutionTime = 0;
-    private static final long COOLDOWN_MS = 10000; // 500毫秒冷却，防止死循环
-    // 【新增】：用於標記是否為內部觸發的更新，讓 NotificationService 讀取
+    private static final long COOLDOWN_MS = 5000; 
+    
     public static boolean isInternalUpdate = false;
     private static final Handler handler = new Handler(android.os.Looper.getMainLooper());
+
     @Override
     public void onMessageReceived (@NonNull MessageEvent messageEvent) {
-    if (Log.isLoggable(TAG, Log.DEBUG)) {
-        Log.d(TAG, "onMessageReceived: " + messageEvent);
-    }
-    
-    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-
-    if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
-        // 1. 基础冷却检查 (防止死循环)
-        long currentTime = System.currentTimeMillis();
-        if (currentTime - lastExecutionTime < COOLDOWN_MS) {
-            return;
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "onMessageReceived: " + messageEvent);
         }
-        lastExecutionTime = currentTime;
+        
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
-        // 2. 解析数据
-        byte[] data = messageEvent.getData();
-        byte dndStatePhone = data[0];
-        NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        int filterState = mNotificationManager.getCurrentInterruptionFilter();
-        byte currentDndState = (byte) filterState;
-
-        // 3. 核心逻辑：状态不一致时执行同步
-        if (dndStatePhone != currentDndState) {
-            if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-                
-                // 【修改】：锁定回传标记位，延长至 5 秒以覆盖模拟点击全过程
-                isInternalUpdate = true;
-                handler.postDelayed(() -> {
-                    isInternalUpdate = false;
-                    Log.d(TAG, "锁定解除，恢复状态监听");
-                }, 5000); 
-
-                // 执行震动
-                if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
-
-                // 【关键逻辑调整】：判断是否需要模拟点击
-                if (prefs.getBoolean("bedtime_key", true)) {
-                    Log.d(TAG, "检测到开启就寝模式同步，仅执行模拟点击动作");
-                    toggleBedtimeMode(); 
-                    // 执行完模拟点击后直接返回，不再执行下方的 setInterruptionFilter
-                    return; 
-                }
-
-                // 如果未开启就寝模式同步，则执行常规的勿扰模式设置
-                mNotificationManager.setInterruptionFilter((int)dndStatePhone);
-                Log.d(TAG, "执行常规勿扰模式设置: " + dndStatePhone);
-
-            } else {
-                Log.d(TAG, "缺少勿扰模式访问权限");
+        if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+                Log.d(TAG, "還在冷卻期，忽略本次信號");
+                return;
             }
+            lastExecutionTime = currentTime;
+
+            byte[] data = messageEvent.getData();
+            byte dndStatePhone = data[0];
+            NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            int filterState = mNotificationManager.getCurrentInterruptionFilter();
+            byte currentDndState = (byte) filterState;
+
+            if (dndStatePhone != currentDndState) {
+                if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                    
+                    // 鎖定狀態 5 秒，防止模擬點擊觸發回傳死循環
+                    isInternalUpdate = true;
+                    handler.postDelayed(() -> {
+                        isInternalUpdate = false;
+                        Log.d(TAG, "鎖定解除，恢復狀態監聽");
+                    }, 5000); 
+
+                    if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
+
+                    if (prefs.getBoolean("bedtime_key", true)) {
+                        Log.d(TAG, "執行睡眠模式模擬點擊");
+                        toggleBedtimeMode(); 
+                        return; // 點擊後直接返回，不再調用系統 API
+                    }
+
+                    mNotificationManager.setInterruptionFilter((int)dndStatePhone);
+                    Log.d(TAG, "常規 API 勿擾模式設置完成");
+
+                } else {
+                    Log.d(TAG, "缺少勿擾模式訪問權限");
+                }
+            }
+        } else {
+            super.onMessageReceived(messageEvent);
         }
-    } else {
-        super.onMessageReceived(messageEvent);
     }
-}
-
-
-    // --- 以下完整保留原版所有功能函数 ---
 
     private void toggleBedtimeMode() {
         DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
         if (serv == null) {
             Log.d(TAG, "accessibility not connected");
-            Handler mHandler = new Handler(getMainLooper());
-            mHandler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.acc_not_connected), Toast.LENGTH_LONG).show());
+            handler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.acc_not_connected), Toast.LENGTH_LONG).show());
             return;
         }
 
-        Log.d(TAG, "accessibility connected. Perform toggle.");
-        // 唤醒屏幕
-        PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
-        PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:MyWakeLock");
-        wakeLock.acquire(2*60*1000L);
+        // 開啟新線程執行耗時的模擬點擊，防止阻塞接收信號
+        new Thread(() -> {
+            Log.d(TAG, "accessibility connected. Perform toggle in background thread.");
+            
+            // 喚醒螢幕 (Wear OS 上可能需多次嘗試或配合其他方式，這裡保留 Wakelock)
+            PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
+            PowerManager.WakeLock wakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
+                    "dndsync:MyWakeLock"
+            );
+            
+            try {
+                wakeLock.acquire(10*1000L); // 只需要保持 10 秒亮屏即可
+                handler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.bedtime_toggle), Toast.LENGTH_SHORT).show());
 
-        Handler mHandler = new Handler(getMainLooper());
-        mHandler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.bedtime_toggle), Toast.LENGTH_SHORT).show());
-
-        try {
-            Thread.sleep(1000);
-            serv.swipeDown();    // 下拉面板
-            Thread.sleep(1000);
-            serv.clickIcon1_2(); // 点击就寝模式图标
-            Thread.sleep(1000);
-            serv.goBack();       // 返回
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
-            if (wakeLock.isHeld()) wakeLock.release();
-        }
+                Thread.sleep(500);
+                
+                // 【關鍵修改】：不再用手指滑動，直接呼叫系統層打開快捷面板
+                serv.openQuickSettings(); 
+                Log.d(TAG, "已打開快捷面板");
+                
+                Thread.sleep(1500); // 面板動畫需要一點時間，給予 1.5 秒緩衝
+                
+                serv.clickIcon1_2(); // 點擊就寢模式圖標
+                Log.d(TAG, "已點擊圖標");
+                
+                Thread.sleep(1000);
+                
+                serv.goBack();       // 返回，收起面板
+                Log.d(TAG, "已返回");
+                
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                if (wakeLock != null && wakeLock.isHeld()) {
+                    wakeLock.release();
+                }
+            }
+        }).start();
     }
 
     private void vibrate() {
