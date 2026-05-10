@@ -63,18 +63,19 @@ public class DNDSyncAccessService extends AccessibilityService {
     // 核心修复：调整起点坐标 y=20 避开系统死区
     public void swipeDown() {
         DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
-        int width = displayMetrics.widthPixels;
-        int height = displayMetrics.heightPixels;
-
+        GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
         Path path = new Path();
+
+        final int height = displayMetrics.heightPixels;
+        final int midX = displayMetrics.widthPixels / 2;
+
         // 从顶部往下一点开始（y=20），滑到屏幕 70% 的位置
         path.moveTo(width / 2f, 20f); 
         path.lineTo(width / 2f, height * 0.7f);
 
-        GestureDescription.Builder builder = new GestureDescription.Builder();
-        // 修正：startTime 设为 0，立即执行；duration 设为 200ms 模拟正常手势速度
-        builder.addStroke(new GestureDescription.StrokeDescription(path, 0, 200));
-        dispatchGesture(builder.build(), null, null);
+        // 这里的 100 是启动延迟，50 是滑动耗时（快速甩动）
+        gestureBuilder.addStroke(new GestureDescription.StrokeDescription(path, 100, 50));
+        dispatchGesture(gestureBuilder.build(), null, null);
     }
 
     public void click(float x, float y) {
