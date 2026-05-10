@@ -9,6 +9,8 @@ if (signingFile.exists()) {
     signingProps.load(new FileInputStream(signingFile))
 }
 
+def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
+
 android {
     compileSdk 31
 
@@ -16,8 +18,9 @@ android {
         applicationId "de.rhaeus.dndsync"
         minSdk 24
         targetSdk 31
-        versionCode 1
-        versionName "1.0"
+
+        versionCode githubRunNumber.toInteger()
+        versionName "1.0.${githubRunNumber}"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -36,8 +39,10 @@ android {
             signingConfig signingConfigs.release
 
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
-                    'proguard-rules.pro'
+
+            proguardFiles getDefaultProguardFile(
+                    'proguard-android-optimize.txt'
+            ), 'proguard-rules.pro'
         }
     }
 
