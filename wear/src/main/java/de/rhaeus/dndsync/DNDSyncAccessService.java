@@ -18,7 +18,7 @@ public class DNDSyncAccessService extends AccessibilityService {
 
     @Override
     protected void onServiceConnected() {
-        Log.d(TAG, "服务已连接");
+        Log.d(TAG, "辅助功能服务已连接");
         instance = this;
     }
 
@@ -31,13 +31,18 @@ public class DNDSyncAccessService extends AccessibilityService {
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
     @Override public void onInterrupt() {}
 
-    // 优化：尝试原生下拉，失败则自动切换到手势下拉
+    /**
+     * 建议：既然你反馈源文件的手势下拉有效，这里直接优先调用手势。
+     * 因为系统指令 (GLOBAL_ACTION_QUICK_SETTINGS) 在 Wear OS 5 上极不稳定。
+     */
     public void openQuickSettings() {
-        boolean success = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
-        if (!success) {
-            Log.d(TAG, "原生下拉失败，尝试手动模拟滑动");
-            swipeDown();
-        }
+        Log.d(TAG, "尝试下拉菜单...");
+        // 优先执行已被证明有效的模拟手势
+        swipeDown();
+        
+        // 如果你坚持想用原生指令，可以把下面两行取消注释，但通常手势更可靠
+        // boolean success = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
+        // if (!success) swipeDown();
     }
 
     public void goHome() {
@@ -48,32 +53,32 @@ public class DNDSyncAccessService extends AccessibilityService {
         performGlobalAction(GLOBAL_ACTION_BACK);
     }
 
-    // 优化：三星手表的下拉图标位置通常在屏幕上半部分
-    // 假设“就寝模式”在第一页
     public void clickIcon1_2() {
         DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
         int width = displayMetrics.widthPixels;
         int height = displayMetrics.heightPixels;
 
-        // Watch 7 的图标阵列：
-        // 这里的坐标 (width * 0.5, height * 0.4) 对应中间偏上的图标
+        // 保持你确认过的 40% 高度坐标
         click(width * 0.5f, height * 0.4f);
     }
 
-    // 核心修复：调整起点坐标 y=20 避开系统死区
+    /**
+     * 核心修复：修复了 width 变量错误，并恢复了你源文件中证明有效的 100/50 节奏
+     */
     public void swipeDown() {
         DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
         GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
         Path path = new Path();
 
         final int height = displayMetrics.heightPixels;
-        final int midX = displayMetrics.widthPixels / 2;
+        final int width = displayMetrics.widthPixels; // 修复：定义 width
+        final int midX = width / 2;
 
-        // 从顶部往下一点开始（y=20），滑到屏幕 70% 的位置
-        path.moveTo(width / 2f, 20f); 
-        path.lineTo(width / 2f, height * 0.7f);
+        // 保持从 0 开始。既然源文件能勾住菜单，就不要改到 20。
+        path.moveTo(midX, 0); 
+        path.lineTo(midX, height * 0.6f); // 滑动长度稍微增加到 60% 确保拉到底
 
-        // 这里的 100 是启动延迟，50 是滑动耗时（快速甩动）
+        // 100ms 延迟确保系统准备好接收触摸，50ms 快速甩动
         gestureBuilder.addStroke(new GestureDescription.StrokeDescription(path, 100, 50));
         dispatchGesture(gestureBuilder.build(), null, null);
     }
@@ -82,7 +87,7 @@ public class DNDSyncAccessService extends AccessibilityService {
         Path path = new Path();
         path.moveTo(x, y);
         GestureDescription.Builder builder = new GestureDescription.Builder();
-        // 点击持续时间建议 50ms 左右最稳定
+        // 点击延迟设为 0 立即执行，持续 50ms 模拟正常点击
         builder.addStroke(new GestureDescription.StrokeDescription(path, 0, 50));
         dispatchGesture(builder.build(), null, null);
     }
