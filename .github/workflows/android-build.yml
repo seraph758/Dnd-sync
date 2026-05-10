@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 拉取代码
+    # 1. 拉取代碼
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 安装 Java
+    # 2. 安裝 Java 環境
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -25,16 +25,16 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # gradlew 权限
+    # 3. 授予執行權限
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 恢复 keystore
+    # 4. 從 Secret 恢復 keystore 文件
     - name: Decode Keystore
       run: |
         echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
-    # 创建 signing.properties
+    # 5. 創建簽名配置文件
     - name: Create signing properties
       run: |
         echo "STORE_FILE=../release.keystore" >> signing.properties
@@ -42,19 +42,36 @@ jobs:
         echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> signing.properties
         echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> signing.properties
 
-    # Build Release APK
+    # 6. 編譯 Release 版本 APK
     - name: Build Release APKs
       env:
         GITHUB_RUN_NUMBER: ${{ github.run_number }}
-      run: ./gradlew assembleRelease
+      run: ./gradlew clean assembleRelease
 
-    # 重命名 APK
+    # 7. 智能提取並重命名 APK (核心修改處)
     - name: Rename APKs
       run: |
-        mv mobile/build/outputs/apk/release/*.apk mobile-release.apk
-        mv wear/build/outputs/apk/release/*.apk wear-release.apk
+        echo "正在搜索生成的 APK 文件..."
+        
+        # 搜索 mobile 模塊的 APK
+        # 優先找簽名後的，找不到則找未簽名的
+        MOBILE_PATH=$(find . -path "*/build/outputs/apk/release/*" -name "*.apk" | grep "mobile" | head -n 1)
+        if [ -z "$MOBILE_PATH" ]; then MOBILE_PATH=$(find . -path "*/build/outputs/apk/release/*" -name "*.apk" | head -n 1); fi
+        
+        # 搜索 wear 模塊的 APK
+        WEAR_PATH=$(find . -path "*/build/outputs/apk/release/*" -name "*.apk" | grep "wear" | head -n 1)
 
-    # 创建 Release
+        echo "找到 Mobile APK 路徑: $MOBILE_PATH"
+        echo "找到 Wear APK 路徑: $WEAR_PATH"
+
+        # 執行複製重命名
+        if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" mobile-release.apk; else echo "錯誤: 找不到 Mobile APK"; exit 1; fi
+        if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" wear-release.apk; else echo "錯誤: 找不到 Wear APK"; exit 1; fi
+
+        # 列出目前目錄文件以便調試
+        ls -lh *.apk
+
+    # 8. 創建 GitHub Release 並上傳附件
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v2
@@ -62,6 +79,9 @@ jobs:
         tag_name: v1.0.${{ github.run_number }}
         name: Release v1.0.${{ github.run_number }}
         generate_release_notes: true
+        draft: false
+        prerelease: false
+        fail_on_unmatched_files: true
         files: |
           mobile-release.apk
           wear-release.apk
