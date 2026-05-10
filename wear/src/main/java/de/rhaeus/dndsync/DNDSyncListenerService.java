@@ -81,42 +81,34 @@ public class DNDSyncListenerService extends WearableListenerService {
 
     private void toggleBedtimeMode() {
     DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-    if (serv == null) {
-        Log.e(TAG, "辅助功能未连接");
-        return;
-    }
+    if (serv == null) return;
 
-    // 建议放在新线程运行，避免阻塞消息接收
     new Thread(() -> {
         try {
-            // 1. 获取唤醒锁并点亮屏幕
-            PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
+            // 1. 点亮屏幕
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             PowerManager.WakeLock wakeLock = pm.newWakeLock(
-                PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
-                "dndsync:MyWakeLock"
-            );
-            wakeLock.acquire(5000L); 
+                PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "dnd:lock");
+            wakeLock.acquire(5000L);
 
-            // 2. 等待屏幕完全亮起
-            Thread.sleep(800);
+            // 2. 关键步骤：先回到主页
+            // 这样可以确保下拉动作在系统表盘层级触发，成功率接近 100%
+            serv.goHome();
+            Thread.sleep(1000); 
 
-            // 3. 【核心修改】调用你 AccessService 里定义的原生下拉方法
+            // 3. 执行下拉
             serv.openQuickSettings(); 
-            Log.d(TAG, "已触发原生下拉 (GLOBAL_ACTION_QUICK_SETTINGS)");
+            Thread.sleep(1200); // 等待下拉动画完成
 
-            // 4. 下拉面板弹出需要动画时间，等待 1.2 秒
-            Thread.sleep(1200);
-
-            // 5. 执行点击（请确保 icon 坐标在屏幕 40% 高度处是准的）
+            // 4. 执行点击
             serv.clickIcon1_2();
-            Log.d(TAG, "已尝试点击图标");
-
-            // 6. 等待点击生效后收起面板
             Thread.sleep(800);
+
+            // 5. 收起并返回
             serv.goBack();
 
             if (wakeLock.isHeld()) wakeLock.release();
-        } catch (InterruptedException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }).start();
