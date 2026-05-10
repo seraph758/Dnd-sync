@@ -24,25 +24,31 @@ android {
     }
 
     signingConfigs {
-        release {
+    release {
+        // 增加安全读取逻辑
+        if (signingProps['STORE_FILE'] != null) {
             storeFile file(signingProps['STORE_FILE'])
             storePassword signingProps['STORE_PASSWORD']
             keyAlias signingProps['KEY_ALIAS']
             keyPassword signingProps['KEY_PASSWORD']
         }
     }
+}
 
-    buildTypes {
-        release {
+buildTypes {
+    release {
+        // 只有配置了签名才应用，否则保持未签名状态并报错提醒
+        if (signingProps['STORE_FILE'] != null) {
             signingConfig signingConfigs.release
-
-            minifyEnabled false
-
-            proguardFiles getDefaultProguardFile(
-                    'proguard-android-optimize.txt'
-            ), 'proguard-rules.pro'
+        } else {
+            println "CRITICAL WARNING: signing.properties is missing or STORE_FILE is null!"
         }
+        
+        minifyEnabled false
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
+}
+
 
     buildFeatures {
         viewBinding true
