@@ -28,62 +28,61 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final Handler handler = new Handler(android.os.Looper.getMainLooper());
     @Override
     public void onMessageReceived (@NonNull MessageEvent messageEvent) {
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "onMessageReceived: " + messageEvent);
-        }
-        
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-
-        if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
-            Log.d(TAG, "received path: " + DND_SYNC_MESSAGE_PATH);
-
-            // 1. 基礎冷卻檢查 (保留原有邏輯)
-            long currentTime = System.currentTimeMillis();
-            if (currentTime - lastExecutionTime < COOLDOWN_MS) {
-                Log.d(TAG, "檢測到極短時間內的重複觸發，忽略此指令");
-                return;
-            }
-            lastExecutionTime = currentTime;
-
-            // 2. 解析數據
-            byte[] data = messageEvent.getData();
-            byte dndStatePhone = data[0];
-            NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            int filterState = mNotificationManager.getCurrentInterruptionFilter();
-            byte currentDndState = (byte) filterState;
-
-            // 3. 核心邏輯：狀態不一致時執行同步
-            if (dndStatePhone != currentDndState) {
-                if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-                    
-                    // 【關鍵修正】：立起標誌位，防止回傳手機
-                    isInternalUpdate = true;
-                    Log.d(TAG, "收到手機同步請求，鎖定手錶回傳邏輯");
-
-                    // 執行震動
-                    if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
-
-                    // 執行就寢模式切換 (模擬點擊)
-                    if (prefs.getBoolean("bedtime_key", true)) { toggleBedtimeMode(); }
-
-                    // 執行勿擾設置
-                    mNotificationManager.setInterruptionFilter((int)dndStatePhone);
-                    Log.d(TAG, "手錶 DND 成功設置為 " + dndStatePhone);
-
-                    // 2秒後解除鎖定
-                    handler.postDelayed(() -> {
-                        isInternalUpdate = false;
-                        Log.d(TAG, "手錶內部更新完成，恢復監聽發送");
-                    }, 2000);
-
-                } else {
-                    Log.d(TAG, "嘗試設置 DND 但缺少權限");
-                }
-            }
-        } else {
-            super.onMessageReceived(messageEvent);
-        }
+    if (Log.isLoggable(TAG, Log.DEBUG)) {
+        Log.d(TAG, "onMessageReceived: " + messageEvent);
     }
+    
+    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+
+    if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
+        // 1. 基础冷却检查 (防止死循环)
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+            return;
+        }
+        lastExecutionTime = currentTime;
+
+        // 2. 解析数据
+        byte[] data = messageEvent.getData();
+        byte dndStatePhone = data[0];
+        NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        int filterState = mNotificationManager.getCurrentInterruptionFilter();
+        byte currentDndState = (byte) filterState;
+
+        // 3. 核心逻辑：状态不一致时执行同步
+        if (dndStatePhone != currentDndState) {
+            if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                
+                // 【修改】：锁定回传标记位，延长至 5 秒以覆盖模拟点击全过程
+                isInternalUpdate = true;
+                handler.postDelayed(() -> {
+                    isInternalUpdate = false;
+                    Log.d(TAG, "锁定解除，恢复状态监听");
+                }, 5000); 
+
+                // 执行震动
+                if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
+
+                // 【关键逻辑调整】：判断是否需要模拟点击
+                if (prefs.getBoolean("bedtime_key", true)) {
+                    Log.d(TAG, "检测到开启就寝模式同步，仅执行模拟点击动作");
+                    toggleBedtimeMode(); 
+                    // 执行完模拟点击后直接返回，不再执行下方的 setInterruptionFilter
+                    return; 
+                }
+
+                // 如果未开启就寝模式同步，则执行常规的勿扰模式设置
+                mNotificationManager.setInterruptionFilter((int)dndStatePhone);
+                Log.d(TAG, "执行常规勿扰模式设置: " + dndStatePhone);
+
+            } else {
+                Log.d(TAG, "缺少勿扰模式访问权限");
+            }
+        }
+    } else {
+        super.onMessageReceived(messageEvent);
+    }
+}
 
 
     // --- 以下完整保留原版所有功能函数 ---
