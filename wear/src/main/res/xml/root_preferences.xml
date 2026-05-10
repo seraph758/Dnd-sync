@@ -9,42 +9,32 @@
             android:defaultValue="true"
             android:key="dnd_sync_key"
             android:title="同步勿扰模式"
-            android:summaryOn="@string/sync_summary_on"
-            android:summaryOff="@string/sync_summary_off"
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="bedtime_key"
-            android:title="组合拳模式"
-            android:summary="开启勿扰时自动关闭屏幕显示与唤醒"
+            android:title="就寝模式同步 (模拟点击)"
+            android:summary="开启时将模拟点击手表的就寝模式"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
-    <PreferenceCategory 
-        android:title="退出勿扰后自动恢复"
+    <PreferenceCategory
+        android:title="@string/permission_header"
         app:iconSpaceReserved="false">
-        
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:dependency="bedtime_key"
-            android:key="restore_aod_key"
-            android:title="恢复息屏提醒 (AOD)"
+
+        <Preference
+            android:key="dnd_permission_key"
+            android:title="@string/dnd_permission_title"
+            android:summary="勿扰访问权限"
             app:iconSpaceReserved="false" />
 
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:dependency="bedtime_key"
-            android:key="restore_wake_key"
-            android:title="恢复抬腕唤醒"
+        <Preference
+            android:key="acc_permission_key"
+            android:title="辅助功能权限"
+            android:summary="模拟点击需要此权限"
             app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:dependency="bedtime_key"
-            android:key="restore_touch_key"
-            android:title="恢复触摸屏幕唤醒"
-            app:iconSpaceReserved="false" />
+            
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -55,21 +45,7 @@
             android:defaultValue="false"
             android:key="vibrate_key"
             android:title="@string/vibrate_title"
-            android:summaryOn="@string/vibrate_summary_on"
-            android:summaryOff="@string/vibrate_summary_off"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
-
-    <PreferenceCategory
-        android:title="@string/permission_header"
-        app:iconSpaceReserved="false">
-
-        <Preference
-            android:key="dnd_permission_key"
-            android:summary="勿扰同步需要此权限，请点击查看"
-            android:title="@string/dnd_permission_title"
-            app:iconSpaceReserved="false" />
-            
-        </PreferenceCategory>
 
 </PreferenceScreen>
