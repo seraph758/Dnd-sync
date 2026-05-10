@@ -1,10 +1,12 @@
-name: Build Signed Mobile and Wear APKs
+name: Build and Release APKs
 
 on:
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+    branches:
+      - master
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -23,16 +25,16 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # 给 gradlew 执行权限
+    # gradlew 权限
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 恢复 keystore 文件
+    # 恢复 keystore
     - name: Decode Keystore
       run: |
         echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
-    # 创建 local.properties
+    # 创建 signing.properties
     - name: Create signing properties
       run: |
         echo "STORE_FILE=../release.keystore" >> signing.properties
@@ -40,30 +42,26 @@ jobs:
         echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> signing.properties
         echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> signing.properties
 
-    # 编译 release APK
+    # Build Release APK
     - name: Build Release APKs
       env:
-        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        GITHUB_RUN_NUMBER: ${{ github.run_number }}
       run: ./gradlew assembleRelease
 
-    # 输出 APK 路径（调试用）
-    - name: List APKs
-      run: find . -name "*.apk"
+    # 重命名 APK
+    - name: Rename APKs
+      run: |
+        mv mobile/build/outputs/apk/release/*.apk mobile-release.apk
+        mv wear/build/outputs/apk/release/*.apk wear-release.apk
 
-    # 上传 Mobile APK
-    - name: Upload Mobile Release APK
-      uses: actions/upload-artifact@v4
+    # 创建 Release
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v2
       with:
-        name: mobile-release-apk
-        path: mobile/build/outputs/apk/release/*.apk
-        if-no-files-found: error
-
-    # 上传 Wear APK
-    - name: Upload Wear Release APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: wear-release-apk
-        path: wear/build/outputs/apk/release/*.apk
-        if-no-files-found: error
+        tag_name: v1.0.${{ github.run_number }}
+        name: Release v1.0.${{ github.run_number }}
+        generate_release_notes: true
+        files: |
+          mobile-release.apk
+          wear-release.apk
