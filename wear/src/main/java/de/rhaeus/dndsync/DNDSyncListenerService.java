@@ -80,39 +80,41 @@ public class DNDSyncListenerService extends WearableListenerService {
     }
 
     private void toggleBedtimeMode() {
-    DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-    if (serv == null) return;
+        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
+        if (serv == null) return;
 
-    new Thread(() -> {
-        try {
-            // 1. 点亮屏幕
-            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            PowerManager.WakeLock wakeLock = pm.newWakeLock(
-                PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "dnd:lock");
-            wakeLock.acquire(5000L);
+        new Thread(() -> {
+            try {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                PowerManager.WakeLock wakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "dnd:sync");
+                
+                // 1. 唤醒
+                wakeLock.acquire(5000L);
+                
+                // 2. 关键：等待屏幕完全点亮，否则手势会失效
+                Thread.sleep(1000); 
 
-            // 2. 关键步骤：先回到主页
-            // 这样可以确保下拉动作在系统表盘层级触发，成功率接近 100%
-            serv.goHome();
-            Thread.sleep(1000); 
+                // 3. 调用被证明有效的 swipeDown
+                serv.swipeDown(); 
+                Log.d(TAG, "执行手势下拉");
 
-            // 3. 执行下拉
-            serv.openQuickSettings(); 
-            Thread.sleep(1200); // 等待下拉动画完成
+                // 4. 等待面板拉下来的动画完成
+                Thread.sleep(1200);
 
-            // 4. 执行点击
-            serv.clickIcon1_2();
-            Thread.sleep(800);
+                // 5. 点击图标
+                serv.clickIcon1_2();
+                
+                // 6. 结束返回
+                Thread.sleep(800);
+                serv.goBack();
 
-            // 5. 收起并返回
-            serv.goBack();
-
-            if (wakeLock.isHeld()) wakeLock.release();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }).start();
-}
+                if (wakeLock.isHeld()) wakeLock.release();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
+    }
 
     private void vibrate() {
         Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
