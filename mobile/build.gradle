@@ -25,26 +25,37 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // ... 之前的代码保持不变 ...
+
     signingConfigs {
         release {
-            storeFile file(signingProps['STORE_FILE'])
-            storePassword signingProps['STORE_PASSWORD']
-            keyAlias signingProps['KEY_ALIAS']
-            keyPassword signingProps['KEY_PASSWORD']
+            // 增加保护逻辑
+            if (signingProps['STORE_FILE'] != null) {
+                storeFile file(signingProps['STORE_FILE'])
+                storePassword signingProps['STORE_PASSWORD']
+                keyAlias signingProps['KEY_ALIAS']
+                keyPassword signingProps['KEY_PASSWORD']
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
-
+            // 只有当签名配置完整时才应用，否则打印警告
+            if (signingProps['STORE_FILE'] != null) {
+                signingConfig signingConfigs.release
+            } else {
+                println "WARNING: Signing properties not found, building unsigned APK!"
+            }
+            
             minifyEnabled false
-
             proguardFiles getDefaultProguardFile(
                     'proguard-android-optimize.txt'
             ), 'proguard-rules.pro'
         }
     }
+// ... 后续代码保持不变 ...
+
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
