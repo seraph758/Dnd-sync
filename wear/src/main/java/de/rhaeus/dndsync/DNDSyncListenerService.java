@@ -4,8 +4,11 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
-import android.provider.Settings;
+import android.os.PowerManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.util.Log;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
@@ -17,63 +20,110 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "DNDSyncListenerService";
     private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
 
+    // 新增：防抖冷却逻辑变量
+    private static long lastExecutionTime = 0;
+    private static final long COOLDOWN_MS = 10000; // 500毫秒冷却，防止死循环
+    // 【新增】：用於標記是否為內部觸發的更新，讓 NotificationService 讀取
     public static boolean isInternalUpdate = false;
     private static final Handler handler = new Handler(android.os.Looper.getMainLooper());
-
     @Override
-    public void onMessageReceived(@NonNull MessageEvent messageEvent) {
+    public void onMessageReceived (@NonNull MessageEvent messageEvent) {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "onMessageReceived: " + messageEvent);
+        }
+        
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+
         if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
-            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+            Log.d(TAG, "received path: " + DND_SYNC_MESSAGE_PATH);
+
+            // 1. 基礎冷卻檢查 (保留原有邏輯)
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+                Log.d(TAG, "檢測到極短時間內的重複觸發，忽略此指令");
+                return;
+            }
+            lastExecutionTime = currentTime;
+
+            // 2. 解析數據
             byte[] data = messageEvent.getData();
-            if (data == null || data.length == 0) return;
-            
-            boolean phoneDndOn = (data[0] == 1); 
+            byte dndStatePhone = data[0];
             NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            int filterState = mNotificationManager.getCurrentInterruptionFilter();
+            byte currentDndState = (byte) filterState;
 
-            if (phoneDndOn != (mNotificationManager.getCurrentInterruptionFilter() == NotificationManager.INTERRUPTION_FILTER_PRIORITY)) {
+            // 3. 核心邏輯：狀態不一致時執行同步
+            if (dndStatePhone != currentDndState) {
                 if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                    
+                    // 【關鍵修正】：立起標誌位，防止回傳手機
                     isInternalUpdate = true;
+                    Log.d(TAG, "收到手機同步請求，鎖定手錶回傳邏輯");
 
-                    // 执行增强版组合拳
-                    if (prefs.getBoolean("bedtime_key", true)) {
-                        applySmartCombo(phoneDndOn, prefs);
-                    }
+                    // 執行震動
+                    if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
 
-                    mNotificationManager.setInterruptionFilter(phoneDndOn ? 
-                            NotificationManager.INTERRUPTION_FILTER_PRIORITY : NotificationManager.INTERRUPTION_FILTER_ALL);
+                    // 執行就寢模式切換 (模擬點擊)
+                    if (prefs.getBoolean("bedtime_key", true)) { toggleBedtimeMode(); }
 
-                    handler.postDelayed(() -> isInternalUpdate = false, 2000);
+                    // 執行勿擾設置
+                    mNotificationManager.setInterruptionFilter((int)dndStatePhone);
+                    Log.d(TAG, "手錶 DND 成功設置為 " + dndStatePhone);
+
+                    // 2秒後解除鎖定
+                    handler.postDelayed(() -> {
+                        isInternalUpdate = false;
+                        Log.d(TAG, "手錶內部更新完成，恢復監聽發送");
+                    }, 2000);
+
+                } else {
+                    Log.d(TAG, "嘗試設置 DND 但缺少權限");
                 }
             }
+        } else {
+            super.onMessageReceived(messageEvent);
         }
     }
 
-    private void applySmartCombo(boolean dndActive, SharedPreferences prefs) {
+
+    // --- 以下完整保留原版所有功能函数 ---
+
+    private void toggleBedtimeMode() {
+        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
+        if (serv == null) {
+            Log.d(TAG, "accessibility not connected");
+            Handler mHandler = new Handler(getMainLooper());
+            mHandler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.acc_not_connected), Toast.LENGTH_LONG).show());
+            return;
+        }
+
+        Log.d(TAG, "accessibility connected. Perform toggle.");
+        // 唤醒屏幕
+        PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
+        PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:MyWakeLock");
+        wakeLock.acquire(2*60*1000L);
+
+        Handler mHandler = new Handler(getMainLooper());
+        mHandler.post(() -> Toast.makeText(getApplicationContext(), getResources().getString(R.string.bedtime_toggle), Toast.LENGTH_SHORT).show());
+
         try {
-            if (dndActive) {
-                // 【进入勿扰】：强制全部关闭以进入睡眠模式
-                Settings.Global.putInt(getContentResolver(), "zen_mode", 1);
-                Settings.Secure.putInt(getContentResolver(), "wake_gesture_enabled", 0);
-                Settings.Secure.putInt(getContentResolver(), "double_tap_to_wake", 0);
-                Settings.System.putInt(getContentResolver(), "aod_mode", 0);
-            } else {
-                // 【退出勿扰】：根据 UI 选项决定是否恢复开启
-                Settings.Global.putInt(getContentResolver(), "zen_mode", 0);
-                
-                if (prefs.getBoolean("restore_wake_key", true)) {
-                    Settings.Secure.putInt(getContentResolver(), "wake_gesture_enabled", 1);
-                }
-                
-                if (prefs.getBoolean("restore_touch_key", true)) {
-                    Settings.Secure.putInt(getContentResolver(), "double_tap_to_wake", 1);
-                }
-                
-                if (prefs.getBoolean("restore_aod_key", true)) {
-                    Settings.System.putInt(getContentResolver(), "aod_mode", 1);
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "设置写入失败", e);
+            Thread.sleep(1000);
+            serv.swipeDown();    // 下拉面板
+            Thread.sleep(1000);
+            serv.clickIcon1_2(); // 点击就寝模式图标
+            Thread.sleep(1000);
+            serv.goBack();       // 返回
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            if (wakeLock.isHeld()) wakeLock.release();
+        }
+    }
+
+    private void vibrate() {
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (v != null) {
+            v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
         }
     }
 }
