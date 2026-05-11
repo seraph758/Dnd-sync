@@ -1,15 +1,13 @@
 package de.rhaeus.dndsync;
 
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.service.notification.NotificationListenerService;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.CapabilityClient;
@@ -33,11 +31,14 @@ public class DNDNotificationService extends NotificationListenerService {
         Log.d(TAG, "listener connected");
         running = true;
 
-        // 重启或服务绑定后，立即同步当前手机 DND 状态到手表
         int currentFilter = getCurrentInterruptionFilter();
-        Log.d(TAG, "onListenerConnected - 当前 DND 状态: " + currentFilter);
-
+        
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        // 增加：连接成功时也受开关控制打印日志
+        if (prefs.getBoolean("enable_debug_log", false)) {
+            Log.d("DNDSync_Debug", "服务已连接 - 当前 DND 状态: " + currentFilter);
+        }
+
         if (prefs.getBoolean("dnd_sync_key", true)) {
             new Thread(() -> sendDNDSync(currentFilter)).start();
         }
@@ -47,10 +48,8 @@ public class DNDNotificationService extends NotificationListenerService {
     public void onListenerDisconnected() {
         Log.d(TAG, "listener disconnected");
         running = false;
-
         try {
             requestRebind(new ComponentName(this, DNDNotificationService.class));
-            Log.d(TAG, "已请求 requestRebind");
         } catch (Exception e) {
             Log.e(TAG, "requestRebind 失败", e);
         }
@@ -58,10 +57,7 @@ public class DNDNotificationService extends NotificationListenerService {
 
     @Override
     public void onInterruptionFilterChanged(int interruptionFilter) {
-        Log.d(TAG, "interruption filter changed to " + interruptionFilter);
-
         if (DNDSyncListenerService.isInternalUpdate) {
-            Log.d(TAG, "檢測到內部同步觸發，攔截發送以防止死循環");
             return;
         }
 
@@ -82,29 +78,32 @@ public class DNDNotificationService extends NotificationListenerService {
             return;
         }
 
-        if (capabilityInfo == null) {
-            Log.d(TAG, "capabilityInfo is null");
-            return;
-        }
+        if (capabilityInfo == null) return;
 
         Set<Node> connectedNodes = capabilityInfo.getNodes();
-        if (connectedNodes.isEmpty()) {
-            Log.d(TAG, "No reachable nodes with sync capability!");
-            return;
-        }
+        if (connectedNodes.isEmpty()) return;
+
+        // 读取日志开关
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean isLogEnabled = sharedPreferences.getBoolean("enable_debug_log", false);
 
         for (Node node : connectedNodes) {
-            if (node.isNearby()) {
-                byte[] data = new byte[]{ (byte) dndState };   // 更简洁的写法
+            // 【核心修改】：已移除 isNearby() 判定，现在只要在 connectedNodes 里就发送
+            
+            if (isLogEnabled) {
+                Log.d("DNDSync_Debug", "发送信号至: " + node.getDisplayName() + 
+                      " | 状态: " + dndState + " | 实际Nearby=" + node.isNearby()); 
+            }
 
-                Task<Integer> sendTask = Wearable.getMessageClient(this)
-                        .sendMessage(node.getId(), DND_SYNC_MESSAGE_PATH, data);
+            byte[] data = new byte[1];
+            data[0] = (byte) dndState;
 
-                sendTask.addOnSuccessListener(integer -> 
-                    Log.d(TAG, "send successful! Node: " + node.getId()));
-
-                sendTask.addOnFailureListener(e -> 
-                    Log.d(TAG, "send failed! Node: " + node.getId()));
+            Task<Integer> sendTask = Wearable.getMessageClient(this)
+                    .sendMessage(node.getId(), DND_SYNC_MESSAGE_PATH, data);
+            
+            if (isLogEnabled) {
+                sendTask.addOnSuccessListener(v -> Log.d("DNDSync_Debug", "Google Play 服务已受理该请求"));
+                sendTask.addOnFailureListener(e -> Log.e("DNDSync_Debug", "发送失败: " + e.getMessage()));
             }
         }
     }
