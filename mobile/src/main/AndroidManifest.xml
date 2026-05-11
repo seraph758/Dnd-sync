@@ -2,7 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="de.rhaeus.dndsync">
 
-    <!-- 权限声明 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
@@ -22,18 +21,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Boot Receiver -->
-        <receiver 
-            android:name=".BootReceiver" 
-            android:exported="true"
-            android:directBootAware="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
-
+        <!-- Notification Listener Service -->
         <service
             android:name=".DNDNotificationService"
             android:exported="true"
@@ -43,6 +31,7 @@
             </intent-filter>
         </service>
 
+        <!-- Wear Message Listener Service -->
         <service
             android:name=".DNDSyncListenerService"
             android:enabled="true"
