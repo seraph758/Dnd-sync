@@ -1,3 +1,4 @@
+fork https://github.com/rhaeus/dnd-sync
 # DNDSync
 This App was developed to enable Do Not Disturb (DND) synchronization between my Pixel phone and the Galaxy Watch 4 
 since this option was only available if paired with a Samsung phone.
