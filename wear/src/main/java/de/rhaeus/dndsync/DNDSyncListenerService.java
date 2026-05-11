@@ -10,9 +10,11 @@ import android.os.Vibrator;
 import android.util.Log;
 import android.widget.Toast;
 
+
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
+import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.WearableListenerService;
 
@@ -78,7 +80,26 @@ public class DNDSyncListenerService extends WearableListenerService {
             super.onMessageReceived(messageEvent);
         }
     }
+    @Override
+    public void onCreate() {
+    super.onCreate();
 
+    Wearable.getCapabilityClient(this)
+            .addLocalCapability("dnd_sync")
+            .addOnSuccessListener(unused ->
+                    Log.d(TAG, "动态注册 capability 成功"))
+            .addOnFailureListener(e ->
+                    Log.e(TAG, "动态注册 capability 失败", e));
+}
+    @Override
+    public void onDestroy() {
+    super.onDestroy();
+
+    Wearable.getCapabilityClient(this)
+            .removeLocalCapability("dnd_sync");
+
+    Log.d(TAG, "capability 已移除");
+}
     private void toggleBedtimeMode() {
         DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
         if (serv == null) return;
@@ -122,4 +143,6 @@ public class DNDSyncListenerService extends WearableListenerService {
             v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
         }
     }
+
+
 }
