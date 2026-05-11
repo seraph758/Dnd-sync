@@ -1,40 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
     app:iconSpaceReserved="false">
 
-    <PreferenceCategory app:title="@string/sync_header"
+    <PreferenceCategory 
+        app:title="@string/sync_header"
         app:iconSpaceReserved="false">
-
         <SwitchPreferenceCompat
             app:key="dnd_sync_key"
-            app:iconSpaceReserved="false"
             app:defaultValue="true"
-            app:title="@string/sync_title" />
-
+            app:title="@string/sync_title"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="@string/permission_header"
+    <PreferenceCategory 
+        app:title="@string/permission_header"
         app:iconSpaceReserved="false">
-
-        <Preference app:key="dnd_permission_key"
-            app:iconSpaceReserved="false"
+        <Preference 
+            app:key="dnd_permission_key"
             app:title="@string/dnd_permission_title"
-            app:summary="@string/dnd_permission_not_allowed" />
-
+            app:summary="@string/dnd_permission_not_allowed"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="同步設置">
-        </PreferenceCategory>
-
-    <PreferenceCategory app:title="開發者選項">
+    <PreferenceCategory 
+        app:title="開發者選項"
+        app:iconSpaceReserved="false">
         <SwitchPreferenceCompat
             app:key="enable_debug_log"
             app:title="啟用調試日誌"
             app:summary="在 Logcat 中輸出同步詳細信息（Logfox 可查）"
-            app:defaultValue="false" />
+            app:defaultValue="false"
+            app:iconSpaceReserved="false" />
     </PreferenceCategory>
-
-    </PreferenceScreen>
-
-
 
 </PreferenceScreen>
