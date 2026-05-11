@@ -44,13 +44,11 @@ public class DNDNotificationService extends NotificationListenerService {
         SharedPreferences prefs =
                 PreferenceManager.getDefaultSharedPreferences(this);
 
-        if (prefs.getBoolean("enable_debug_log", false)) {
-            Log.d("DNDSync_Debug",
-                    "服务已连接 - 当前 DND 状态: " + currentFilter);
-        }
-
         if (prefs.getBoolean("dnd_sync_key", true)) {
-            Log.d(TAG, "onListenerConnected -> 发送初始同步");
+
+            Log.d(TAG, "启动初始同步 + handshake");
+
+            forceHandshake();
             new Thread(() -> sendDNDSync(currentFilter)).start();
         }
     }
@@ -59,7 +57,6 @@ public class DNDNotificationService extends NotificationListenerService {
     public void onListenerDisconnected() {
         super.onListenerDisconnected();
 
-        Log.d(TAG, "listener disconnected");
         running = false;
 
         try {
@@ -75,7 +72,6 @@ public class DNDNotificationService extends NotificationListenerService {
         Log.d(TAG, "FILTER CHANGED: " + interruptionFilter);
 
         if (DNDSyncListenerService.isInternalUpdate) {
-            Log.d(TAG, "内部更新拦截");
             return;
         }
 
@@ -84,63 +80,81 @@ public class DNDNotificationService extends NotificationListenerService {
 
         if (prefs.getBoolean("dnd_sync_key", true)) {
 
-            Log.d(TAG, "准备发送 DND 同步");
-
             new Thread(() ->
                     sendDNDSync(interruptionFilter)
             ).start();
         }
     }
 
+    // =========================
+    // 同步核心逻辑
+    // =========================
     private void sendDNDSync(int dndState) {
 
-        Log.d(TAG, "sendDNDSync called: " + dndState);
-
-        CapabilityInfo capabilityInfo;
+        Log.d(TAG, "开始同步流程，状态值: " + dndState);
 
         try {
-            capabilityInfo = Tasks.await(
+
+            Set<Node> nodes = Tasks.await(
+                    Wearable.getNodeClient(this)
+                            .getConnectedNodes()
+            );
+
+            if (nodes != null && !nodes.isEmpty()) {
+
+                Log.d(TAG, "NodeClient 发现节点: " + nodes.size());
+                sendToNodes(nodes, dndState);
+                return;
+
+            }
+
+            Log.d(TAG, "NodeClient 空，使用 Capability ALL");
+
+            CapabilityInfo capabilityInfo = Tasks.await(
                     Wearable.getCapabilityClient(this)
                             .getCapability(
                                     DND_SYNC_CAPABILITY_NAME,
-                                    CapabilityClient.FILTER_REACHABLE
+                                    CapabilityClient.FILTER_ALL
                             )
             );
-        } catch (ExecutionException | InterruptedException e) {
-            Log.e(TAG, "Error getting capability", e);
-            return;
-        }
 
-        if (capabilityInfo == null) return;
+            Set<Node> capNodes = capabilityInfo.getNodes();
 
-        Set<Node> connectedNodes = capabilityInfo.getNodes();
+            if (capNodes != null && !capNodes.isEmpty()) {
 
-        Log.d(TAG, "connectedNodes size = " + connectedNodes.size());
-
-        if (connectedNodes.isEmpty()) {
-            Log.d(TAG, "没有可用节点，跳过发送");
-            return;
-        }
-
-        SharedPreferences prefs =
-                PreferenceManager.getDefaultSharedPreferences(this);
-
-        boolean isLogEnabled =
-                prefs.getBoolean("enable_debug_log", false);
-
-        for (Node node : connectedNodes) {
-
-            if (isLogEnabled) {
-                Log.d("DNDSync_Debug",
-                        "发送信号至: " + node.getDisplayName()
-                                + " | 状态: " + dndState
-                                + " | nearby=" + node.isNearby());
+                Log.d(TAG, "Capability 发现节点: " + capNodes.size());
+                sendToNodes(capNodes, dndState);
+                return;
             }
 
-            byte[] data = new byte[1];
-            data[0] = (byte) dndState;
+            Log.e(TAG, "无节点，执行 handshake");
+            forceHandshake();
 
-            Task<Integer> sendTask =
+        } catch (Exception e) {
+            Log.e(TAG, "同步失败", e);
+        }
+    }
+
+    // =========================
+    // 发送
+    // =========================
+    private void sendToNodes(Set<Node> nodes, int dndState) {
+
+        if (nodes == null || nodes.isEmpty()) {
+            Log.d(TAG, "sendToNodes 空节点");
+            return;
+        }
+
+        byte[] data = new byte[]{(byte) dndState};
+
+        for (Node node : nodes) {
+
+            Log.d(TAG,
+                    "发送 -> " + node.getDisplayName()
+                            + " nearby=" + node.isNearby()
+                            + " state=" + dndState);
+
+            Task<Integer> task =
                     Wearable.getMessageClient(this)
                             .sendMessage(
                                     node.getId(),
@@ -148,15 +162,45 @@ public class DNDNotificationService extends NotificationListenerService {
                                     data
                             );
 
-            if (isLogEnabled) {
-                sendTask.addOnSuccessListener(
-                        v -> Log.d("DNDSync_Debug", "发送成功")
+            task.addOnSuccessListener(v ->
+                    Log.d(TAG, "发送成功 -> " + node.getDisplayName()));
+
+            task.addOnFailureListener(e ->
+                    Log.e(TAG, "发送失败 -> " + node.getDisplayName()));
+        }
+    }
+
+    // =========================
+    // handshake 唤醒
+    // =========================
+    private void forceHandshake() {
+
+        new Thread(() -> {
+            try {
+
+                Log.d(TAG, "执行 handshake");
+
+                Set<Node> nodes = Tasks.await(
+                        Wearable.getNodeClient(this)
+                                .getConnectedNodes()
                 );
 
-                sendTask.addOnFailureListener(
-                        e -> Log.e("DNDSync_Debug", "发送失败: " + e.getMessage())
-                );
+                for (Node node : nodes) {
+
+                    Wearable.getMessageClient(this)
+                            .sendMessage(
+                                    node.getId(),
+                                    "/handshake",
+                                    new byte[]{1}
+                            );
+
+                    Log.d(TAG,
+                            "Handshake -> " + node.getDisplayName());
+                }
+
+            } catch (Exception e) {
+                Log.e(TAG, "Handshake失败", e);
             }
-        }
+        }).start();
     }
 }
