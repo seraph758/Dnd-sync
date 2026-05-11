@@ -3,6 +3,11 @@
     package="de.rhaeus.dndsync">
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -21,7 +26,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Notification Listener Service -->
         <service
             android:name=".DNDNotificationService"
             android:exported="true"
@@ -31,7 +35,6 @@
             </intent-filter>
         </service>
 
-        <!-- Wear Message Listener Service -->
         <service
             android:name=".DNDSyncListenerService"
             android:enabled="true"
