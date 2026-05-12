@@ -1,7 +1,4 @@
-    super.onCreate();
-
-    Wearable.getDataClient(this)
-            .addListener(this::onDataChanged);package de.rhaeus.dndsync;
+package de.rhaeus.dndsync;
 
 import android.app.NotificationManager;
 import android.content.Context;
@@ -11,191 +8,302 @@ import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
-import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.preference.PreferenceManager;
 
 import com.google.android.gms.wearable.DataClient;
 import com.google.android.gms.wearable.DataEvent;
 import com.google.android.gms.wearable.DataEventBuffer;
 import com.google.android.gms.wearable.DataMapItem;
-
-
-import androidx.annotation.NonNull;
-import androidx.preference.PreferenceManager;
-
-import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.MessageEvent;
+import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
 
-public class DNDSyncListenerService extends WearableListenerService {
-    private static final String TAG = "DNDSyncListenerService";
-    private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
+public class DNDSyncListenerService extends WearableListenerService
+        implements DataClient.OnDataChangedListener {
 
-    // 修改：縮短冷卻時間到 5000ms，提高反應靈敏度
+    private static final String TAG = "DNDSyncListenerService";
+
+    private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
+    private static final String DATA_PATH = "/dnd_state";
+
+    // 防止短时间循环触发
     private static long lastExecutionTime = 0;
-    private static final long COOLDOWN_MS = 5000; 
-    
+    private static final long COOLDOWN_MS = 5000;
+
+    // DataClient 数据最大有效时间
+    private static final long DATA_EXPIRE_MS = 15000;
+
     public static boolean isInternalUpdate = false;
-    private static final Handler handler = new Handler(android.os.Looper.getMainLooper());
+
+    private static final Handler handler =
+            new Handler(android.os.Looper.getMainLooper());
 
     @Override
-    public void onMessageReceived (@NonNull MessageEvent messageEvent) {
+    public void onCreate() {
+        super.onCreate();
+
+        // 动态注册 capability
+        Wearable.getCapabilityClient(this)
+                .addLocalCapability("dnd_sync")
+                .addOnSuccessListener(unused ->
+                        Log.d(TAG, "动态注册 capability 成功"))
+                .addOnFailureListener(e ->
+                        Log.e(TAG, "动态注册 capability 失败", e));
+
+        // 注册 DataClient listener
+        Wearable.getDataClient(this)
+                .addListener(this);
+
+        Log.d(TAG, "DataClient listener 已注册");
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+
+        Wearable.getCapabilityClient(this)
+                .removeLocalCapability("dnd_sync");
+
+        Wearable.getDataClient(this)
+                .removeListener(this);
+
+        Log.d(TAG, "listener 已移除");
+    }
+
+    // =========================================
+    // MessageClient 实时同步
+    // =========================================
+    @Override
+    public void onMessageReceived(@NonNull MessageEvent messageEvent) {
+
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "onMessageReceived: " + messageEvent);
         }
-        
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
-        if (messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
-            long currentTime = System.currentTimeMillis();
-            if (currentTime - lastExecutionTime < COOLDOWN_MS) {
-                Log.d(TAG, "還在冷卻期，忽略本次信號");
-                return;
-            }
-            lastExecutionTime = currentTime;
+        if (!messageEvent.getPath()
+                .equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
 
-            byte[] data = messageEvent.getData();
-            byte dndStatePhone = data[0];
-            NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            int filterState = mNotificationManager.getCurrentInterruptionFilter();
-            byte currentDndState = (byte) filterState;
-
-            if (dndStatePhone != currentDndState) {
-                if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-                    
-                    // 鎖定狀態 5 秒，防止模擬點擊觸發回傳死循環
-                    isInternalUpdate = true;
-                    handler.postDelayed(() -> {
-                        isInternalUpdate = false;
-                        Log.d(TAG, "鎖定解除，恢復狀態監聽");
-                    }, 5000); 
-
-                    if (prefs.getBoolean("vibrate_key", false)) { vibrate(); }
-
-                    if (prefs.getBoolean("bedtime_key", true)) {
-                        Log.d(TAG, "執行睡眠模式模擬點擊");
-                        toggleBedtimeMode(); 
-                        return; // 點擊後直接返回，不再調用系統 API
-                    }
-
-                    private void applyDndState(int state) {
-                        NotificationManager nm =
-                        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (nm.isNotificationPolicyAccessGranted()) {
-                        nm.setInterruptionFilter(state);
-                        Log.d(TAG, "DND更新成功: " + state);
-    }
-                }
-                    Log.d(TAG, "常規 API 勿擾模式設置完成");
-
-                } else {
-                    Log.d(TAG, "缺少勿擾模式訪問權限");
-                }
-            }
-        } else {
             super.onMessageReceived(messageEvent);
-        }
-    }
-    @Override
-    public void onCreate() {
-    super.onCreate();
-
-    Wearable.getCapabilityClient(this)
-            .addLocalCapability("dnd_sync")
-            .addOnSuccessListener(unused ->
-                    Log.d(TAG, "动态注册 capability 成功"))
-            .addOnFailureListener(e ->
-                    Log.e(TAG, "动态注册 capability 失败", e));
-}
-
-    @Override
-    public void onCreate() {
-
-
-    Log.d(TAG, "DataClient listener 已注册");
-}
-
-
-    private void onDataChanged(DataEventBuffer buffer) {
-
-    for (DataEvent event : buffer) {
-
-        if (event.getType() != DataEvent.TYPE_CHANGED) continue;
-
-        String path = event.getDataItem().getUri().getPath();
-
-        if (!"/dnd_state".equals(path)) continue;
-
-        DataMapItem mapItem = DataMapItem.fromDataItem(event.getDataItem());
-
-        int dndState = mapItem.getDataMap().getInt("dnd");
-        long time = mapItem.getDataMap().getLong("time");
-
-        long age = System.currentTimeMillis() - time;
-
-        // ===== 过期过滤（关键）=====
-        if (age > 15000) {
-            Log.d(TAG, "丢弃过期数据: " + age + "ms");
             return;
         }
 
-        Log.d(TAG, "DataClient同步 DND: " + dndState);
+        long currentTime = System.currentTimeMillis();
+
+        if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+            Log.d(TAG, "還在冷卻期，忽略本次信號");
+            return;
+        }
+
+        lastExecutionTime = currentTime;
+
+        byte[] data = messageEvent.getData();
+
+        if (data == null || data.length == 0) {
+            Log.d(TAG, "MessageClient 数据为空");
+            return;
+        }
+
+        int dndState = data[0];
+
+        Log.d(TAG, "收到 MessageClient DND: " + dndState);
 
         applyDndState(dndState);
     }
-    }
-    
+
+    // =========================================
+    // DataClient 兜底同步
+    // =========================================
     @Override
-    public void onDestroy() {
-    super.onDestroy();
+    public void onDataChanged(@NonNull DataEventBuffer buffer) {
 
-    Wearable.getCapabilityClient(this)
-            .removeLocalCapability("dnd_sync");
+        for (DataEvent event : buffer) {
 
-    Log.d(TAG, "capability 已移除");
-}
+            if (event.getType() != DataEvent.TYPE_CHANGED)
+                continue;
+
+            String path =
+                    event.getDataItem().getUri().getPath();
+
+            if (!DATA_PATH.equals(path))
+                continue;
+
+            DataMapItem mapItem =
+                    DataMapItem.fromDataItem(event.getDataItem());
+
+            int dndState =
+                    mapItem.getDataMap().getInt("dnd");
+
+            long time =
+                    mapItem.getDataMap().getLong("time");
+
+            long age =
+                    System.currentTimeMillis() - time;
+
+            // 超时数据直接丢弃
+            if (age > DATA_EXPIRE_MS) {
+                Log.d(TAG,
+                        "丢弃过期 DataClient 数据: "
+                                + age + "ms");
+                continue;
+            }
+
+            Log.d(TAG,
+                    "收到 DataClient DND: "
+                            + dndState);
+
+            applyDndState(dndState);
+        }
+    }
+
+    // =========================================
+    // 统一 DND 应用逻辑
+    // =========================================
+    private void applyDndState(int dndState) {
+
+        NotificationManager mNotificationManager =
+                (NotificationManager)
+                        getSystemService(Context.NOTIFICATION_SERVICE);
+
+        if (mNotificationManager == null) {
+            Log.d(TAG, "NotificationManager 为 null");
+            return;
+        }
+
+        if (!mNotificationManager
+                .isNotificationPolicyAccessGranted()) {
+
+            Log.d(TAG, "缺少勿扰模式访问权限");
+            return;
+        }
+
+        int currentFilter =
+                mNotificationManager.getCurrentInterruptionFilter();
+
+        if (currentFilter == dndState) {
+            Log.d(TAG, "DND 状态一致，无需同步");
+            return;
+        }
+
+        // 防止回传死循环
+        isInternalUpdate = true;
+
+        handler.postDelayed(() -> {
+            isInternalUpdate = false;
+            Log.d(TAG, "内部更新锁定解除");
+        }, 5000);
+
+        SharedPreferences prefs =
+                PreferenceManager.getDefaultSharedPreferences(this);
+
+        // 震动反馈
+        if (prefs.getBoolean("vibrate_key", false)) {
+            vibrate();
+        }
+
+        // 睡眠模式模拟点击
+        if (prefs.getBoolean("bedtime_key", true)) {
+
+            Log.d(TAG, "执行睡眠模式模拟点击");
+
+            toggleBedtimeMode();
+
+            return;
+        }
+
+        // 普通 API 模式
+        mNotificationManager
+                .setInterruptionFilter(dndState);
+
+        Log.d(TAG,
+                "常规 API 勿扰模式设置完成: "
+                        + dndState);
+    }
+
+    // =========================================
+    // 睡眠模式模拟点击
+    // =========================================
     private void toggleBedtimeMode() {
-        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-        if (serv == null) return;
+
+        DNDSyncAccessService serv =
+                DNDSyncAccessService.getSharedInstance();
+
+        if (serv == null) {
+            Log.d(TAG, "AccessibilityService 未连接");
+            return;
+        }
 
         new Thread(() -> {
-            try {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                PowerManager.WakeLock wakeLock = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "dnd:sync");
-                
-                // 1. 唤醒
-                wakeLock.acquire(5000L);
-                
-                // 2. 关键：等待屏幕完全点亮，否则手势会失效
-                Thread.sleep(1000); 
 
-                // 3. 调用被证明有效的 swipeDown
-                serv.swipeDown(); 
+            PowerManager.WakeLock wakeLock = null;
+
+            try {
+
+                PowerManager pm =
+                        (PowerManager)
+                                getSystemService(Context.POWER_SERVICE);
+
+                wakeLock = pm.newWakeLock(
+                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK
+                                | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                        "dnd:sync"
+                );
+
+                // 唤醒屏幕
+                wakeLock.acquire(5000L);
+
+                Thread.sleep(1000);
+
+                // 下拉控制中心
+                serv.swipeDown();
+
                 Log.d(TAG, "执行手势下拉");
 
-                // 4. 等待面板拉下来的动画完成
                 Thread.sleep(1200);
 
-                // 5. 点击图标
+                // 点击按钮
                 serv.clickIcon1_2();
-                
-                // 6. 结束返回
+
                 Thread.sleep(800);
+
+                // 返回
                 serv.goBack();
 
-                if (wakeLock.isHeld()) wakeLock.release();
             } catch (Exception e) {
-                e.printStackTrace();
+
+                Log.e(TAG,
+                        "toggleBedtimeMode 异常",
+                        e);
+
+            } finally {
+
+                if (wakeLock != null
+                        && wakeLock.isHeld()) {
+
+                    wakeLock.release();
+                }
             }
         }).start();
     }
 
+    // =========================================
+    // 震动
+    // =========================================
     private void vibrate() {
-        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+
+        Vibrator v =
+                (Vibrator)
+                        getSystemService(Context.VIBRATOR_SERVICE);
+
         if (v != null) {
-            v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
+
+            v.vibrate(
+                    VibrationEffect.createOneShot(
+                            50,
+                            VibrationEffect.DEFAULT_AMPLITUDE
+                    )
+            );
         }
     }
-
-
-}
+        }
