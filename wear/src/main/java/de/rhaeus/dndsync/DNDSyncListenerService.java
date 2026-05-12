@@ -1,4 +1,7 @@
-package de.rhaeus.dndsync;
+    super.onCreate();
+
+    Wearable.getDataClient(this)
+            .addListener(this::onDataChanged);package de.rhaeus.dndsync;
 
 import android.app.NotificationManager;
 import android.content.Context;
@@ -9,6 +12,11 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
 import android.widget.Toast;
+
+import com.google.android.gms.wearable.DataClient;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataMapItem;
 
 
 import androidx.annotation.NonNull;
@@ -69,7 +77,14 @@ public class DNDSyncListenerService extends WearableListenerService {
                         return; // 點擊後直接返回，不再調用系統 API
                     }
 
-                    mNotificationManager.setInterruptionFilter((int)dndStatePhone);
+                    private void applyDndState(int state) {
+                        NotificationManager nm =
+                        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm.isNotificationPolicyAccessGranted()) {
+                        nm.setInterruptionFilter(state);
+                        Log.d(TAG, "DND更新成功: " + state);
+    }
+                }
                     Log.d(TAG, "常規 API 勿擾模式設置完成");
 
                 } else {
@@ -91,6 +106,44 @@ public class DNDSyncListenerService extends WearableListenerService {
             .addOnFailureListener(e ->
                     Log.e(TAG, "动态注册 capability 失败", e));
 }
+
+    @Override
+    public void onCreate() {
+
+
+    Log.d(TAG, "DataClient listener 已注册");
+}
+
+
+    private void onDataChanged(DataEventBuffer buffer) {
+
+    for (DataEvent event : buffer) {
+
+        if (event.getType() != DataEvent.TYPE_CHANGED) continue;
+
+        String path = event.getDataItem().getUri().getPath();
+
+        if (!"/dnd_state".equals(path)) continue;
+
+        DataMapItem mapItem = DataMapItem.fromDataItem(event.getDataItem());
+
+        int dndState = mapItem.getDataMap().getInt("dnd");
+        long time = mapItem.getDataMap().getLong("time");
+
+        long age = System.currentTimeMillis() - time;
+
+        // ===== 过期过滤（关键）=====
+        if (age > 15000) {
+            Log.d(TAG, "丢弃过期数据: " + age + "ms");
+            return;
+        }
+
+        Log.d(TAG, "DataClient同步 DND: " + dndState);
+
+        applyDndState(dndState);
+    }
+    }
+    
     @Override
     public void onDestroy() {
     super.onDestroy();
