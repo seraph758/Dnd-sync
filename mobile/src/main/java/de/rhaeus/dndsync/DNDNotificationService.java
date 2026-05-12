@@ -73,37 +73,47 @@ public class DNDNotificationService extends NotificationListenerService {
     }
 
     private void sendDNDSync(int dndState) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean isLogEnabled = prefs.getBoolean("enable_debug_log", false);
-        
-        if (isLogEnabled) {
-            Log.d("DNDSync_Debug", ">>> 启动同步流程，目标状态码: " + dndState);
-        }
 
-        try {
-            // 1. 优先获取所有物理连接节点
-            List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
+    Log.d(TAG, "开始同步 DND: " + dndState);
 
-            if (nodes != null && !nodes.isEmpty()) {
-                sendToNodes(nodes, dndState, isLogEnabled);
-            } else {
-                // 2. 物理节点为空，尝试通过 Capability 查找 (FILTER_ALL 范围更大)
-                CapabilityInfo capabilityInfo = Tasks.await(
-                        Wearable.getCapabilityClient(this)
-                                .getCapability(DND_SYNC_CAPABILITY_NAME, CapabilityClient.FILTER_ALL));
-                
-                Set<Node> capNodes = capabilityInfo.getNodes();
-                if (capNodes != null && !capNodes.isEmpty()) {
-                    if (isLogEnabled) Log.d("DNDSync_Debug", "NodeClient为空，通过Capability发现设备");
-                    sendToNodes(capNodes, dndState, isLogEnabled);
+    byte[] data = new byte[]{(byte) dndState};
+
+    // ===== 1. 先尝试 MessageClient（实时）=====
+    Wearable.getNodeClient(this)
+            .getConnectedNodes()
+            .addOnSuccessListener(nodes -> {
+
+                if (nodes != null && !nodes.isEmpty()) {
+
+                    Log.d(TAG, "MessageClient 节点数量: " + nodes.size());
+
+                    for (Node node : nodes) {
+
+                        Wearable.getMessageClient(this)
+                                .sendMessage(
+                                        node.getId(),
+                                        DND_SYNC_MESSAGE_PATH,
+                                        data
+                                )
+                                .addOnSuccessListener(v ->
+                                        Log.d(TAG, "实时发送成功: " + node.getDisplayName()))
+                                .addOnFailureListener(e -> {
+
+                                    Log.e(TAG, "实时发送失败，降级DataClient: " + e.getMessage());
+
+                                    // ===== 2. fallback 到 DataClient =====
+                                    sendToDataLayer(dndState);
+                                });
+                    }
                 } else {
-                    if (isLogEnabled) Log.e("DNDSync_Debug", "未发现任何可用设备，尝试握手唤醒");
-                    forceHandshake();
+                    Log.d(TAG, "无节点，直接走 DataClient");
+                    sendToDataLayer(dndState);
                 }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "同步异常: " + e.getMessage());
-        }
+            })
+            .addOnFailureListener(e -> {
+                Log.e(TAG, "NodeClient失败，使用DataClient", e);
+                sendToDataLayer(dndState);
+            });
     }
 
     private void sendToNodes(Collection<Node> nodes, int dndState, boolean isLogEnabled) {
@@ -130,6 +140,28 @@ public class DNDNotificationService extends NotificationListenerService {
         }
     }
 
+
+    private void sendToDataLayer(int dndState) {
+
+    PutDataMapRequest request =
+            PutDataMapRequest.create("/dnd_state");
+
+    request.getDataMap().putInt("dnd", dndState);
+    request.getDataMap().putLong("time", System.currentTimeMillis());
+
+    PutDataRequest putRequest = request.asPutDataRequest();
+    putRequest.setUrgent();
+
+    Wearable.getDataClient(this)
+            .putDataItem(putRequest)
+            .addOnSuccessListener(uri ->
+                    Log.d(TAG, "DataClient 写入成功: " + uri))
+            .addOnFailureListener(e ->
+                    Log.e(TAG, "DataClient失败", e));
+    }
+
+
+    
     private void forceHandshake() {
         new Thread(() -> {
             try {
