@@ -1,5 +1,6 @@
 package de.rhaeus.dndsync;
 
+
 import android.content.ComponentName;
 import android.content.SharedPreferences;
 import android.service.notification.NotificationListenerService;
