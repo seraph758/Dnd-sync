@@ -6,6 +6,9 @@ import android.content.SharedPreferences;
 import android.service.notification.NotificationListenerService;
 import android.util.Log;
 
+import android.os.Handler;
+import android.os.Looper;
+
 import androidx.preference.PreferenceManager;
 
 import com.google.android.gms.tasks.Tasks;
@@ -29,9 +32,18 @@ public class DNDNotificationService extends NotificationListenerService {
 
     @Override
     public void onCreate() {
-        super.onCreate();
-        Log.d(TAG, "SERVICE CREATED");
-    }
+    super.onCreate();
+    Log.d(TAG, "SERVICE CREATED");
+    
+    // 延遲 2 秒「踢」一下，給 GMS 一點點啟動緩衝時間
+    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+        Log.d(TAG, "正在發送 PING 嘗試喚醒 GMS 節點掃描...");
+        Wearable.getMessageClient(this)
+            .sendMessage("SELF", "/ping", new byte[0])
+            .addOnFailureListener(e -> Log.d(TAG, "PING 喚醒嘗試完成（失敗屬正常，重點是觸發了掃描）"));
+    }, 2000);
+}
+
 
     @Override
     public void onListenerConnected() {
@@ -279,6 +291,12 @@ public class DNDNotificationService extends NotificationListenerService {
     // 强制唤醒 DataLayer
     // =====================================================
     private void forceHandshake() {
+
+        PutDataMapRequest dataMap = PutDataMapRequest.create("/handshake");
+        dataMap.getDataMap().putLong("time", System.currentTimeMillis());
+        PutDataRequest request = dataMap.asPutDataRequest();
+        request.setUrgent(); // <--- 這個非常重要，它會告訴系統「立刻同步，不要等待」
+        Wearable.getDataClient(this).putDataItem(request);
 
         new Thread(() -> {
 
