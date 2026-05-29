@@ -3,7 +3,7 @@ package de.rhaeus.dndsync;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
-[span_20](start_span)import android.os.Bundle;[span_20](end_span)
+import android.os.Bundle;
 import android.provider.Settings;
 import android.widget.Toast;
 
@@ -21,26 +21,26 @@ public class MainFragment extends PreferenceFragmentCompat {
     private Preference accPref;
     private Preference connectivityPref;
     private SwitchPreferenceCompat bedtimePref;
-    
+
     private CapabilityClient.OnCapabilityChangedListener capabilityChangedListener;
 
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
-        [span_21](start_span)setPreferencesFromResource(R.xml.root_preferences, rootKey);[span_21](end_span)
+        setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
         // 1. 獲取 XML 中的組件
-        [span_22](start_span)dndPref = findPreference("dnd_permission_key");[span_22](end_span)
+        dndPref = findPreference("dnd_permission_key");
         accPref = findPreference("acc_permission_key");
-        [span_23](start_span)bedtimePref = findPreference("bedtime_key");[span_23](end_span)
+        bedtimePref = findPreference("bedtime_key");
         connectivityPref = findPreference("connectivity_state_key");
 
         // 2. 設置“勿擾訪問權限”點擊事件
         if (dndPref != null) {
             dndPref.setOnPreferenceClickListener(preference -> {
                 if (!checkDNDPermission()) {
-                    [span_24](start_span)Toast.makeText(getContext(), "請在手機端或通過 ADB 授予勿擾權限", Toast.LENGTH_LONG).show();[span_24](end_span)
+                    Toast.makeText(getContext(), "請在手機端或通過 ADB 授予勿擾權限", Toast.LENGTH_LONG).show();
                 }
-                [span_25](start_span)return true;[span_25](end_span)
+                return true;
             });
         }
 
@@ -50,7 +50,7 @@ public class MainFragment extends PreferenceFragmentCompat {
                 if (!checkAccessibilityService()) {
                     openAccessibility();
                 }
-                [span_26](start_span)return true;[span_26](end_span)
+                return true;
             });
         }
 
@@ -60,9 +60,9 @@ public class MainFragment extends PreferenceFragmentCompat {
 
     @Override
     public void onResume() {
-        [span_27](start_span)super.onResume();[span_27](end_span)
-        [span_28](start_span)checkDNDPermission();[span_28](end_span)
-        [span_29](start_span)checkAccessibilityService();[span_29](end_span)
+        super.onResume();
+        checkDNDPermission();
+        checkAccessibilityService();
         registerConnectivityListener();
     }
 
@@ -74,38 +74,38 @@ public class MainFragment extends PreferenceFragmentCompat {
 
     private boolean checkAccessibilityService() {
         DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-        [span_30](start_span)boolean connected = (serv != null);[span_30](end_span)
-        
+        boolean connected = (serv != null);
+
         if (accPref != null) {
-            [span_31](start_span)accPref.setSummary(connected ? "權限已開啟" : "未開啟，點擊去設置");[span_31](end_span)
+            accPref.setSummary(connected ? "權限已開啟" : "未開啟，點擊去設置");
         }
-        
+
         if (bedtimePref != null) {
-            [span_32](start_span)bedtimePref.setEnabled(connected);[span_32](end_span)
+            bedtimePref.setEnabled(connected);
             if (!connected) {
-                [span_33](start_span)bedtimePref.setChecked(false);[span_33](end_span)
+                bedtimePref.setChecked(false);
             }
         }
-        [span_34](start_span)return connected;[span_34](end_span)
+        return connected;
     }
 
     private boolean checkDNDPermission() {
         NotificationManager mNotificationManager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
-        [span_35](start_span)boolean allowed = (mNotificationManager != null && mNotificationManager.isNotificationPolicyAccessGranted());[span_35](end_span)
-        
+        boolean allowed = (mNotificationManager != null && mNotificationManager.isNotificationPolicyAccessGranted());
+
         if (dndPref != null) {
-            [span_36](start_span)dndPref.setSummary(allowed ? "權限已獲得" : "點擊檢查權限狀態");[span_36](end_span)
+            dndPref.setSummary(allowed ? "權限已獲得" : "點擊檢查權限狀態");
         }
-        [span_37](start_span)return allowed;[span_37](end_span)
+        return allowed;
     }
 
     private void openAccessibility() {
         try {
             Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
-            [span_38](start_span)intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);[span_38](end_span)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
         } catch (Exception e) {
-            [span_39](start_span)Toast.makeText(getContext(), "無法跳轉，請在手錶設置-輔助功能中手動開啟", Toast.LENGTH_SHORT).show();[span_39](end_span)
+            Toast.makeText(getContext(), "無法跳轉，請在手錶設置-輔助功能中手動開啟", Toast.LENGTH_SHORT).show();
         }
     }
 
