@@ -12,58 +12,66 @@ if (signingFile.exists()) {
 def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
 
 android {
-    compileSdk 31
+    // 統一推進到 34，與根目錄和手機端完全對齊
+    compileSdk 34
 
     defaultConfig {
         applicationId "de.rhaeus.dndsync"
         minSdk 30
-        targetSdk 31
+        targetSdk 34 // 建議推進到 34，避免高版本系統相容性警告
 
         versionCode githubRunNumber.toInteger()
         versionName "1.0.${githubRunNumber}"
     }
 
     signingConfigs {
-    release {
-        // 增加安全读取逻辑
-        if (signingProps['STORE_FILE'] != null) {
-            storeFile file(signingProps['STORE_FILE'])
-            storePassword signingProps['STORE_PASSWORD']
-            keyAlias signingProps['KEY_ALIAS']
-            keyPassword signingProps['KEY_PASSWORD']
+        release {
+            if (signingProps['STORE_FILE'] != null) {
+                storeFile file(signingProps['STORE_FILE'])
+                storePassword signingProps['STORE_PASSWORD']
+                keyAlias signingProps['KEY_ALIAS']
+                keyPassword signingProps['KEY_PASSWORD']
+            }
         }
     }
-}
 
-buildTypes {
-    release {
-        // 只有配置了签名才应用，否则保持未签名状态并报错提醒
-        if (signingProps['STORE_FILE'] != null) {
-            signingConfig signingConfigs.release
-        } else {
-            println "CRITICAL WARNING: signing.properties is missing or STORE_FILE is null!"
+    buildTypes {
+        release {
+            if (signingProps['STORE_FILE'] != null) {
+                signingConfig signingConfigs.release
+            } else {
+                println "CRITICAL WARNING: signing.properties is missing or STORE_FILE is null!"
+            }
+            
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
-        
-        minifyEnabled false
-        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
-}
-
 
     buildFeatures {
         viewBinding true
     }
+
+    // 關鍵： compileSdk 34 環境必須要求 Java 17
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
 }
 
 dependencies {
-    implementation 'com.google.android.gms:play-services-wearable:17.1.0'
+    // 徹底移除 1.4.0 等不支援 M3 的舊庫，全部更新為對齊手機端的現代穩定版
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.preference:preference:1.2.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
 
+    // 手錶端核心通訊組件（升級到 19.0.0 以配合雙端檢測）
+    implementation 'com.google.android.gms:play-services-wearable:19.0.0'
+
+    // 保留原本手錶特有的佈局庫
+    implementation 'androidx.wear:wear:1.3.0'
     implementation 'androidx.percentlayout:percentlayout:1.0.0'
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation 'androidx.recyclerview:recyclerview:1.2.1'
-    implementation 'androidx.wear:wear:1.1.0'
-    implementation 'androidx.preference:preference:1.1.1'
-    implementation 'androidx.appcompat:appcompat:1.3.1'
-    implementation 'com.google.android.material:material:1.4.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.0'
 }
