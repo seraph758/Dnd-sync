@@ -5,9 +5,10 @@
         <item name="colorSurface">#F8F9FC</item>
         <item name="colorOnSurface">#1A1C1E</item>
 
-        <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
-        <item name="preferenceStyle">@style/Preference.Material3</item>
-        <item name="switchPreferenceCompatStyle">@style/Preference.Material3.SwitchPreferenceCompat</item>
-        <item name="checkBoxPreferenceStyle">@style/Preference.Material3.CheckBoxPreference</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
+        
+        <item name="preferenceStyle">@style/Preference.Material.DialogPreference.MaterialComponents</item>
+        <item name="switchPreferenceCompatStyle">@style/Preference.SwitchPreferenceCompat.Material</item>
+        <item name="checkBoxPreferenceStyle">@style/Preference.CheckBoxPreference.Material</item>
     </style>
 </resources>
