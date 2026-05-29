@@ -2,47 +2,53 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
+        android:title="連線狀態"
+        app:iconSpaceReserved="false">
+        <Preference
+            android:key="connectivity_state_key"
+            android:title="手機連線狀態"
+            android:summary="正在檢測與手機的連接..."
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="@string/sync_header"
         app:iconSpaceReserved="false">
-
         <SwitchPreferenceCompat
-            android:defaultValue="true"
+            [span_14](start_span)android:defaultValue="true"[span_14](end_span)
             android:key="dnd_sync_key"
-            android:title="同步勿扰模式"
+            android:title="同步勿擾模式"
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="bedtime_key"
-            android:title="就寝模式同步 (模拟点击)"
-            android:summary="开启时将模拟点击手表的就寝模式"
+            [span_15](start_span)android:title="就寝模式同步 (模擬點擊)"[span_15](end_span)
+            android:summary="開啟時將模擬點擊手錶的就寝模式"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
     <PreferenceCategory
         android:title="@string/permission_header"
         app:iconSpaceReserved="false">
-
         <Preference
-            android:key="dnd_permission_key"
+            [span_16](start_span)android:key="dnd_permission_key"[span_16](end_span)
             android:title="@string/dnd_permission_title"
-            android:summary="勿扰访问权限"
+            android:summary="勿擾訪問權限"
             app:iconSpaceReserved="false" />
 
         <Preference
             android:key="acc_permission_key"
-            android:title="辅助功能权限"
-            android:summary="模拟点击需要此权限"
+            android:title="輔助功能權限"
+            android:summary="模擬點擊需要此權限"
             app:iconSpaceReserved="false" />
-            
     </PreferenceCategory>
 
     <PreferenceCategory
         android:title="@string/other_header"
         app:iconSpaceReserved="false">
-
         <SwitchPreferenceCompat
-            android:defaultValue="false"
+            [span_17](start_span)android:defaultValue="false"[span_17](end_span)
             android:key="vibrate_key"
             android:title="@string/vibrate_title"
             app:iconSpaceReserved="false" />
