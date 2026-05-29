@@ -6,17 +6,12 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // 強制將 Android 插件升級到 8.0.2，以完美相容 Gradle 8.0 和 Java 17
+        // 保持 8.0.2 版本以适配 Gradle 8.0
         classpath 'com.android.tools.build:gradle:8.0.2'
     }
 }
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+// 彻底删除或不再使用 allprojects 块，避免与 settings.gradle 冲突
 
 task clean(type: Delete) {
     delete rootProject.buildDir
