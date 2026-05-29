@@ -14,8 +14,5 @@
             #1A1C1E
         </item>
         
-        <item name="preferenceTheme">
-            @style/PreferenceThemeOverlay.v14.MaterialComponents
-        </item>
-    </style>
+        </style>
 </resources>
