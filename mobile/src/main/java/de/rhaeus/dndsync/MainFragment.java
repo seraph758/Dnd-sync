@@ -40,7 +40,7 @@ public class MainFragment extends PreferenceFragmentCompat {
         }
         checkDNDPermission();
 
-        // 2. 初始化連線監聽：讓手機主動去尋找手錶的身份暗號 "wear_dnd_sync"
+        // 2. 初始化連線監聽：讓手機主動去尋找手錶的身份暗號 "dnd_sync"
         initConnectivityCheck();
     }
 
@@ -88,7 +88,7 @@ public class MainFragment extends PreferenceFragmentCompat {
 
         // 異步查詢當前有沒有活著的手錶節點
         Wearable.getCapabilityClient(getContext())
-                .getCapability("wear_dnd_sync", CapabilityClient.FILTER_REACHABLE)
+                .getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE)
                 .addOnSuccessListener(capabilityInfo -> updateConnectionUI(!capabilityInfo.getNodes().isEmpty()));
 
         // 當藍牙斷開或重新連上時觸發的監聽器
@@ -97,7 +97,7 @@ public class MainFragment extends PreferenceFragmentCompat {
 
     private void registerConnectivityListener() {
         if (getContext() != null && capabilityChangedListener != null) {
-            Wearable.getCapabilityClient(getContext()).addListener(capabilityChangedListener, "wear_dnd_sync");
+            Wearable.getCapabilityClient(getContext()).addListener(capabilityChangedListener, "dnd_sync");
         }
     }
 
