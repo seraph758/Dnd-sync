@@ -68,7 +68,10 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0' // 提供 Theme.Material3
     implementation 'androidx.preference:preference:1.2.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.preference:preference:1.2.1'
 
+    // ⚠️ 順便檢查是否已有 Material 3 的依賴庫，如果沒有也請補上
+    implementation 'com.google.android.material:material:1.12.0'
     // 移植雙端檢測與通訊必備的 Google 穿戴裝置服務
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 
