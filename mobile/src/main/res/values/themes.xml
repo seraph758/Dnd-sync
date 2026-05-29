@@ -2,7 +2,7 @@
 <resources>
     <style 
         name="Theme.DNDSync" 
-        parent="Theme.Material3.DayNight.NoActionBar">
+        parent="Theme.Material3.DayNight.NoActionBar.Bridge">
         
         <item name="colorPrimary">
             @color/primaryColor
@@ -13,6 +13,5 @@
         <item name="colorOnSurface">
             #1A1C1E
         </item>
-        
-        </style>
+    </style>
 </resources>
