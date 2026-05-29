@@ -1,7 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.DNDSync" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">?android:attr/colorAccent</item>
-        <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
+        <item name="colorPrimary">@color/md_theme_light_primary</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSurface">@color/md_theme_light_surface</item>
+        <item name="colorOnSurface">@color/md_theme_light_onSurface</item>
+        
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.MaterialComponents</item>
     </style>
 </resources>
