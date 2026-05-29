@@ -15,7 +15,7 @@
         android:title="@string/sync_header"
         app:iconSpaceReserved="false">
         <SwitchPreferenceCompat
-            [span_14](start_span)android:defaultValue="true"[span_14](end_span)
+            android:defaultValue="true"
             android:key="dnd_sync_key"
             android:title="同步勿擾模式"
             app:iconSpaceReserved="false" />
@@ -23,7 +23,7 @@
         <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="bedtime_key"
-            [span_15](start_span)android:title="就寝模式同步 (模擬點擊)"[span_15](end_span)
+            android:title="就寝模式同步 (模擬點擊)"
             android:summary="開啟時將模擬點擊手錶的就寝模式"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
@@ -32,7 +32,7 @@
         android:title="@string/permission_header"
         app:iconSpaceReserved="false">
         <Preference
-            [span_16](start_span)android:key="dnd_permission_key"[span_16](end_span)
+            android:key="dnd_permission_key"
             android:title="@string/dnd_permission_title"
             android:summary="勿擾訪問權限"
             app:iconSpaceReserved="false" />
@@ -48,7 +48,7 @@
         android:title="@string/other_header"
         app:iconSpaceReserved="false">
         <SwitchPreferenceCompat
-            [span_17](start_span)android:defaultValue="false"[span_17](end_span)
+            android:defaultValue="false"
             android:key="vibrate_key"
             android:title="@string/vibrate_title"
             app:iconSpaceReserved="false" />
