@@ -3,7 +3,7 @@
 
     <!-- Base application theme -->
     <style name="Theme.DNDSync" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Primary brand colors -->
+        <!-- Primary colors -->
         <item name="colorPrimary">@color/primaryColor</item>
         <item name="colorOnPrimary">@color/primaryTextColor</item>
         <item name="colorPrimaryContainer">@color/primaryLightColor</item>
@@ -29,14 +29,8 @@
         <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
         <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
 
-        <!-- Preference compatibility -->
-        <!-- ⚠️ 这里引用官方存在的 Overlay，Material3 主题会自动生效 -->
+        <!-- Preference 兼容 -->
         <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
-
-        <!-- 可选：单独覆盖 Switch / Checkbox / Dialog 样式 -->
-        <item name="switchPreferenceCompatStyle">@style/Preference.SwitchPreferenceCompat.Material</item>
-        <item name="checkBoxPreferenceStyle">@style/Preference.CheckBoxPreference.Material</item>
-        <item name="preferenceStyle">@style/Preference.Material.DialogPreference.MaterialComponents</item>
     </style>
 
 </resources>
