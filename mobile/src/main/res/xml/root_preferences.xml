@@ -3,33 +3,42 @@
 
     <PreferenceCategory
         android:title="連線狀態"
-        app:iconSpaceReserved="false">
+        app:allowDividerAbove="false"
+        app:allowDividerBelow="true">
+
         <Preference
             android:key="connectivity_state_key"
             android:title="雙端連通狀態"
             android:summary="正在檢測與手錶的連接..."
             android:icon="@android:drawable/stat_sys_data_bluetooth"
-            app:iconSpaceReserved="false" />
+            app:iconSpaceReserved="true" />
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/sync_header"
-        app:iconSpaceReserved="false">
+        android:title="同步設定"
+        app:allowDividerAbove="true"
+        app:allowDividerBelow="true">
+
         <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="dnd_sync_key"
             android:title="同步勿擾模式"
-            app:iconSpaceReserved="false" />
+            android:summary="當手機開啟勿擾時，自動同步至手錶"
+            android:icon="@android:drawable/ic_lock_silent_mode"
+            app:iconSpaceReserved="true" />
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/permission_header"
-        app:iconSpaceReserved="false">
+        android:title="權限管理"
+        app:allowDividerAbove="true"
+        app:allowDividerBelow="false">
+
         <Preference
             android:key="dnd_permission_key"
             android:title="@string/dnd_permission_title"
-            android:summary="勿擾訪問權限"
-            app:iconSpaceReserved="false" />
+            android:summary="點擊授予勿擾訪問權限"
+            android:icon="@android:drawable/ic_menu_manage"
+            app:iconSpaceReserved="true" />
     </PreferenceCategory>
 
 </PreferenceScreen>
