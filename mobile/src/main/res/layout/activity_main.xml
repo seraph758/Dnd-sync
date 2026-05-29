@@ -16,6 +16,7 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
             app:title="DND Sync"
             app:titleCentered="false"
             app:titleTextAppearance="@style/TextAppearance.Material3.TitleLarge" />
