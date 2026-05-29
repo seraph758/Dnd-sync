@@ -12,12 +12,12 @@ if (signingFile.exists()) {
 def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
 
 android {
-    compileSdk 31
+    compileSdk 34
 
     defaultConfig {
         applicationId "de.rhaeus.dndsync"
-        minSdk 24
-        targetSdk 31
+        minSdk 26
+        targetSdk 34
 
         versionCode githubRunNumber.toInteger()
         versionName "1.0.${githubRunNumber}"
