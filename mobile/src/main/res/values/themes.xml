@@ -1,36 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-
-    <!-- Base application theme -->
+<resources>
     <style name="Theme.DNDSync" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Primary colors -->
         <item name="colorPrimary">@color/primaryColor</item>
-        <item name="colorOnPrimary">@color/primaryTextColor</item>
-        <item name="colorPrimaryContainer">@color/primaryLightColor</item>
-
-        <!-- Secondary colors -->
-        <item name="colorSecondary">@color/secondaryColor</item>
-        <item name="colorOnSecondary">@color/secondaryTextColor</item>
-        <item name="colorSecondaryContainer">@color/secondaryLightColor</item>
-
-        <!-- Surface and text -->
         <item name="colorSurface">#F8F9FC</item>
         <item name="colorOnSurface">#1A1C1E</item>
-
-        <!-- Status bar & nav bar -->
-        <item name="windowActionBar">false</item>
-        <item name="android:windowActionBar">false</item>
-        <item name="windowNoTitle">true</item>
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:fitsSystemWindows">false</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
-        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
-
-        <!-- Preference 兼容 -->
-        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
     </style>
-
 </resources>
