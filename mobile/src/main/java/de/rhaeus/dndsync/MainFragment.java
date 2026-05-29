@@ -21,27 +21,26 @@ public class MainFragment extends PreferenceFragmentCompat {
     private Preference connectivityPref;
     private CapabilityClient.OnCapabilityChangedListener capabilityChangedListener;
 
-    @Override
+      @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         // 從 XML 資源檔案加載設定佈局
         setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
-        // 核心修復：徹底關閉 PreferenceFragment 內建的舊版隱藏標題，防止它與我們自定義的 Toolbar 重疊
+        // 🎯 這是最核心的借鑒修復：用 Java 程式碼直接隱藏列表內建的重複標題，消滅重疊！
         if (getPreferenceScreen() != null) {
             getPreferenceScreen().setTitle(null);
         }
 
-        // 綁定 XML 裡的控制項
+        // 以下保留你原本所有的手錶藍牙連線、權限檢測邏輯
         dndPref = findPreference("dnd_permission_key");
         connectivityPref = findPreference("connectivity_state_key");
 
-        // 配置勿擾權限點擊事件
         if (dndPref != null) {
             dndPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
                 @Override
                 public boolean onPreferenceClick(Preference preference) {
                     if (!checkDNDPermission()) {
-                        openDNDPermissionRequest(); // 沒有權限則引導跳轉系統設定
+                        openDNDPermissionRequest();
                     } else {
                         Toast.makeText(getContext(), "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show();
                     }
@@ -49,11 +48,10 @@ public class MainFragment extends PreferenceFragmentCompat {
                 }
             });
         }
-        
-        // 初始檢查權限與藍牙連線狀態
         checkDNDPermission();
         initConnectivityCheck();
     }
+
 
     @Override
     public void onResume() {
