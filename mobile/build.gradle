@@ -12,6 +12,9 @@ if (signingFile.exists()) {
 def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
 
 android {
+    // 解決 AGP 8.0 核心報錯：指定手機端的命名空間
+    namespace "de.rhaeus.dndsync"
+    
     // 支援 Material 3 與 Android 14 的標準配置
     compileSdk 34
 
@@ -52,7 +55,7 @@ android {
         }
     }
 
-    // 關鍵：compileSdk 34 必須搭配 Java 17，否則 GitHub Actions 編譯現代依賴庫會報錯
+    // 關鍵：compileSdk 34 必須搭配 Java 17
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -65,7 +68,7 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0' // 提供 Theme.Material3
     implementation 'androidx.preference:preference:1.2.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    
+
     // 移植雙端檢測與通訊必備的 Google 穿戴裝置服務
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 
