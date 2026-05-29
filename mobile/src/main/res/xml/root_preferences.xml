@@ -1,35 +1,34 @@
-<?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
-    app:iconSpaceReserved="false">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <PreferenceCategory 
-        app:title="@string/sync_header"
+    <PreferenceCategory
+        android:title="連線狀態"
         app:iconSpaceReserved="false">
-        <SwitchPreferenceCompat
-            app:key="dnd_sync_key"
-            app:defaultValue="true"
-            app:title="@string/sync_title"
+        <Preference
+            android:key="connectivity_state_key"
+            android:title="雙端連通狀態"
+            android:summary="正在檢測與手錶的連接..."
+            android:icon="@android:drawable/stat_sys_data_bluetooth"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
-    <PreferenceCategory 
-        app:title="@string/permission_header"
+    <PreferenceCategory
+        android:title="@string/sync_header"
         app:iconSpaceReserved="false">
-        <Preference 
-            app:key="dnd_permission_key"
-            app:title="@string/dnd_permission_title"
-            app:summary="@string/dnd_permission_not_allowed"
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="dnd_sync_key"
+            android:title="同步勿擾模式"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
-    <PreferenceCategory 
-        app:title="開發者選項"
+    <PreferenceCategory
+        android:title="@string/permission_header"
         app:iconSpaceReserved="false">
-        <SwitchPreferenceCompat
-            app:key="enable_debug_log"
-            app:title="啟用調試日誌"
-            app:summary="在 Logcat 中輸出同步詳細信息（Logfox 可查）"
-            app:defaultValue="false"
+        <Preference
+            android:key="dnd_permission_key"
+            android:title="@string/dnd_permission_title"
+            android:summary="勿擾訪問權限"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
