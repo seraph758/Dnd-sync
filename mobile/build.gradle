@@ -2,60 +2,20 @@ plugins {
     id 'com.android.application'
 }
 
-def signingProps = new Properties()
-def signingFile = rootProject.file("signing.properties")
-
-if (signingFile.exists()) {
-    signingProps.load(new FileInputStream(signingFile))
-}
-
-def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
-
 android {
-    // 解決 AGP 8.0 核心報錯：指定手機端的命名空間
     namespace "de.rhaeus.dndsync"
-    
-    // 支援 Material 3 與 Android 14 的標準配置
     compileSdk 34
 
     defaultConfig {
         applicationId "de.rhaeus.dndsync"
         minSdk 26
         targetSdk 34
-
-        versionCode githubRunNumber.toInteger()
-        versionName "1.0.${githubRunNumber}"
+        versionCode 1
+        versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    signingConfigs {
-        release {
-            if (signingProps['STORE_FILE'] != null) {
-                storeFile file(signingProps['STORE_FILE'])
-                storePassword signingProps['STORE_PASSWORD']
-                keyAlias signingProps['KEY_ALIAS']
-                keyPassword signingProps['KEY_PASSWORD']
-            }
-        }
-    }
-
-    buildTypes {
-        release {
-            if (signingProps['STORE_FILE'] != null) {
-                signingConfig signingConfigs.release
-            } else {
-                println "WARNING: Signing properties not found, building unsigned APK!"
-            }
-
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile(
-                    'proguard-android-optimize.txt'
-            ), 'proguard-rules.pro'
-        }
-    }
-
-    // 關鍵：compileSdk 34 必須搭配 Java 17
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -63,19 +23,18 @@ android {
 }
 
 dependencies {
-    // 徹底移除舊版本，統一使用相容 Material 3 的現代穩定版本
+    // Material3 主题
+    implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.12.0' // 提供 Theme.Material3
-    implementation 'androidx.preference:preference:1.2.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // Preference 依赖
     implementation 'androidx.preference:preference:1.2.1'
 
-    // ⚠️ 順便檢查是否已有 Material 3 的依賴庫，如果沒有也請補上
-    implementation 'com.google.android.material:material:1.12.0'
-    // 移植雙端檢測與通訊必備的 Google 穿戴裝置服務
+    // Wearable / Google Play 服务
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 
-    // 測試相關依賴
+    // 测试
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
