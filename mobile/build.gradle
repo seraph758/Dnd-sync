@@ -12,6 +12,7 @@ if (signingFile.exists()) {
 def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
 
 android {
+    // 支援 Material 3 與 Android 14 的標準配置
     compileSdk 34
 
     defaultConfig {
@@ -25,11 +26,8 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // ... 之前的代码保持不变 ...
-
     signingConfigs {
         release {
-            // 增加保护逻辑
             if (signingProps['STORE_FILE'] != null) {
                 storeFile file(signingProps['STORE_FILE'])
                 storePassword signingProps['STORE_PASSWORD']
@@ -41,47 +39,38 @@ android {
 
     buildTypes {
         release {
-            // 只有当签名配置完整时才应用，否则打印警告
             if (signingProps['STORE_FILE'] != null) {
                 signingConfig signingConfigs.release
             } else {
                 println "WARNING: Signing properties not found, building unsigned APK!"
             }
-            
+
             minifyEnabled false
             proguardFiles getDefaultProguardFile(
                     'proguard-android-optimize.txt'
             ), 'proguard-rules.pro'
         }
     }
-// ... 后续代码保持不变 ...
 
-
+    // 關鍵：compileSdk 34 必須搭配 Java 17，否則 GitHub Actions 編譯現代依賴庫會報錯
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.3.1'
-    implementation 'com.google.android.material:material:1.4.0'
-    implementation 'com.google.android.gms:play-services-wearable:17.1.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.0'
-    implementation 'androidx.preference:preference:1.1.1'
-// 1. 核心：必须引入 1.5.0 或以上版本的 Material 库才支持 Material 3
-    // 建议直接使用稳定新版本：1.12.0
-    implementation 'com.google.android.material:material:1.12.0'
-
-    // 2. 确保 Preference 库和 AppCompat 库也已正确引入
+    // 徹底移除舊版本，統一使用相容 Material 3 的現代穩定版本
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.12.0' // 提供 Theme.Material3
     implementation 'androidx.preference:preference:1.2.1'
-
-    // 3. 移植双端检测所需的 Google Play Services 依赖
-    implementation 'com.google.android.gms:play-services-wearable:19.0.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     
-    testImplementation 'junit:junit:4.13.2'
+    // 移植雙端檢測與通訊必備的 Google 穿戴裝置服務
+    implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 
-    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+    // 測試相關依賴
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
