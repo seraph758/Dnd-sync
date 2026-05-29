@@ -14,5 +14,15 @@ public class MainActivity
         setContentView(
             R.layout.activity_main
         );
+
+        if (savedInstanceState == null) {
+            getSupportFragmentManager()
+                .beginTransaction()
+                .replace(
+                    android.R.id.content, 
+                    new MainFragment()
+                )
+                .commit();
+        }
     }
 }
