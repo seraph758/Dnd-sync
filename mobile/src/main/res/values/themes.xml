@@ -5,6 +5,14 @@
         <item name="colorSurface">#F8F9FC</item>
         <item name="colorOnSurface">#1A1C1E</item>
 
-        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.MaterialComponents</item>
+        <item name="windowActionBar">false</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowNoTitle">true</item>
+
+        <item name="android:fitsSystemWindows">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>
