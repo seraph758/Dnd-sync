@@ -1,7 +1,7 @@
 plugins {
     id 'com.android.application'
-    // 🎯 保持原本的 Kotlin 插件版本
-    id 'org.jetbrains.kotlin.android' version '1.8.22'
+    // 🎯 升級：將 Kotlin 插件版本從 1.8.22 升級到 1.9.24
+    id 'org.jetbrains.kotlin.android' version '1.9.24'
 }
 
 android {
@@ -65,47 +65,40 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    // 🎯 讓 Kotlin 編譯器與 Java 17 完全對齊
     kotlinOptions {
         jvmTarget = '17'
     }
 
-    // 🎯 核心注入：開啟 Jetpack Compose 引擎開關
     buildFeatures {
         compose true
     }
 
-    // 🎯 核心注入：與 Kotlin 1.8.22 綁定的官方指定 Compose 編譯器插件版本
+    // 🎯 升級：與 Kotlin 1.9.24 嚴格對應的官方指定 Compose 編譯器擴充版本
     composeOptions {
-        kotlinCompilerExtensionVersion '1.4.8'
+        kotlinCompilerExtensionVersion '1.5.14'
     }
 }
 
 dependencies {
-    // 標準 Material 與相容性主題庫
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // 🎯 核心注入：Kotlin 核心支持庫
+    // 🎯 升級：Kotlin 核心支持庫升級到對應穩定的版本
     implementation 'androidx.core:core-ktx:1.12.0'
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
 
-    // 🎯 核心修復：引入 2023.06.01 的 BOM，它會自動將 ui 和 foundation 鎖定在最穩定的 1.4.3 版本
-    // 同時它能完美與您的 kotlinCompilerExtensionVersion '1.4.8' 協同工作
-    implementation platform('androidx.compose:compose-bom:2023.06.01')
+    // 🎯 升級：引入更現代且與 1.9.24 完美相容的 Compose BOM 穩定版
+    implementation platform('androidx.compose:compose-bom:2024.04.00')
 
-    // 🎯 核心修復：移除了後面的具體版本號（如 :1.4.3），讓 BOM 統一管理，確保 Column 等內聯函數完全一致
-    implementation 'androidx.activity:activity-compose:1.7.2'
+    implementation 'androidx.activity:activity-compose:1.8.2'
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.ui:ui-tooling-preview'
 
-    // Google Play 穿戴裝置藍牙服務
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 
-    // 自動測試相關
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
