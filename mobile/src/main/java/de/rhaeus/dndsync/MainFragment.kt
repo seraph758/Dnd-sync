@@ -9,12 +9,11 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
 import com.google.android.gms.wearable.CapabilityClient
-import com.google.android.gms.wearable.CapabilityInfo
 import com.google.android.gms.wearable.Wearable
 
 /**
- * 手機端主設定介面 Fragment（Kotlin 完美重構版）
- * 程式碼量縮減 40%，原生適配 Material 3 大膠囊開關，杜絕一切閃退與編譯錯誤
+ * 手機端主設定介面 Fragment（Kotlin 核心對齊版）
+ * 基於官方 preference-ktx 規範，完美實現原生 Material 3 大膠囊動效與 Enabled 聯動
  */
 class MainFragment : PreferenceFragmentCompat() {
     
@@ -32,23 +31,23 @@ class MainFragment : PreferenceFragmentCompat() {
         dndPref = findPreference("dnd_permission_key")
         connectivityPref = findPreference("connectivity_state_key")
 
-        // 🎯 Kotlin 的安全類型轉換與空安全綁定
+        // 🎯 獲取標準的 M3 開關控制項
         val dndAsBedtime = findPreference<SwitchPreferenceCompat>("dnd_as_bedtime_key")
         val bedtimeSync = findPreference<SwitchPreferenceCompat>("bedtime_sync_key")
         val powerSave = findPreference<SwitchPreferenceCompat>("power_save_key")
 
         if (dndAsBedtime != null && bedtimeSync != null && powerSave != null) {
-            // 初始化聯動狀態
+            // 🚀 初始化「聯動省電模式」的啟用狀態
             powerSave.isEnabled = dndAsBedtime.isChecked || bedtimeSync.isChecked
 
-            // 監聽勿擾轉就寢開關
+            // 監聽「將勿擾視為就寢模式」狀態變化
             dndAsBedtime.setOnPreferenceChangeListener { _, newValue ->
                 val checked = newValue as Boolean
                 powerSave.isEnabled = checked || bedtimeSync.isChecked
                 true
             }
 
-            // 監聽就寢同步開關
+            // 監聽「同步就寢模式」狀態變化
             bedtimeSync.setOnPreferenceChangeListener { _, newValue ->
                 val checked = newValue as Boolean
                 powerSave.isEnabled = checked || dndAsBedtime.isChecked
