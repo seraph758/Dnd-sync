@@ -29,16 +29,20 @@ import com.google.android.gms.wearable.Wearable
 class MainFragment : Fragment() {
 
     // ==========================================
-    // 1. 修正狀態宣告：改用普通變數在 onCreate 初始化，將狀態保留在 UI 層或使用正規監聽
+    // 1. 修正：初始快取值不需要封裝成 State，普通的 Boolean 即可
     // ==========================================
-    private var initialDndSync by mutableStateOf(true)
-    private var initialDndAsBedtime by mutableStateOf(false)
-    private var initialBedtimeSync by mutableStateOf(false)
-    private var initialPowerSave by mutableStateOf(false)
+    private var initialDndSync = true
+    private var initialDndAsBedtime = false
+    private var initialBedtimeSync = false
+    private var initialPowerSave = false
 
-    // 連線與權限屬於全域監聽狀態，改用類別成員委託
-    private var isConnectedState by mutableStateOf(false)
-    private var isDndAllowedState by mutableStateOf(false)
+    // ==========================================
+    // 2. 修正：為了繞過編譯器跨作用域 Lambda 捕獲的 Bug，
+    // 不要在類別層級使用 by 屬性代理，直接保留 MutableState 物件本身
+    // ==========================================
+    private val isConnectedState = mutableStateOf(false)
+    private val isDndAllowedState = mutableStateOf(false)
+    
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
 
     private val sharedPrefs by lazy {
@@ -70,16 +74,12 @@ class MainFragment : Fragment() {
 
     @Composable
     fun SettingsScreen() {
-        // ==========================================
-        // 2. 正規 Compose 狀態維護：在 Composable 內部記得（remember）狀態
-        // 這樣做能完美隔絕與 Inline Column 閉包的變數捕獲衝突
-        // ==========================================
+        // 在 Composable 內部使用 remember 管理狀態（這是標準安全做法）
         var dndSync by remember { mutableStateOf(initialDndSync) }
         var dndAsBedtime by remember { mutableStateOf(initialDndAsBedtime) }
         var bedtimeSync by remember { mutableStateOf(initialBedtimeSync) }
         var powerSave by remember { mutableStateOf(initialPowerSave) }
 
-        // 使用 derivedStateOf 衍生狀態，聯動省電模式是否可用
         val isPowerSaveEnabled by remember {
             derivedStateOf { dndAsBedtime || bedtimeSync }
         }
@@ -92,9 +92,10 @@ class MainFragment : Fragment() {
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             CategoryGroup(title = "連線狀態") {
+                // 這裡改用 .value 形式讀取狀態，不會觸發編譯器封裝 Bug
                 CardItem(
                     title = "雙端連通狀態", 
-                    summary = if (isConnectedState) "已成功連線到手錶" else "未發現配對手錶，請檢查藍牙或 Wear OS App"
+                    summary = if (isConnectedState.value) "已成功連線到手錶" else "未發現配對手錶，請檢查藍牙或 Wear OS App"
                 )
             }
 
@@ -126,7 +127,8 @@ class MainFragment : Fragment() {
             }
 
             CategoryGroup(title = "權限管理") {
-                CardItem(title = "勿擾模式訪問權限", summary = if (isDndAllowedState) "DND access granted" else "DND access denied") {
+                // 這裡改用 .value 形式讀取狀態
+                CardItem(title = "勿擾模式訪問權限", summary = if (isDndAllowedState.value) "DND access granted" else "DND access denied") {
                     if (!checkDNDPermission()) openDNDPermissionRequest() else Toast.makeText(requireContext(), "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -180,7 +182,7 @@ class MainFragment : Fragment() {
         val context = context ?: return false
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
         val allowed = manager.isNotificationPolicyAccessGranted
-        isDndAllowedState = allowed
+        isDndAllowedState.value = allowed // 使用 .value 進行賦值
         return allowed
     }
 
@@ -192,10 +194,10 @@ class MainFragment : Fragment() {
     private fun initConnectivityCheck() {
         val context = context ?: return
         Wearable.getCapabilityClient(context).getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE).addOnSuccessListener { capabilityInfo ->
-            isConnectedState = !capabilityInfo.nodes.isEmpty()
+            isConnectedState.value = !capabilityInfo.nodes.isEmpty() // 使用 .value 進行賦值
         }
         capabilityChangedListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
-            isConnectedState = !capabilityInfo.nodes.isEmpty()
+            isConnectedState.value = !capabilityInfo.nodes.isEmpty() // 使用 .value 進行賦值
         }
     }
 
