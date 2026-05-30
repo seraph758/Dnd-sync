@@ -11,7 +11,11 @@ buildscript {
     }
 }
 
-// 彻底删除或不再使用 allprojects 块，避免与 settings.gradle 冲突
+plugins {
+    // 🎯 核心升級：在根目錄定義全域 Kotlin 插件版本為 1.9.24
+    // apply false 的意思是「在此處定義版本，但不由根目錄直接載入，而由子模組去 apply」
+    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+}
 
 task clean(type: Delete) {
     delete rootProject.buildDir
