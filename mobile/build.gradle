@@ -80,19 +80,22 @@ android {
 }
 
 dependencies {
+    // 🎯 核心補上：提供 DNDNotificationService.java 缺失的 PreferenceManager 支援
+    implementation 'androidx.preference:preference-ktx:1.2.1'
+
     // 標準 Material 與相容性主題庫
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // 🎯 升級：Kotlin 核心支持庫與標準庫
+    // Kotlin 核心支持庫與標準庫
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
 
-    // 🎯 升級：引入 2024.04.00 的 Compose BOM 穩定版，完美相容 1.9.24 
+    // Compose BOM 穩定版
     implementation platform('androidx.compose:compose-bom:2024.04.00')
 
-    // Jetpack Compose 核心 UI 庫（已移除重複項）
+    // Jetpack Compose 核心 UI 庫
     implementation 'androidx.activity:activity-compose:1.8.2'
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.foundation:foundation'
@@ -107,3 +110,4 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
+
