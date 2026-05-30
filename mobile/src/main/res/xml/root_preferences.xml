@@ -20,7 +20,7 @@
         app:allowDividerAbove="true"
         app:allowDividerBelow="true">
 
-        <SwitchPreferenceCompat
+        <SwitchPreference
             android:defaultValue="true"
             android:key="dnd_sync_key"
             android:title="同步勿擾模式"
@@ -28,7 +28,7 @@
             android:icon="@android:drawable/ic_lock_silent_mode"
             app:iconSpaceReserved="true" />
 
-        <SwitchPreferenceCompat
+        <SwitchPreference
             android:defaultValue="false"
             android:key="dnd_as_bedtime_key"
             android:title="將勿擾視為就寢模式"
@@ -36,7 +36,7 @@
             android:icon="@android:drawable/ic_menu_today"
             app:iconSpaceReserved="true" />
 
-        <SwitchPreferenceCompat
+        <SwitchPreference
             android:defaultValue="false"
             android:key="bedtime_sync_key"
             android:title="同步就寢模式"
@@ -44,7 +44,7 @@
             android:icon="@android:drawable/ic_menu_compass"
             app:iconSpaceReserved="true" />
 
-        <SwitchPreferenceCompat
+        <SwitchPreference
             android:defaultValue="false"
             android:key="power_save_key"
             android:title="聯動省電模式"
