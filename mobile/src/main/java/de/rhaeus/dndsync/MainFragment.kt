@@ -46,7 +46,7 @@ class MainFragment : Fragment() {
 
                 MaterialTheme(colorScheme = colorScheme) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        // 調用位於 SettingsScreen.kt 的頂層獨立函數
+                        // 呼叫位於 SettingsScreen.kt 的頂層獨立函數
                         SettingsScreen(
                             initialDndSync = initDndSync,
                             initialDndAsBedtime = initDndAsBedtime,
