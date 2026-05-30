@@ -20,8 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp  // 🎯 修正：顯式引入 dp 擴展
+import androidx.compose.ui.unit.sp  // 🎯 修正：顯式引入 sp 擴展
 import androidx.fragment.app.Fragment
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
@@ -82,8 +82,8 @@ class MainFragment : Fragment() {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16dp, vertical = 24dp),
-            verticalArrangement = Arrangement.spacedBy(20dp)
+                .padding(horizontal = 16.dp, vertical = 24.dp), // 🎯 修正：改為 .dp
+            verticalArrangement = Arrangement.spacedBy(20.dp) // 🎯 修正：改為 .dp
         ) {
             // ==================== 1. 連線狀態分組 ====================
             CategoryGroup(title = "連線狀態") {
@@ -151,19 +151,19 @@ class MainFragment : Fragment() {
         }
     }
 
-    // 🧱 封裝組件：自帶 16dp 大圓角、副標題顯眼化的精緻 M3 膠囊卡片分組容器
+    // 🧱 封裝組件：自帶大圓角、副標題顯眼化的精緻 M3 膠囊卡片分組容器
     @Composable
     fun CategoryGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
         Column {
             Text(
                 text = title,
-                fontSize = 14sp,
+                fontSize = 14.sp, // 🎯 修正：改為 .sp
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary, // 自動套用 Monet 主色彩
-                modifier = Modifier.padding(start = 8dp, bottom = 8dp)
+                modifier = Modifier.padding(start = 8.dp, bottom = 8.dp) // 🎯 修正：改為 .dp
             )
             Card(
-                shape = RoundedCornerShape(16dp),
+                shape = RoundedCornerShape(16.dp), // 🎯 修正：改為 .dp
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) // 半透明微浮起高級色調
                 ),
@@ -180,20 +180,20 @@ class MainFragment : Fragment() {
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(enabled = enabled) { onCheckedChange(!checked) }
-                .padding(16dp),
+                .padding(16.dp), // 🎯 修正：改為 .dp
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 16dp)) {
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) { // 🎯 修正：改為 .dp
                 Text(
                     text = title, 
-                    fontSize = 16sp, 
+                    fontSize = 16.sp, // 🎯 修正：改為 .sp
                     fontWeight = FontWeight.SemiBold, 
                     color = if(enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                 )
-                Spacer(modifier = Modifier.height(4dp))
+                Spacer(modifier = Modifier.height(4.dp)) // 🎯 修正：改為 .dp
                 Text(
                     text = summary, 
-                    fontSize = 13sp, 
+                    fontSize = 13.sp, // 🎯 修正：改為 .sp
                     color = if(enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                 )
             }
@@ -209,11 +209,11 @@ class MainFragment : Fragment() {
         } else {
             Modifier.fillMaxWidth()
         }
-        Row(modifier = modifier.padding(16dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { // 🎯 修正：改為 .dp
             Column {
-                Text(text = title, fontSize = 16sp, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(4dp))
-                Text(text = summary, fontSize = 13sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) // 🎯 修正：改為 .sp
+                Spacer(modifier = Modifier.height(4.dp)) // 🎯 修正：改為 .dp
+                Text(text = summary, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) // 🎯 修正：改為 .sp
             }
         }
     }
