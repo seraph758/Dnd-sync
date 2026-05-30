@@ -8,14 +8,14 @@ import android.widget.Toast;
 
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
-import androidx.preference.TwoStatePreference; // 🎯 引入相容 M3 開關的父類別
+import androidx.preference.SwitchPreferenceCompat; // 🎯 換回原生的相容類型
 
 import com.google.android.gms.wearable.CapabilityClient;
 import com.google.android.gms.wearable.Wearable;
 
 /**
  * 手機端主設定介面 Fragment
- * 修正版：將 SwitchPreferenceCompat 更換為 TwoStatePreference，徹底解決 ClassCastException 閃退
+ * 終極修正版：對齊 SwitchPreferenceCompat，徹底消滅 ClassNotFoundException 與空指標閃退
  */
 public class MainFragment extends PreferenceFragmentCompat {
     private Preference dndPref;
@@ -32,18 +32,17 @@ public class MainFragment extends PreferenceFragmentCompat {
             getPreferenceScreen().setTitle(null);
         }
 
-        // 綁定控制項
+        // 綁定基礎控制項
         dndPref = findPreference("dnd_permission_key");
         connectivityPref = findPreference("connectivity_state_key");
 
-        // 🎯 核心修復：使用 TwoStatePreference 綁定 M3 開關，完美防止類型轉換錯誤導致的閃退
-        TwoStatePreference dndAsBedtime = findPreference("dnd_as_bedtime_key");
-        TwoStatePreference bedtimeSync = findPreference("bedtime_sync_key");
-        TwoStatePreference powerSave = findPreference("power_save_key");
+        // 🎯 完美對齊：使用 SwitchPreferenceCompat 安全接收
+        SwitchPreferenceCompat dndAsBedtime = findPreference("dnd_as_bedtime_key");
+        SwitchPreferenceCompat bedtimeSync = findPreference("bedtime_sync_key");
+        SwitchPreferenceCompat powerSave = findPreference("power_save_key");
 
-        // 如果這三個聯動開關在你的 root_preferences.xml 裡存在，則執行邏輯控制
+        // 安全監聽防護
         if (dndAsBedtime != null && bedtimeSync != null && powerSave != null) {
-            // 剛打開 App 時檢測是否需要啟用省電模式切換
             if (dndAsBedtime.isChecked() || bedtimeSync.isChecked()) {
                 powerSave.setEnabled(true);
             }
@@ -69,16 +68,13 @@ public class MainFragment extends PreferenceFragmentCompat {
 
         // 配置勿擾權限點擊事件
         if (dndPref != null) {
-            dndPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
-                @Override
-                public boolean onPreferenceClick(Preference preference) {
-                    if (!checkDNDPermission()) {
-                        openDNDPermissionRequest();
-                    } else {
-                        Toast.makeText(getContext(), "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show();
-                    }
-                    return true;
+            dndPref.setOnPreferenceClickListener(preference -> {
+                if (!checkDNDPermission()) {
+                    openDNDPermissionRequest();
+                } else {
+                    Toast.makeText(getContext(), "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show();
                 }
+                return true;
             });
         }
         
