@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+// 🎯 終極修復補丁：必須顯式匯入 getValue，否則下面使用 'by' 委託時會發生語法編譯錯誤
+import androidx.compose.runtime.getValue 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
@@ -83,7 +85,7 @@ class MainFragment : Fragment() {
         }
     }
 
-        @Composable
+    @Composable
     fun SettingsScreen() {
         // 🎯 精準修改：使用 remember { derivedStateOf { ... } } 代替原本的區域變數
         // 這樣可以改變編譯器生成的 Lambda 捕獲結構，徹底避開 Kotlin IR 內聯編譯崩潰 Bug
@@ -164,7 +166,6 @@ class MainFragment : Fragment() {
             }
         }
     }
-
 
     // 🧱 封裝組件：自帶大圓角、副標題顯眼化的精緻 M3 膠囊卡片分組容器
     @Composable
