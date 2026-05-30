@@ -8,22 +8,21 @@ import android.widget.Toast;
 
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
-import androidx.preference.SwitchPreferenceCompat;
+import androidx.preference.TwoStatePreference; // 🎯 引入相容 M3 開關的父類別
 
 import com.google.android.gms.wearable.CapabilityClient;
 import com.google.android.gms.wearable.Wearable;
 
 /**
  * 手機端主設定介面 Fragment
- * 整合了勿擾權限檢測、手錶藍牙連線狀態動態監聽
- * 核心修復：徹底解決標題重疊，並強制將舊版小圓點開關升級為 Material 3 大膠囊樣式
+ * 修正版：將 SwitchPreferenceCompat 更換為 TwoStatePreference，徹底解決 ClassCastException 閃退
  */
 public class MainFragment extends PreferenceFragmentCompat {
     private Preference dndPref;
     private Preference connectivityPref;
     private CapabilityClient.OnCapabilityChangedListener capabilityChangedListener;
 
-        @Override
+    @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         // 從 XML 資源檔案加載設定佈局
         setPreferencesFromResource(R.xml.root_preferences, rootKey);
@@ -36,6 +35,37 @@ public class MainFragment extends PreferenceFragmentCompat {
         // 綁定控制項
         dndPref = findPreference("dnd_permission_key");
         connectivityPref = findPreference("connectivity_state_key");
+
+        // 🎯 核心修復：使用 TwoStatePreference 綁定 M3 開關，完美防止類型轉換錯誤導致的閃退
+        TwoStatePreference dndAsBedtime = findPreference("dnd_as_bedtime_key");
+        TwoStatePreference bedtimeSync = findPreference("bedtime_sync_key");
+        TwoStatePreference powerSave = findPreference("power_save_key");
+
+        // 如果這三個聯動開關在你的 root_preferences.xml 裡存在，則執行邏輯控制
+        if (dndAsBedtime != null && bedtimeSync != null && powerSave != null) {
+            // 剛打開 App 時檢測是否需要啟用省電模式切換
+            if (dndAsBedtime.isChecked() || bedtimeSync.isChecked()) {
+                powerSave.setEnabled(true);
+            }
+
+            dndAsBedtime.setOnPreferenceChangeListener((preference, newValue) -> {
+                if ((boolean) newValue) {
+                    powerSave.setEnabled(true);
+                } else if (!bedtimeSync.isChecked()) {
+                    powerSave.setEnabled(false);
+                }
+                return true;
+            });
+
+            bedtimeSync.setOnPreferenceChangeListener((preference, newValue) -> {
+                if ((boolean) newValue) {
+                    powerSave.setEnabled(true);
+                } else if (!dndAsBedtime.isChecked()) {
+                    powerSave.setEnabled(false);
+                }
+                return true;
+            });
+        }
 
         // 配置勿擾權限點擊事件
         if (dndPref != null) {
@@ -56,18 +86,17 @@ public class MainFragment extends PreferenceFragmentCompat {
         initConnectivityCheck();
     }
 
-
     @Override
     public void onResume() {
         super.onResume();
-        checkDNDPermission();
-        registerConnectivityListener();
+        checkDNDPermission(); 
+        registerConnectivityListener(); 
     }
 
     @Override
     public void onPause() {
         super.onPause();
-        unregisterConnectivityListener();
+        unregisterConnectivityListener(); 
     }
 
     private boolean checkDNDPermission() {
