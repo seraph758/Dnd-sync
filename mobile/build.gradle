@@ -6,6 +6,34 @@ android {
     namespace "de.rhaeus.dndsync"
     compileSdk 34
 
+    // 🎯 核心簽名修復：讓 Gradle 自動偵測 GitHub Actions 雲端生成的正式簽名屬性檔案
+    def signingPropsFile = rootProject.file('signing.properties')
+    def usePropertiesSigning = false
+    
+    if (signingPropsFile.exists()) {
+        def properties = new Properties()
+        signingPropsFile.withInputStream { properties.load(it) }
+        
+        android.signingConfigs {
+            release {
+                storeFile file(properties['STORE_FILE'])
+                storePassword properties['STORE_PASSWORD']
+                keyAlias properties['KEY_ALIAS']
+                keyPassword properties['KEY_PASSWORD']
+            }
+        }
+        usePropertiesSigning = true
+    }
+
+    signingConfigs {
+        debugging {
+            storeFile file('../debug.keystore')
+            keyAlias 'androiddebugkey'
+            storePassword 'android'
+            keyPassword 'android'
+        }
+    }
+
     defaultConfig {
         applicationId "de.rhaeus.dndsync"
         minSdk 26
@@ -16,6 +44,22 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    buildTypes {  
+        debug {  
+            signingConfig signingConfigs.debugging  
+        }  
+        release {  
+            // 🎯 核心邏輯：如果存在 Actions 生成的正式簽名就用正式簽名，否則安全降級為 debug 測試簽名
+            if (usePropertiesSigning) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debugging
+            }
+            minifyEnabled false  
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'  
+        }  
+    }  
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -23,18 +67,18 @@ android {
 }
 
 dependencies {
-    // 保持標準的 Material 主題庫
+    // 標準 Material 與相容性主題庫（配合我們洗乾淨的 Theme.Material3 使用）
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // 標準 Preference 依赖
+    // 標準 Preference 偏好設定清單依赖（Java+XML 專案專用）
     implementation 'androidx.preference:preference:1.2.1'
 
-    // Google 穿戴裝置服務
+    // Google Play 穿戴裝置藍牙服務
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 
-    // 測試相關
+    // 自動測試相關
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
