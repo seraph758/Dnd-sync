@@ -51,14 +51,14 @@ class MainFragment : Fragment() {
                 val appContext = requireContext().applicationContext
                 val colorScheme = if (isSystemInDarkTheme()) dynamicDarkColorScheme(appContext) else dynamicLightColorScheme(appContext)
                 
-                // 訂閱觸發器的數值變動
-                val trigger = prefsTrigger.value
+                // 🎯 修正警告：讓 remember 直接將 prefsTrigger.value 作為 key 綁定
+                val sharedPrefsInstance = remember(prefsTrigger.value) { sharedPrefs }
                 
-                // 當 trigger 改變時，重新讀取 SharedPreferences 內部的最新狀態
-                val dndSync = sharedPrefs.getBoolean("dnd_sync_key", true)
-                val dndAsBedtime = sharedPrefs.getBoolean("dnd_as_bedtime_key", false)
-                val bedtimeSync = sharedPrefs.getBoolean("bedtime_sync_key", false)
-                val powerSave = sharedPrefs.getBoolean("power_save_key", false)
+                // 當 prefsTrigger 改變時，重新讀取 SharedPreferences 內部的最新狀態
+                val dndSync = sharedPrefsInstance.getBoolean("dnd_sync_key", true)
+                val dndAsBedtime = sharedPrefsInstance.getBoolean("dnd_as_bedtime_key", false)
+                val bedtimeSync = sharedPrefsInstance.getBoolean("bedtime_sync_key", false)
+                val powerSave = sharedPrefsInstance.getBoolean("power_save_key", false)
 
                 // 省電模式開關的可用邏輯聯動
                 val isPowerSaveEnabled = dndAsBedtime || bedtimeSync
