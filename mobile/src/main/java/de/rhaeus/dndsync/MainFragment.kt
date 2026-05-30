@@ -20,8 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp  // 🎯 修正：顯式引入 dp 擴展
-import androidx.compose.ui.unit.sp  // 🎯 修正：顯式引入 sp 擴展
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.fragment.app.Fragment
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
@@ -48,7 +48,7 @@ class MainFragment : Fragment() {
         return ComposeView(requireContext()).apply {
             setContent {
                 val context = requireContext()
-                // 🎯 自動感知系統主題，加載對應的 Monet 系統桌布動態色彩
+                // 自動感知系統主題，加載對應的 Monet 系統桌布動態色彩
                 val colorScheme = if (isSystemInDarkTheme()) {
                     dynamicDarkColorScheme(context)
                 } else {
@@ -69,21 +69,21 @@ class MainFragment : Fragment() {
 
     @Composable
     fun SettingsScreen() {
-        // 讀取持久化配置
-        var dndSync by remember { mutableStateOf(sharedPrefs.getBoolean("dnd_sync_key", true)) }
-        var dndAsBedtime by remember { mutableStateOf(sharedPrefs.getBoolean("dnd_as_bedtime_key", false)) }
-        var bedtimeSync by remember { mutableStateOf(sharedPrefs.getBoolean("bedtime_sync_key", false)) }
-        var powerSave by remember { mutableStateOf(sharedPrefs.getBoolean("power_save_key", false)) }
+        // 🎯 核心修復：改用 `=` 替代 `by`，將其宣告為明確的 MutableState 物件，徹底避開 IR lowering 編譯錯誤
+        val dndSyncState = remember { mutableStateOf(sharedPrefs.getBoolean("dnd_sync_key", true)) }
+        val dndAsBedtimeState = remember { mutableStateOf(sharedPrefs.getBoolean("dnd_as_bedtime_key", false)) }
+        val bedtimeSyncState = remember { mutableStateOf(sharedPrefs.getBoolean("bedtime_sync_key", false)) }
+        val powerSaveState = remember { mutableStateOf(sharedPrefs.getBoolean("power_save_key", false)) }
 
         // 🚀 核心邏輯對齊：當「將勿擾視為就寢模式」或「同步就寢模式」任意一個開啟時，聯動省電才能被勾選
-        val isPowerSaveEnabled = dndAsBedtime || bedtimeSync
+        val isPowerSaveEnabled = dndAsBedtimeState.value || bedtimeSyncState.value
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 24.dp), // 🎯 修正：改為 .dp
-            verticalArrangement = Arrangement.spacedBy(20.dp) // 🎯 修正：改為 .dp
+                .padding(horizontal = 16.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // ==================== 1. 連線狀態分組 ====================
             CategoryGroup(title = "連線狀態") {
@@ -98,38 +98,38 @@ class MainFragment : Fragment() {
                 SwitchItem(
                     title = "同步勿擾模式",
                     summary = "當手機開啟勿擾時，自動同步至手錶",
-                    checked = dndSync,
-                    onCheckedChange = {
-                        dndSync = it
-                        sharedPrefs.edit().putBoolean("dnd_sync_key", it).apply()
+                    checked = dndSyncState.value,
+                    onCheckedChange = { nextValue ->
+                        dndSyncState.value = nextValue
+                        sharedPrefs.edit().putBoolean("dnd_sync_key", nextValue).apply()
                     }
                 )
                 SwitchItem(
                     title = "將勿擾視為就寢模式",
                     summary = "開啟後，手機進入勿擾時手錶將同步觸發就寢模式",
-                    checked = dndAsBedtime,
-                    onCheckedChange = {
-                        dndAsBedtime = it
-                        sharedPrefs.edit().putBoolean("dnd_as_bedtime_key", it).apply()
+                    checked = dndAsBedtimeState.value,
+                    onCheckedChange = { nextValue ->
+                        dndAsBedtimeState.value = nextValue
+                        sharedPrefs.edit().putBoolean("dnd_as_bedtime_key", nextValue).apply()
                     }
                 )
                 SwitchItem(
                     title = "同步就寢模式",
                     summary = "獨立同步手機與手錶的就寢狀態",
-                    checked = bedtimeSync,
-                    onCheckedChange = {
-                        bedtimeSync = it
-                        sharedPrefs.edit().putBoolean("bedtime_sync_key", it).apply()
+                    checked = bedtimeSyncState.value,
+                    onCheckedChange = { nextValue ->
+                        bedtimeSyncState.value = nextValue
+                        sharedPrefs.edit().putBoolean("bedtime_sync_key", nextValue).apply()
                     }
                 )
                 SwitchItem(
                     title = "聯動省電模式",
                     summary = "當上述就寢或勿擾觸發時，自動開啟省電",
-                    checked = if (isPowerSaveEnabled) powerSave else false,
+                    checked = if (isPowerSaveEnabled) powerSaveState.value else false,
                     enabled = isPowerSaveEnabled, // 狀態啟用鎖定
-                    onCheckedChange = {
-                        powerSave = it
-                        sharedPrefs.edit().putBoolean("power_save_key", it).apply()
+                    onCheckedChange = { nextValue ->
+                        powerSaveState.value = nextValue
+                        sharedPrefs.edit().putBoolean("power_save_key", nextValue).apply()
                     }
                 )
             }
@@ -157,13 +157,13 @@ class MainFragment : Fragment() {
         Column {
             Text(
                 text = title,
-                fontSize = 14.sp, // 🎯 修正：改為 .sp
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary, // 自動套用 Monet 主色彩
-                modifier = Modifier.padding(start = 8.dp, bottom = 8.dp) // 🎯 修正：改為 .dp
+                modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
             )
             Card(
-                shape = RoundedCornerShape(16.dp), // 🎯 修正：改為 .dp
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) // 半透明微浮起高級色調
                 ),
@@ -180,20 +180,20 @@ class MainFragment : Fragment() {
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(enabled = enabled) { onCheckedChange(!checked) }
-                .padding(16.dp), // 🎯 修正：改為 .dp
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) { // 🎯 修正：改為 .dp
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
                 Text(
                     text = title, 
-                    fontSize = 16.sp, // 🎯 修正：改為 .sp
+                    fontSize = 16.sp, 
                     fontWeight = FontWeight.SemiBold, 
                     color = if(enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                 )
-                Spacer(modifier = Modifier.height(4.dp)) // 🎯 修正：改為 .dp
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = summary, 
-                    fontSize = 13.sp, // 🎯 修正：改為 .sp
+                    fontSize = 13.sp, 
                     color = if(enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
                 )
             }
@@ -209,11 +209,11 @@ class MainFragment : Fragment() {
         } else {
             Modifier.fillMaxWidth()
         }
-        Row(modifier = modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { // 🎯 修正：改為 .dp
+        Row(modifier = modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column {
-                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) // 🎯 修正：改為 .sp
-                Spacer(modifier = Modifier.height(4.dp)) // 🎯 修正：改為 .dp
-                Text(text = summary, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) // 🎯 修正：改為 .sp
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(text = summary, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
