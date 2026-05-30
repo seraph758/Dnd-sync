@@ -8,33 +8,44 @@ import android.widget.Toast;
 
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.SwitchPreferenceCompat;
 
 import com.google.android.gms.wearable.CapabilityClient;
 import com.google.android.gms.wearable.Wearable;
 
 /**
  * 手機端主設定介面 Fragment
- * 整合了勿擾權限檢測、手錶藍牙連線狀態動態監聽，並修復了 Material 3 頂部標題重疊的問題
+ * 整合了勿擾權限檢測、手錶藍牙連線狀態動態監聽
+ * 核心修復：徹底解決標題重疊，並強制將舊版小圓點開關升級為 Material 3 大膠囊樣式
  */
 public class MainFragment extends PreferenceFragmentCompat {
     private Preference dndPref;
     private Preference connectivityPref;
     private CapabilityClient.OnCapabilityChangedListener capabilityChangedListener;
 
-      @Override
+    @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         // 從 XML 資源檔案加載設定佈局
         setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
-        // 🎯 這是最核心的借鑒修復：用 Java 程式碼直接隱藏列表內建的重複標題，消滅重疊！
+        // 1. 徹底關閉 PreferenceFragment 內建的舊版隱藏標題，防止它與我們自定義的 Toolbar 重疊
         if (getPreferenceScreen() != null) {
             getPreferenceScreen().setTitle(null);
         }
 
-        // 以下保留你原本所有的手錶藍牙連線、權限檢測邏輯
+        // 2. 綁定 XML 裡的控制項
         dndPref = findPreference("dnd_permission_key");
         connectivityPref = findPreference("connectivity_state_key");
 
+        // 3. 🎯 強制開啟 Material 3 UI 核心魔改：
+        // 尋找佈局中「同步勿擾模式」的開關控制項（請確保 "dnd_sync_key" 與你 root_preferences.xml 裡的 key 一致）
+        SwitchPreferenceCompat dndStatusSwitch = findPreference("dnd_sync_key");
+        if (dndStatusSwitch != null) {
+            // 透過 Java 程式碼，強行將它的渲染佈局替換為 Material 3 規範的正統大膠囊開關佈局
+            dndStatusSwitch.setWidgetLayoutResource(com.google.android.material.R.layout.m3_preference_widget_switch);
+        }
+
+        // 配置勿擾權限點擊事件
         if (dndPref != null) {
             dndPref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
                 @Override
@@ -48,27 +59,25 @@ public class MainFragment extends PreferenceFragmentCompat {
                 }
             });
         }
+        
+        // 初始檢查權限與藍牙連線狀態
         checkDNDPermission();
         initConnectivityCheck();
     }
 
-
     @Override
     public void onResume() {
         super.onResume();
-        checkDNDPermission(); // 每次回到介面重新整理權限狀態
-        registerConnectivityListener(); // 註冊藍牙狀態監聽器
+        checkDNDPermission();
+        registerConnectivityListener();
     }
 
     @Override
     public void onPause() {
         super.onPause();
-        unregisterConnectivityListener(); // 離開介面時註銷監聽器，防止記憶體洩漏
+        unregisterConnectivityListener();
     }
 
-    /**
-     * 檢查並重新整理勿擾模式權限狀態
-     */
     private boolean checkDNDPermission() {
         if (getContext() == null) return false;
         NotificationManager mNotificationManager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
@@ -77,34 +86,26 @@ public class MainFragment extends PreferenceFragmentCompat {
         boolean allowed = mNotificationManager.isNotificationPolicyAccessGranted();
         if (dndPref != null) {
             if (allowed) {
-                dndPref.setSummary(R.string.dnd_permission_allowed);
+                dndPref.setSummary("DND access granted");
             } else {
-                dndPref.setSummary(R.string.dnd_permission_not_allowed);
+                dndPref.setSummary("DND access denied");
             }
         }
         return allowed;
     }
 
-    /**
-     * 跳轉到系統的「通知存取權限/勿擾權限」設定頁面
-     */
     private void openDNDPermissionRequest() {
         Intent intent = new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
         startActivity(intent);
     }
 
-    /**
-     * 初始化連線狀態，主動尋找手錶端暴露的 "dnd_sync" 身份暗號
-     */
     private void initConnectivityCheck() {
         if (getContext() == null) return;
 
-        // 異步查詢當前是否有處於啟用狀態的手錶節點
         Wearable.getCapabilityClient(getContext())
                 .getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE)
                 .addOnSuccessListener(capabilityInfo -> updateConnectionUI(!capabilityInfo.getNodes().isEmpty()));
 
-        // 定義動態監聽器：當手錶斷開藍牙或重新連上時即時觸發
         capabilityChangedListener = capabilityInfo -> updateConnectionUI(!capabilityInfo.getNodes().isEmpty());
     }
 
@@ -120,9 +121,6 @@ public class MainFragment extends PreferenceFragmentCompat {
         }
     }
 
-    /**
-     * 根據動態回傳的藍牙連線結果，即時刷新介面文字
-     */
     private void updateConnectionUI(boolean isConnected) {
         if (connectivityPref != null) {
             if (isConnected) {
