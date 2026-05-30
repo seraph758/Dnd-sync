@@ -15,8 +15,6 @@
 
         <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
 
-        <item name="preferenceCategoryStyle">@style/Widget.Material3.PreferenceCategory</item>
-
-        <item name="preferenceFragmentCompatStyle">@style/PreferenceFragment.Material3.Grid</item>
+        <item name="switchPreferenceCompatStyle">@style/Widget.Material3.PreferenceThemeOverlay.SwitchPreferenceCompat</item>
     </style>
 </resources>
