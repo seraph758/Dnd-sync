@@ -1,27 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">  
+<resources xmlns:tools="http://schemas.github.com/tools">  
 
     <style name="Theme.DNDSync" parent="Theme.Material3.DayNight.NoActionBar">  
         <item name="colorPrimary">@color/primaryColor</item>  
-        <item name="colorSurface">#F8F9FC</item>  
-        <item name="colorOnSurface">#1A1C1E</item>  
 
         <item name="windowActionBar">false</item>  
         <item name="android:windowActionBar">false</item>  
         <item name="windowNoTitle">true</item>  
         <item name="android:windowNoTitle">true</item>  
+
         <item name="android:fitsSystemWindows">false</item>  
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>  
         <item name="android:statusBarColor">@android:color/transparent</item>  
         <item name="android:navigationBarColor">@android:color/transparent</item>  
 
         <item name="switchPreferenceCompatStyle">@style/Widget.Material3.CompoundButton.Switch</item>
-
-        <item name="preferenceCategoryStyle">@style/CustomPreferenceCategoryStyle</item>
-    </style>
-
-    <style name="CustomPreferenceCategoryStyle" parent="Preference.Category.Material3">
-        <item name="android:allowLayoutChanges">true</item>
-        <item name="android:layout">@layout/custom_preference_category_layout</item>
     </style>
 </resources>
