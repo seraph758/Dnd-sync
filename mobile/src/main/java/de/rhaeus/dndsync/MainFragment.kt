@@ -32,7 +32,14 @@ import com.google.android.gms.wearable.Wearable
  */
 class MainFragment : Fragment() {
 
-    // 使用 Compose 的響應式狀態，UI 會在數據改變時自動刷新
+    // ==================== 🎯 終極修復：將持久化與 UI 聯動狀態提升為類別成員屬性 ====================
+    // 這樣 Lambda 閉包只會捕獲 Fragment (this)，不再引發局部變數捕獲的 Kotlin IR 編譯器崩潰 Bug
+    private val dndSyncState = mutableStateOf(true)
+    private val dndAsBedtimeState = mutableStateOf(false)
+    private val bedtimeSyncState = mutableStateOf(false)
+    private val powerSaveState = mutableStateOf(false)
+
+    // 底層藍牙與權限狀態
     private val isConnectedState = mutableStateOf(false)
     private val isDndAllowedState = mutableStateOf(false)
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
@@ -40,6 +47,15 @@ class MainFragment : Fragment() {
     // 延遲初始化偏好存儲
     private val sharedPrefs by lazy {
         requireContext().getSharedPreferences("${requireContext().packageName}_preferences", Context.MODE_PRIVATE)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 在建立時先從持久化設定中同步初始值
+        dndSyncState.value = sharedPrefs.getBoolean("dnd_sync_key", true)
+        dndAsBedtimeState.value = sharedPrefs.getBoolean("dnd_as_bedtime_key", false)
+        bedtimeSyncState.value = sharedPrefs.getBoolean("bedtime_sync_key", false)
+        powerSaveState.value = sharedPrefs.getBoolean("power_save_key", false)
     }
 
     override fun onCreateView(
@@ -69,12 +85,6 @@ class MainFragment : Fragment() {
 
     @Composable
     fun SettingsScreen() {
-        // 🎯 核心修復：改用 `=` 替代 `by`，將其宣告為明確的 MutableState 物件，徹底避開 IR lowering 編譯錯誤
-        val dndSyncState = remember { mutableStateOf(sharedPrefs.getBoolean("dnd_sync_key", true)) }
-        val dndAsBedtimeState = remember { mutableStateOf(sharedPrefs.getBoolean("dnd_as_bedtime_key", false)) }
-        val bedtimeSyncState = remember { mutableStateOf(sharedPrefs.getBoolean("bedtime_sync_key", false)) }
-        val powerSaveState = remember { mutableStateOf(sharedPrefs.getBoolean("power_save_key", false)) }
-
         // 🚀 核心邏輯對齊：當「將勿擾視為就寢模式」或「同步就寢模式」任意一個開啟時，聯動省電才能被勾選
         val isPowerSaveEnabled = dndAsBedtimeState.value || bedtimeSyncState.value
 
