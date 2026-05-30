@@ -12,9 +12,5 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>  
         <item name="android:statusBarColor">@android:color/transparent</item>  
         <item name="android:navigationBarColor">@android:color/transparent</item>  
-
-        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
-
-        <item name="switchPreferenceCompatStyle">@style/Widget.Material3.PreferenceThemeOverlay.SwitchPreferenceCompat</item>
     </style>
 </resources>
