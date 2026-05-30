@@ -11,7 +11,6 @@ import android.widget.Toast
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.remember
@@ -29,50 +28,57 @@ class MainFragment : Fragment() {
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                val appContext = remember { requireContext().applicationContext }
-                val colorScheme = if (isSystemInDarkTheme()) dynamicDarkColorScheme(appContext) else dynamicLightColorScheme(appContext)
+        // 關鍵修正：明確定義 composeView 變數，確保最終 return 結構絕對是 View，排除 Unit 衝突
+        val composeView = ComposeView(requireContext())
+        
+        composeView.setContent {
+            val appContext = remember { requireContext().applicationContext }
+            val colorScheme = if (isSystemInDarkTheme()) dynamicDarkColorScheme(appContext) else dynamicLightColorScheme(appContext)
 
-                val trigger = uiTriggerState.value
-                val sharedPrefs = remember(trigger) {
-                    appContext.getSharedPreferences("${appContext.packageName}_preferences", Context.MODE_PRIVATE)
-                }
+            val trigger = uiTriggerState.value
+            val sharedPrefs = remember(trigger) {
+                appContext.getSharedPreferences("${appContext.packageName}_preferences", Context.MODE_PRIVATE)
+            }
 
-                val initDndSync = remember(trigger) { sharedPrefs.getBoolean("dnd_sync_key", true) }
-                val initDndAsBedtime = remember(trigger) { sharedPrefs.getBoolean("dnd_as_bedtime_key", false) }
-                val initBedtimeSync = remember(trigger) { sharedPrefs.getBoolean("bedtime_sync_key", false) }
-                val initPowerSave = remember(trigger) { sharedPrefs.getBoolean("power_save_key", false) }
+            val initDndSync = remember(trigger) { sharedPrefs.getBoolean("dnd_sync_key", true) }
+            val initDndAsBedtime = remember(trigger) { sharedPrefs.getBoolean("dnd_as_bedtime_key", false) }
+            val initBedtimeSync = remember(trigger) { sharedPrefs.getBoolean("bedtime_sync_key", false) }
+            val initPowerSave = remember(trigger) { sharedPrefs.getBoolean("power_save_key", false) }
 
-                MaterialTheme(colorScheme = colorScheme) {
-                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        // 呼叫位於 SettingsScreen.kt 的頂層獨立函數
-                        SettingsScreen(
-                            initialDndSync = initDndSync,
-                            initialDndAsBedtime = initDndAsBedtime,
-                            initialBedtimeSync = initBedtimeSync,
-                            initialPowerSave = initPowerSave,
-                            isConnected = isConnected,
-                            isDndAllowed = isDndAllowed,
-                            onPrefChanged = { key, value ->
-                                sharedPrefs.edit().putBoolean(key, value).apply()
-                            },
-                            onPermissionClick = {
-                                val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-                                if (manager?.isNotificationPolicyAccessGranted == false) {
-                                    val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    }
-                                    appContext.startActivity(intent)
-                                } else {
-                                    Toast.makeText(appContext, "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
+            MaterialTheme(colorScheme = colorScheme) {
+                // 關鍵修正：使用全包名指定，防止編譯器誤識別為 android.view.Surface
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxSize(), 
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    // 呼叫位於 SettingsScreen.kt 的頂層獨立函數
+                    SettingsScreen(
+                        initialDndSync = initDndSync,
+                        initialDndAsBedtime = initDndAsBedtime,
+                        initialBedtimeSync = initBedtimeSync,
+                        initialPowerSave = initPowerSave,
+                        isConnected = isConnected,
+                        isDndAllowed = isDndAllowed,
+                        onPrefChanged = { key, value ->
+                            sharedPrefs.edit().putBoolean(key, value).apply()
+                        },
+                        onPermissionClick = {
+                            val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                            if (manager?.isNotificationPolicyAccessGranted == false) {
+                                val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
+                                appContext.startActivity(intent)
+                            } else {
+                                Toast.makeText(appContext, "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
                             }
-                        )
-                    }
+                        }
+                    )
                 }
             }
         }
+        
+        return composeView
     }
 
     override fun onResume() {
