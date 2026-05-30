@@ -8,7 +8,7 @@ import android.widget.Toast;
 
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
-import androidx.preference.SwitchPreferenceCompat; // 🎯 換回原生的相容類型
+import androidx.preference.SwitchPreferenceCompat; // 🎯 乾淨對齊的單一匯入，徹底避免編譯報錯
 
 import com.google.android.gms.wearable.CapabilityClient;
 import com.google.android.gms.wearable.Wearable;
