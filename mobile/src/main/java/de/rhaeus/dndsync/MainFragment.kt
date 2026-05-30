@@ -31,7 +31,6 @@ class MainFragment : Fragment() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         return ComposeView(requireContext()).apply {
             setContent {
-                // 使用基礎 ApplicationContext，斷絕任何 Fragment (this) 的內聯關聯
                 val appContext = remember { requireContext().applicationContext }
                 val colorScheme = if (isSystemInDarkTheme()) dynamicDarkColorScheme(appContext) else dynamicLightColorScheme(appContext)
 
@@ -47,7 +46,7 @@ class MainFragment : Fragment() {
 
                 MaterialTheme(colorScheme = colorScheme) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        // 調用位於 SettingsScreen.kt 的獨立頂層函式
+                        // 調用位於 SettingsScreen.kt 的頂層獨立函數
                         SettingsScreen(
                             initialDndSync = initDndSync,
                             initialDndAsBedtime = initDndAsBedtime,
