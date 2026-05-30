@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:title="連線狀態"
+        app:allowDividerAbove="false"
+        app:allowDividerBelow="true">
+
+        <Preference
+            android:key="connectivity_state_key"
+            android:title="雙端連通狀態"
+            android:summary="正在檢測與手錶的連接..."
+            android:icon="@android:drawable/stat_sys_data_bluetooth" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="同步設定"
+        app:allowDividerAbove="true"
+        app:allowDividerBelow="true">
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="dnd_sync_key"
+            android:title="同步勿擾模式"
+            android:summary="當手機開啟勿擾時，自動同步至手錶"
+            android:icon="@android:drawable/ic_lock_silent_mode" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="dnd_as_bedtime_key"
+            android:title="將勿擾視為就寢模式"
+            android:summary="開啟後，手機進入勿擾時手錶將同步觸發就寢模式"
+            android:icon="@android:drawable/ic_menu_today" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="bedtime_sync_key"
+            android:title="同步就寢模式"
+            android:summary="獨立同步手機與手錶的就寢狀態"
+            android:icon="@android:drawable/ic_menu_compass" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="power_save_key"
+            android:title="聯動省電模式"
+            android:summary="當上述就寢或勿擾觸發時，自動開啟省電"
+            android:icon="@android:drawable/ic_menu_mylocation" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="權限管理"
+        app:allowDividerAbove="true"
+        app:allowDividerBelow="false">
+
+        <Preference
+            android:key="dnd_permission_key"
+            android:title="@string/dnd_permission_title"
+            android:summary="點擊授予勿擾訪問權限"
+            android:icon="@android:drawable/ic_menu_manage" />
+    </PreferenceCategory>
+
+</PreferenceScreen>
