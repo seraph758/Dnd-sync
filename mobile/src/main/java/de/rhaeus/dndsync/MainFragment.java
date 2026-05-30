@@ -8,14 +8,14 @@ import android.widget.Toast;
 
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
-import androidx.preference.SwitchPreferenceCompat; // 🎯 乾淨對齊的單一匯入，徹底避免編譯報錯
+import androidx.preference.SwitchPreference; // 🎯 同步更換為原生 SwitchPreference 匯入
 
 import com.google.android.gms.wearable.CapabilityClient;
 import com.google.android.gms.wearable.Wearable;
 
 /**
  * 手機端主設定介面 Fragment
- * 終極修正版：對齊 SwitchPreferenceCompat，徹底消滅 ClassNotFoundException 與空指標閃退
+ * 安全升級版：使用原生 SwitchPreference 對齊 XML，杜絕任何類型的編譯錯誤與閃退
  */
 public class MainFragment extends PreferenceFragmentCompat {
     private Preference dndPref;
@@ -36,10 +36,10 @@ public class MainFragment extends PreferenceFragmentCompat {
         dndPref = findPreference("dnd_permission_key");
         connectivityPref = findPreference("connectivity_state_key");
 
-        // 🎯 完美對齊：使用 SwitchPreferenceCompat 安全接收
-        SwitchPreferenceCompat dndAsBedtime = findPreference("dnd_as_bedtime_key");
-        SwitchPreferenceCompat bedtimeSync = findPreference("bedtime_sync_key");
-        SwitchPreferenceCompat powerSave = findPreference("power_save_key");
+        // 🎯 完美對齊：使用 SwitchPreference 安全接收
+        SwitchPreference dndAsBedtime = findPreference("dnd_as_bedtime_key");
+        SwitchPreference bedtimeSync = findPreference("bedtime_sync_key");
+        SwitchPreference powerSave = findPreference("power_save_key");
 
         // 安全監聽防護
         if (dndAsBedtime != null && bedtimeSync != null && powerSave != null) {
