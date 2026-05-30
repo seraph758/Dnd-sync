@@ -86,17 +86,21 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation "androidx.compose.foundation:foundation:1.4.3"
 
     // 🎯 核心注入：Kotlin 核心支持庫
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
 
-    // 🎯 核心注入：Jetpack Compose 官方核心與 Material 3 UI 庫
+    // 🎯 核心修復：引入 2023.06.01 的 BOM，它會自動將 ui 和 foundation 鎖定在最穩定的 1.4.3 版本
+    // 同時它能完美與您的 kotlinCompilerExtensionVersion '1.4.8' 協同工作
+    implementation platform('androidx.compose:compose-bom:2023.06.01')
+
+    // 🎯 核心修復：移除了後面的具體版本號（如 :1.4.3），讓 BOM 統一管理，確保 Column 等內聯函數完全一致
     implementation 'androidx.activity:activity-compose:1.7.2'
-    implementation "androidx.compose.ui:ui:1.4.3"
-    implementation "androidx.compose.material3:material3:1.1.1" // 真正的 M3 組件
-    implementation "androidx.compose.ui:ui-tooling-preview:1.4.3"
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
 
     // Google Play 穿戴裝置藍牙服務
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
