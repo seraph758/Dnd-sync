@@ -83,10 +83,13 @@ class MainFragment : Fragment() {
         }
     }
 
-    @Composable
+        @Composable
     fun SettingsScreen() {
-        // 🚀 核心邏輯對齊：當「將勿擾視為就寢模式」或「同步就寢模式」任意一個開啟時，聯動省電才能被勾選
-        val isPowerSaveEnabled = dndAsBedtimeState.value || bedtimeSyncState.value
+        // 🎯 精準修改：使用 remember { derivedStateOf { ... } } 代替原本的區域變數
+        // 這樣可以改變編譯器生成的 Lambda 捕獲結構，徹底避開 Kotlin IR 內聯編譯崩潰 Bug
+        val isPowerSaveEnabled by remember { 
+            derivedStateOf { dndAsBedtimeState.value || bedtimeSyncState.value } 
+        }
 
         Column(
             modifier = Modifier
@@ -135,6 +138,7 @@ class MainFragment : Fragment() {
                 SwitchItem(
                     title = "聯動省電模式",
                     summary = "當上述就寢或勿擾觸發時，自動開啟省電",
+                    // 🎯 這裡因為使用了 'by' 代理，變數的使用方式（isPowerSaveEnabled）保持原樣，完全不需要改動！
                     checked = if (isPowerSaveEnabled) powerSaveState.value else false,
                     enabled = isPowerSaveEnabled, // 狀態啟用鎖定
                     onCheckedChange = { nextValue ->
@@ -160,6 +164,7 @@ class MainFragment : Fragment() {
             }
         }
     }
+
 
     // 🧱 封裝組件：自帶大圓角、副標題顯眼化的精緻 M3 膠囊卡片分組容器
     @Composable
