@@ -5,7 +5,8 @@
     <PreferenceCategory
         android:title="連線狀態"
         app:allowDividerAbove="false"
-        app:allowDividerBelow="true">
+        app:allowDividerBelow="false"
+        android:layout="@layout/preference_category_card_single">
 
         <Preference
             android:key="connectivity_state_key"
@@ -17,8 +18,9 @@
 
     <PreferenceCategory
         android:title="同步設定"
-        app:allowDividerAbove="true"
-        app:allowDividerBelow="true">
+        app:allowDividerAbove="false"
+        app:allowDividerBelow="false"
+        android:layout="@layout/preference_category_card_single">
 
         <SwitchPreferenceCompat
             android:defaultValue="true"
@@ -55,8 +57,9 @@
 
     <PreferenceCategory
         android:title="權限管理"
-        app:allowDividerAbove="true"
-        app:allowDividerBelow="false">
+        app:allowDividerAbove="false"
+        app:allowDividerBelow="false"
+        android:layout="@layout/preference_category_card_single">
 
         <Preference
             android:key="dnd_permission_key"
