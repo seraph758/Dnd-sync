@@ -1,9 +1,8 @@
 plugins {
     id 'com.android.application'
-    // 🎯 這裡不需要再寫 version '1.9.24'，它會自動繼承根目錄定義好的 1.9.24
+    // 🎯 這裡不需要寫 version '1.9.24'，它會自動繼承根目錄定義好的版本
     id 'org.jetbrains.kotlin.android'
 }
-
 
 android {
     namespace "de.rhaeus.dndsync"
@@ -81,31 +80,29 @@ android {
 }
 
 dependencies {
+    // 標準 Material 與相容性主題庫
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // 🎯 升級：Kotlin 核心支持庫升級到對應穩定的版本
+    // 🎯 升級：Kotlin 核心支持庫與標準庫
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
 
-    // 🎯 升級：引入更現代且與 1.9.24 完美相容的 Compose BOM 穩定版
+    // 🎯 升級：引入 2024.04.00 的 Compose BOM 穩定版，完美相容 1.9.24 
     implementation platform('androidx.compose:compose-bom:2024.04.00')
 
+    // Jetpack Compose 核心 UI 庫（已移除重複項）
     implementation 'androidx.activity:activity-compose:1.8.2'
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.ui:ui-tooling-preview'
 
+    // Google Play 穿戴裝置藍牙服務
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
-    implementation platform('androidx.compose:compose-bom:2024.04.00')
-    
-    implementation 'androidx.activity:activity-compose:1.8.2'
-    implementation 'androidx.compose.ui:ui'
-    implementation 'androidx.compose.foundation:foundation'
-    implementation 'androidx.compose.material3:material3'
 
+    // 自動測試相關
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
