@@ -28,7 +28,7 @@ import com.google.android.gms.wearable.Wearable
 
 class MainFragment : Fragment() {
 
-    // State variables
+    // 状态变量
     private val dndSyncState = mutableStateOf(true)
     private val dndAsBedtimeState = mutableStateOf(false)
     private val bedtimeSyncState = mutableStateOf(false)
@@ -76,9 +76,17 @@ class MainFragment : Fragment() {
             }
         }
     }
-@Composable
+
+    // ======================
+    // Compose UI
+    // ======================
+    @Composable
     fun SettingsScreen() {
-        val isPowerSaveEnabled = dndAsBedtimeState.value || bedtimeSyncState.value
+        val dndAsBedtime by dndAsBedtimeState
+        val bedtimeSync by bedtimeSyncState
+        val powerSave by powerSaveState
+
+        val isPowerSaveEnabled = dndAsBedtime || bedtimeSync
 
         Column(
             modifier = Modifier
@@ -87,7 +95,7 @@ class MainFragment : Fragment() {
                 .padding(horizontal = 16.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Connection Status
+            // 連線狀態
             CategoryGroup(title = "連線狀態") {
                 CardItem(
                     title = "雙端連通狀態",
@@ -95,7 +103,7 @@ class MainFragment : Fragment() {
                 )
             }
 
-            // Sync Settings
+            // 同步設定
             CategoryGroup(title = "同步設定") {
                 SwitchItem(
                     title = "同步勿擾模式",
@@ -127,7 +135,7 @@ class MainFragment : Fragment() {
                 SwitchItem(
                     title = "聯動省電模式",
                     summary = "當上述就寢或勿擾觸發時，自動開啟省電",
-                    checked = if (isPowerSaveEnabled) powerSaveState.value else false,
+                    checked = if (isPowerSaveEnabled) powerSave else false,
                     enabled = isPowerSaveEnabled
                 ) { nextValue ->
                     powerSaveState.value = nextValue
@@ -135,7 +143,7 @@ class MainFragment : Fragment() {
                 }
             }
 
-            // Permission Management
+            // 權限管理
             CategoryGroup(title = "權限管理") {
                 CardItem(
                     title = "勿擾模式訪問權限",
@@ -226,7 +234,11 @@ class MainFragment : Fragment() {
             }
         }
     }
-override fun onResume() {
+
+    // ======================
+    // 生命周期 & 权限
+    // ======================
+    override fun onResume() {
         super.onResume()
         checkDNDPermission()
         registerConnectivityListener()
@@ -247,35 +259,38 @@ override fun onResume() {
     }
 
     private fun openDNDPermissionRequest() {
-        val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
         startActivity(intent)
     }
 
-    private fun initConnectivityCheck() {
+    // ======================
+    // Wear OS 連線監聽
+    // ======================
+    private fun registerConnectivityListener() {
         val context = context ?: return
-        Wearable.getCapabilityClient(context)
-            .getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE)
-            .addOnSuccessListener { capabilityInfo ->
-                isConnectedState.value = capabilityInfo.nodes.isNotEmpty()
-            }
+        val capabilityClient = Wearable.getCapabilityClient(context)
 
         capabilityChangedListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
             isConnectedState.value = capabilityInfo.nodes.isNotEmpty()
         }
-    }
-private fun registerConnectivityListener() {
-        val context = context ?: return
-        initConnectivityCheck()
-        capabilityChangedListener?.let { listener ->
-            Wearable.getCapabilityClient(context).addListener(listener, "dnd_sync")
-        }
+
+        capabilityClient.addListener(
+            capabilityChangedListener!!,
+            "dnd_sync"
+        )
+
+        // 初始檢查
+        capabilityClient.getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE)
+            .addOnSuccessListener { capabilityInfo ->
+                isConnectedState.value = capabilityInfo.nodes.isNotEmpty()
+            }
     }
 
     private fun unregisterConnectivityListener() {
         val context = context ?: return
-        capabilityChangedListener?.let { listener ->
-            Wearable.getCapabilityClient(context).removeListener(listener)
+        capabilityChangedListener?.let {
+            Wearable.getCapabilityClient(context).removeListener(it, "dnd_sync")
         }
+        capabilityChangedListener = null
     }
-
-} // End of MainFragment class
+}
