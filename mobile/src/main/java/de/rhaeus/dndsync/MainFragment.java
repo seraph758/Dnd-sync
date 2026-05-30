@@ -23,27 +23,19 @@ public class MainFragment extends PreferenceFragmentCompat {
     private Preference connectivityPref;
     private CapabilityClient.OnCapabilityChangedListener capabilityChangedListener;
 
-    @Override
+        @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         // 從 XML 資源檔案加載設定佈局
         setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
-        // 1. 徹底關閉 PreferenceFragment 內建的舊版隱藏標題，防止它與我們自定義的 Toolbar 重疊
+        // 徹底關閉內建的舊版隱藏標題，防止重疊
         if (getPreferenceScreen() != null) {
             getPreferenceScreen().setTitle(null);
         }
 
-        // 2. 綁定 XML 裡的控制項
+        // 綁定控制項
         dndPref = findPreference("dnd_permission_key");
         connectivityPref = findPreference("connectivity_state_key");
-
-        // 3. 🎯 強制開啟 Material 3 UI 核心魔改：
-        // 尋找佈局中「同步勿擾模式」的開關控制項（請確保 "dnd_sync_key" 與你 root_preferences.xml 裡的 key 一致）
-        SwitchPreferenceCompat dndStatusSwitch = findPreference("dnd_sync_key");
-        if (dndStatusSwitch != null) {
-            // 透過 Java 程式碼，強行將它的渲染佈局替換為 Material 3 規範的正統大膠囊開關佈局
-            dndStatusSwitch.setWidgetLayoutResource(com.google.android.material.R.layout.m3_preference_widget_switch);
-        }
 
         // 配置勿擾權限點擊事件
         if (dndPref != null) {
@@ -60,10 +52,10 @@ public class MainFragment extends PreferenceFragmentCompat {
             });
         }
         
-        // 初始檢查權限與藍牙連線狀態
         checkDNDPermission();
         initConnectivityCheck();
     }
+
 
     @Override
     public void onResume() {
