@@ -10,16 +10,18 @@
         <item name="android:windowActionBar">false</item>  
         <item name="windowNoTitle">true</item>  
         <item name="android:windowNoTitle">true</item>  
-
         <item name="android:fitsSystemWindows">false</item>  
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>  
         <item name="android:statusBarColor">@android:color/transparent</item>  
         <item name="android:navigationBarColor">@android:color/transparent</item>  
 
-        <item name="switchPreferenceCompatStyle">@style/Preference.SwitchPreferenceCompat.Material3</item>
+        <item name="switchPreferenceCompatStyle">@style/Widget.Material3.CompoundButton.Switch</item>
+
+        <item name="preferenceCategoryStyle">@style/CustomPreferenceCategoryStyle</item>
     </style>
 
-    <style name="Preference.SwitchPreferenceCompat.Material3" parent="Preference.SwitchPreferenceCompat">
-        <item name="android:widgetLayout">@layout/preference_widget_switch_m3</item>
+    <style name="CustomPreferenceCategoryStyle" parent="Preference.Category.Material3">
+        <item name="android:allowLayoutChanges">true</item>
+        <item name="android:layout">@layout/custom_preference_category_layout</item>
     </style>
 </resources>
