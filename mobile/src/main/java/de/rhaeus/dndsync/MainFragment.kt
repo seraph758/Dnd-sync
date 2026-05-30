@@ -28,18 +28,7 @@ import com.google.android.gms.wearable.Wearable
 
 class MainFragment : Fragment() {
 
-    // ==========================================
-    // 1. 修正：初始快取值不需要封裝成 State，普通的 Boolean 即可
-    // ==========================================
-    private var initialDndSync = true
-    private var initialDndAsBedtime = false
-    private var initialBedtimeSync = false
-    private var initialPowerSave = false
-
-    // ==========================================
-    // 2. 修正：為了繞過編譯器跨作用域 Lambda 捕獲的 Bug，
-    // 不要在類別層級使用 by 屬性代理，直接保留 MutableState 物件本身
-    // ==========================================
+    // 全域監聽狀態改為基礎的 State，完全不在 Composable 內部隱式捕獲
     private val isConnectedState = mutableStateOf(false)
     private val isDndAllowedState = mutableStateOf(false)
     
@@ -49,23 +38,39 @@ class MainFragment : Fragment() {
         requireContext().getSharedPreferences("${requireContext().packageName}_preferences", Context.MODE_PRIVATE)
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        initialDndSync = sharedPrefs.getBoolean("dnd_sync_key", true)
-        initialDndAsBedtime = sharedPrefs.getBoolean("dnd_as_bedtime_key", false)
-        initialBedtimeSync = sharedPrefs.getBoolean("bedtime_sync_key", false)
-        initialPowerSave = sharedPrefs.getBoolean("power_save_key", false)
-    }
-
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         return ComposeView(requireContext()).apply {
             setContent {
                 val context = requireContext()
                 val colorScheme = if (isSystemInDarkTheme()) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
 
+                // 1. 從 prefs 中即時讀取快取值（避免全域變數捕獲）
+                val initDndSync = remember { sharedPrefs.getBoolean("dnd_sync_key", true) }
+                val initDndAsBedtime = remember { sharedPrefs.getBoolean("dnd_as_bedtime_key", false) }
+                val initBedtimeSync = remember { sharedPrefs.getBoolean("bedtime_sync_key", false) }
+                val initPowerSave = remember { sharedPrefs.getBoolean("power_save_key", false) }
+
                 MaterialTheme(colorScheme = colorScheme) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        SettingsScreen()
+                        // 2. 透過參數傳遞所有的狀態和回呼，讓 SettingsScreen 變成乾淨的純 UI 元件
+                        SettingsScreen(
+                            initialDndSync = initDndSync,
+                            initialDndAsBedtime = initDndAsBedtime,
+                            initialBedtimeSync = initBedtimeSync,
+                            initialPowerSave = initPowerSave,
+                            isConnected = isConnectedState.value,
+                            isDndAllowed = isDndAllowedState.value,
+                            onPrefChanged = { key, value -> 
+                                sharedPrefs.edit().putBoolean(key, value).apply() 
+                            },
+                            onPermissionClick = {
+                                if (!checkDNDPermission()) {
+                                    openDNDPermissionRequest()
+                                } else {
+                                    Toast.makeText(context, "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -73,8 +78,17 @@ class MainFragment : Fragment() {
     }
 
     @Composable
-    fun SettingsScreen() {
-        // 在 Composable 內部使用 remember 管理狀態（這是標準安全做法）
+    fun SettingsScreen(
+        initialDndSync: Boolean,
+        initialDndAsBedtime: Boolean,
+        initialBedtimeSync: Boolean,
+        initialPowerSave: Boolean,
+        isConnected: Boolean,
+        isDndAllowed: Boolean,
+        onPrefChanged: (String, Boolean) -> Unit,
+        onPermissionClick: () -> Unit
+    ) {
+        // 所有本地狀態均只跟參數掛鉤
         var dndSync by remember { mutableStateOf(initialDndSync) }
         var dndAsBedtime by remember { mutableStateOf(initialDndAsBedtime) }
         var bedtimeSync by remember { mutableStateOf(initialBedtimeSync) }
@@ -92,27 +106,26 @@ class MainFragment : Fragment() {
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             CategoryGroup(title = "連線狀態") {
-                // 這裡改用 .value 形式讀取狀態，不會觸發編譯器封裝 Bug
                 CardItem(
                     title = "雙端連通狀態", 
-                    summary = if (isConnectedState.value) "已成功連線到手錶" else "未發現配對手錶，請檢查藍牙或 Wear OS App"
+                    summary = if (isConnected) "已成功連線到手錶" else "未發現配對手錶，請檢查藍牙或 Wear OS App"
                 )
             }
 
             CategoryGroup(title = "同步設定") {
                 SwitchItem(title = "同步勿擾模式", summary = "當手機開啟勿擾時，自動同步至手錶", checked = dndSync) { nextValue ->
                     dndSync = nextValue
-                    sharedPrefs.edit().putBoolean("dnd_sync_key", nextValue).apply()
+                    onPrefChanged("dnd_sync_key", nextValue)
                 }
 
                 SwitchItem(title = "將勿擾視為就寢模式", summary = "開啟後，手機進入勿擾時手錶將同步觸發就寢模式", checked = dndAsBedtime) { nextValue ->
                     dndAsBedtime = nextValue
-                    sharedPrefs.edit().putBoolean("dnd_as_bedtime_key", nextValue).apply()
+                    onPrefChanged("dnd_as_bedtime_key", nextValue)
                 }
 
                 SwitchItem(title = "同步就寢模式", summary = "獨立同步手機與手錶的就寢狀態", checked = bedtimeSync) { nextValue ->
                     bedtimeSync = nextValue
-                    sharedPrefs.edit().putBoolean("bedtime_sync_key", nextValue).apply()
+                    onPrefChanged("bedtime_sync_key", nextValue)
                 }
 
                 SwitchItem(
@@ -122,15 +135,16 @@ class MainFragment : Fragment() {
                     enabled = isPowerSaveEnabled
                 ) { nextValue ->
                     powerSave = nextValue
-                    sharedPrefs.edit().putBoolean("power_save_key", nextValue).apply()
+                    onPrefChanged("power_save_key", nextValue)
                 }
             }
 
             CategoryGroup(title = "權限管理") {
-                // 這裡改用 .value 形式讀取狀態
-                CardItem(title = "勿擾模式訪問權限", summary = if (isDndAllowedState.value) "DND access granted" else "DND access denied") {
-                    if (!checkDNDPermission()) openDNDPermissionRequest() else Toast.makeText(requireContext(), "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
-                }
+                CardItem(
+                    title = "勿擾模式訪問權限", 
+                    summary = if (isDndAllowed) "DND access granted" else "DND access denied",
+                    onClick = onPermissionClick
+                )
             }
         }
     }
@@ -182,7 +196,7 @@ class MainFragment : Fragment() {
         val context = context ?: return false
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
         val allowed = manager.isNotificationPolicyAccessGranted
-        isDndAllowedState.value = allowed // 使用 .value 進行賦值
+        isDndAllowedState.value = allowed
         return allowed
     }
 
@@ -194,10 +208,10 @@ class MainFragment : Fragment() {
     private fun initConnectivityCheck() {
         val context = context ?: return
         Wearable.getCapabilityClient(context).getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE).addOnSuccessListener { capabilityInfo ->
-            isConnectedState.value = !capabilityInfo.nodes.isEmpty() // 使用 .value 進行賦值
+            isConnectedState.value = !capabilityInfo.nodes.isEmpty()
         }
         capabilityChangedListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo ->
-            isConnectedState.value = !capabilityInfo.nodes.isEmpty() // 使用 .value 進行賦值
+            isConnectedState.value = !capabilityInfo.nodes.isEmpty()
         }
     }
 
