@@ -58,7 +58,7 @@ public class DNDSyncAccessService extends AccessibilityService {
     }
 
     /**
-     * 🎯 新增：宽度 50%，高度 80% 的点击方法
+     * 新增：宽度 50%，高度 80% 的点击方法
      * @param startTime 延迟发射手势的毫秒数
      */
     public void clickIconAt80Percent(long startTime) {
@@ -87,7 +87,7 @@ public class DNDSyncAccessService extends AccessibilityService {
     }
 
     /**
-     * 🎯 核心重构：支持控制发射时机 (startTime) 的底座方法
+     * 核心重构：支持控制发射时机 (startTime) 的底座方法
      */
     public void click(float x, float y, long startTime) {
         Path path = new Path();
@@ -99,7 +99,7 @@ public class DNDSyncAccessService extends AccessibilityService {
         dispatchGesture(builder.build(), null, null);
     }
 
-    // 保留老方法的兼容性，防止其他地方编译报错
+    // 🎯 修复：将其重定向到新方法，传入 0ms 立即执行，防止老方法兼容报错
     public void clickIcon1_2() {
         clickIcon1_2(0);
     }
