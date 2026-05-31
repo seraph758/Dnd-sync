@@ -230,4 +230,4 @@ class MainFragment : Fragment() {
             Wearable.getCapabilityClient(context).removeListener(it)
         }
     }
-}
+} 
