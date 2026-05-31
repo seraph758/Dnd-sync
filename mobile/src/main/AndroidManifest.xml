@@ -20,13 +20,14 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.DNDSync.NoActionBar">   <!-- 新增此行 -->
+            android:theme="@style/Theme.DNDSync">   <!-- 保持原本主題即可 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- 其他 service 不變 -->
         <service
             android:name=".DNDNotificationService"
             android:exported="true"
