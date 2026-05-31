@@ -98,7 +98,7 @@ class MainFragment : Fragment() {
                             CategoryGroup(title = "權限管理") {
                                 CardItem(
                                     "勿擾模式訪問權限",
-                                    if (isDndAllowedState.value) "勿擾模式權限：已獲取" else "勿擾模式權限：未獲取 (點擊前往授權)",
+                                    if (isDndAllowedState.value) "通知权限：已獲取" else "通知权限：未獲取 (點擊前往授權)",
                                     onClick = { openDNDPermissionRequest(appContext) }
                                 )
                             }
@@ -117,11 +117,12 @@ class MainFragment : Fragment() {
     private fun openDNDPermissionRequest(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (manager?.isNotificationPolicyAccessGranted == false) {
-            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            
                 .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             context.startActivity(intent)
         } else {
-            Toast.makeText(context, "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "通知权限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
         }
     }
 
