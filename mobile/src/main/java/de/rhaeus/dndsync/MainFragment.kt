@@ -74,8 +74,10 @@ class MainFragment : Fragment() {
 
                             // === 同步設定（最上方）===
                             CategoryGroup(title = "同步設定") {
-                                val dndSync = sharedPrefs.getBoolean("dnd_sync_key", true)
-                                val powerSave = sharedPrefs.getBoolean("power_save_key", false)
+                                // 監聽 prefsTrigger 變化，當它改變時重新讀取 SharedPreferences
+                                val trigger = prefsTrigger.value
+                                val dndSync = remember(trigger) { sharedPrefs.getBoolean("dnd_sync_key", true) }
+                                val powerSave = remember(trigger) { sharedPrefs.getBoolean("power_save_key", false) }
 
                                 SwitchItem("同步勿擾模式", "當手機開啟勿擾時，自動同步至手錶", dndSync) { updatePref("dnd_sync_key", it) }
                                 SwitchItem("聯動省電模式", "當同步勿擾模式觸發時，自動開啟省電", 
@@ -107,6 +109,7 @@ class MainFragment : Fragment() {
 
     private fun updatePref(key: String, value: Boolean) {
         sharedPrefs.edit().putBoolean(key, value).apply()
+        // 觸發重新組織 UI
         prefsTrigger.value += 1
     }
 
