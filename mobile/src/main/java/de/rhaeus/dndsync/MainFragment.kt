@@ -21,14 +21,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.Fragment
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
 
-// 解決 Experimental API 警告
 @OptIn(ExperimentalMaterial3Api::class)
 class MainFragment : Fragment() {
 
@@ -54,39 +52,25 @@ class MainFragment : Fragment() {
                 else 
                     dynamicLightColorScheme(appContext)
 
-                // 強制隱藏 ActionBar
+                // 隱藏 ActionBar（保險）
                 LaunchedEffect(Unit) {
                     (requireActivity() as? AppCompatActivity)?.supportActionBar?.hide()
                 }
 
                 MaterialTheme(colorScheme = colorScheme) {
-                    Scaffold(
-                        topBar = {
-                            TopAppBar(
-                                title = {
-                                    Text(
-                                        text = "DND Sync",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 22.sp
-                                    )
-                                },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.background,
-                                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                                )
-                            )
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    ) { innerPadding ->
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(innerPadding)
                                 .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 16.dp, vertical = 20.dp),
+                                .padding(horizontal = 16.dp, vertical = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(24.dp)
                         ) {
-                            // 同步設定
+
+                            // === 同步設定（最上方）===
                             CategoryGroup(title = "同步設定") {
                                 val dndSync = sharedPrefs.getBoolean("dnd_sync_key", true)
                                 val dndAsBedtime = sharedPrefs.getBoolean("dnd_as_bedtime_key", false)
@@ -95,51 +79,26 @@ class MainFragment : Fragment() {
 
                                 val isPowerSaveEnabled = dndAsBedtime || bedtimeSync
 
-                                SwitchItem(
-                                    title = "同步勿擾模式",
-                                    summary = "當手機開啟勿擾時，自動同步至手錶",
-                                    checked = dndSync
-                                ) { updatePref("dnd_sync_key", it) }
-
-                                SwitchItem(
-                                    title = "將勿擾視為就寢模式",
-                                    summary = "開啟後，手機進入勿擾時手錶將同步觸發就寢模式",
-                                    checked = dndAsBedtime
-                                ) { updatePref("dnd_as_bedtime_key", it) }
-
-                                SwitchItem(
-                                    title = "同步就寢模式",
-                                    summary = "獨立同步手機與手錶的就寢狀態",
-                                    checked = bedtimeSync
-                                ) { updatePref("bedtime_sync_key", it) }
-
-                                SwitchItem(
-                                    title = "聯動省電模式",
-                                    summary = "當上述就寢或勿擾觸發時，自動開啟省電",
-                                    checked = if (isPowerSaveEnabled) powerSave else false,
-                                    enabled = isPowerSaveEnabled
-                                ) { updatePref("power_save_key", it) }
+                                SwitchItem("同步勿擾模式", "當手機開啟勿擾時，自動同步至手錶", dndSync) { updatePref("dnd_sync_key", it) }
+                                SwitchItem("將勿擾視為就寢模式", "開啟後，手機進入勿擾時手錶將同步觸發就寢模式", dndAsBedtime) { updatePref("dnd_as_bedtime_key", it) }
+                                SwitchItem("同步就寢模式", "獨立同步手機與手錶的就寢狀態", bedtimeSync) { updatePref("bedtime_sync_key", it) }
+                                SwitchItem("聯動省電模式", "當上述就寢或勿擾觸發時，自動開啟省電", 
+                                    if (isPowerSaveEnabled) powerSave else false, isPowerSaveEnabled) { updatePref("power_save_key", it) }
                             }
 
-                            // 連線狀態（放在同步設定下方）
+                            // 連線狀態
                             CategoryGroup(title = "連線狀態") {
                                 CardItem(
-                                    title = "雙端連通狀態",
-                                    summary = if (isConnectedState.value) 
-                                        "已成功連線到手錶" 
-                                    else 
-                                        "未發現配對手錶，請檢查藍牙或 Wear OS App"
+                                    "雙端連通狀態",
+                                    if (isConnectedState.value) "已成功連線到手錶" else "未發現配對手錶，請檢查藍牙或 Wear OS App"
                                 )
                             }
 
                             // 權限管理
                             CategoryGroup(title = "權限管理") {
                                 CardItem(
-                                    title = "勿擾模式訪問權限",
-                                    summary = if (isDndAllowedState.value) 
-                                        "勿擾模式權限：已獲取" 
-                                    else 
-                                        "勿擾模式權限：未獲取 (點擊前往授權)",
+                                    "勿擾模式訪問權限",
+                                    if (isDndAllowedState.value) "勿擾模式權限：已獲取" else "勿擾模式權限：未獲取 (點擊前往授權)",
                                     onClick = { openDNDPermissionRequest(appContext) }
                                 )
                             }
@@ -166,8 +125,6 @@ class MainFragment : Fragment() {
         }
     }
 
-    // ==================== UI Composable ====================
-
     @Composable
     fun CategoryGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
         Column {
@@ -180,9 +137,7 @@ class MainFragment : Fragment() {
             )
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                ),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 content()
@@ -192,9 +147,7 @@ class MainFragment : Fragment() {
 
     @Composable
     fun SwitchItem(
-        title: String,
-        summary: String,
-        checked: Boolean,
+        title: String, summary: String, checked: Boolean,
         enabled: Boolean = true,
         onCheckedChange: (Boolean) -> Unit
     ) {
@@ -206,18 +159,11 @@ class MainFragment : Fragment() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = summary,
-                    fontSize = 13.sp,
-                    color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                )
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    color = if(enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+                Spacer(Modifier.height(4.dp))
+                Text(text = summary, fontSize = 13.sp,
+                    color = if(enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
             }
             Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
         }
@@ -225,21 +171,17 @@ class MainFragment : Fragment() {
 
     @Composable
     fun CardItem(title: String, summary: String, onClick: (() -> Unit)? = null) {
-        val modifier = if (onClick != null) {
-            Modifier.fillMaxWidth().clickable(onClick = onClick)
-        } else Modifier.fillMaxWidth()
-
+        val modifier = if (onClick != null) Modifier.fillMaxWidth().clickable(onClick = onClick) else Modifier.fillMaxWidth()
         Row(modifier = modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(text = summary, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 
     // ==================== 生命週期 ====================
-
     override fun onResume() {
         super.onResume()
         checkDNDPermission()
@@ -255,9 +197,7 @@ class MainFragment : Fragment() {
         val context = context ?: return false
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
         val allowed = manager.isNotificationPolicyAccessGranted
-        if (isDndAllowedState.value != allowed) {
-            isDndAllowedState.value = allowed
-        }
+        if (isDndAllowedState.value != allowed) isDndAllowedState.value = allowed
         return allowed
     }
 
