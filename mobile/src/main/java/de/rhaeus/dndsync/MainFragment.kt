@@ -28,6 +28,8 @@ import androidx.fragment.app.Fragment
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
 
+// 解決 Experimental API 警告
+@OptIn(ExperimentalMaterial3Api::class)
 class MainFragment : Fragment() {
 
     private val isConnectedState = mutableStateOf(false)
@@ -52,7 +54,7 @@ class MainFragment : Fragment() {
                 else 
                     dynamicLightColorScheme(appContext)
 
-                // 額外保險：隱藏 ActionBar
+                // 強制隱藏 ActionBar
                 LaunchedEffect(Unit) {
                     (requireActivity() as? AppCompatActivity)?.supportActionBar?.hide()
                 }
@@ -84,7 +86,7 @@ class MainFragment : Fragment() {
                                 .padding(horizontal = 16.dp, vertical = 20.dp),
                             verticalArrangement = Arrangement.spacedBy(24.dp)
                         ) {
-                            // 同步設定（第一）
+                            // 同步設定
                             CategoryGroup(title = "同步設定") {
                                 val dndSync = sharedPrefs.getBoolean("dnd_sync_key", true)
                                 val dndAsBedtime = sharedPrefs.getBoolean("dnd_as_bedtime_key", false)
@@ -119,7 +121,7 @@ class MainFragment : Fragment() {
                                 ) { updatePref("power_save_key", it) }
                             }
 
-                            // 連線狀態（第二）
+                            // 連線狀態（放在同步設定下方）
                             CategoryGroup(title = "連線狀態") {
                                 CardItem(
                                     title = "雙端連通狀態",
@@ -130,7 +132,7 @@ class MainFragment : Fragment() {
                                 )
                             }
 
-                            // 權限管理（第三）
+                            // 權限管理
                             CategoryGroup(title = "權限管理") {
                                 CardItem(
                                     title = "勿擾模式訪問權限",
@@ -156,16 +158,15 @@ class MainFragment : Fragment() {
     private fun openDNDPermissionRequest(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (manager?.isNotificationPolicyAccessGranted == false) {
-            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             context.startActivity(intent)
         } else {
             Toast.makeText(context, "勿擾模式權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // ==================== Composable 元件 ====================
+    // ==================== UI Composable ====================
 
     @Composable
     fun CategoryGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
@@ -224,7 +225,9 @@ class MainFragment : Fragment() {
 
     @Composable
     fun CardItem(title: String, summary: String, onClick: (() -> Unit)? = null) {
-        val modifier = if (onClick != null) Modifier.fillMaxWidth().clickable(onClick = onClick) else Modifier.fillMaxWidth()
+        val modifier = if (onClick != null) {
+            Modifier.fillMaxWidth().clickable(onClick = onClick)
+        } else Modifier.fillMaxWidth()
 
         Row(modifier = modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column {
@@ -235,7 +238,7 @@ class MainFragment : Fragment() {
         }
     }
 
-    // ==================== 生命週期與監聽 ====================
+    // ==================== 生命週期 ====================
 
     override fun onResume() {
         super.onResume()
@@ -252,7 +255,9 @@ class MainFragment : Fragment() {
         val context = context ?: return false
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
         val allowed = manager.isNotificationPolicyAccessGranted
-        if (isDndAllowedState.value != allowed) isDndAllowedState.value = allowed
+        if (isDndAllowedState.value != allowed) {
+            isDndAllowedState.value = allowed
+        }
         return allowed
     }
 
