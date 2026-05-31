@@ -8,14 +8,14 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Material You 動態顏色
         com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this);
 
         super.onCreate(savedInstanceState);
         
-        // 徹底隱藏 ActionBar
-        supportRequestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
-        getSupportActionBar().hide();   // 強制隱藏
+        // 主題已經是 NoActionBar，這裡再保險隱藏一次
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().hide();
+        }
 
         setContentView(R.layout.activity_main);
 
