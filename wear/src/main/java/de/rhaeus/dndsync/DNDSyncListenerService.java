@@ -8,6 +8,9 @@ import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
+import android.content.SharedPreferences;
+import androidx.preference.PreferenceManager;
+
 
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
@@ -78,40 +81,49 @@ public class DNDSyncListenerService extends WearableListenerService
     @Override
     public void onMessageReceived(@NonNull MessageEvent messageEvent) {
 
-        if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "onMessageReceived: " + messageEvent);
-        }
-
-        if (!messageEvent.getPath()
-                .equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
-
-            super.onMessageReceived(messageEvent);
-            return;
-        }
-
-        long currentTime = System.currentTimeMillis();
-
-        if (currentTime - lastExecutionTime < COOLDOWN_MS) {
-            Log.d(TAG, "還在冷卻期，忽略本次信號");
-            return;
-        }
-
-        lastExecutionTime = currentTime;
-
-        byte[] data = messageEvent.getData();
-
-        if (data == null || data.length == 0) {
-            Log.d(TAG, "MessageClient 数据为空");
-            return;
-        }
-
-        int dndState = data[0];
-
-        Log.d(TAG, "收到 MessageClient DND: " + dndState);
-
-        applyDndState(dndState);
+    if (Log.isLoggable(TAG, Log.DEBUG)) {
+        Log.d(TAG, "onMessageReceived: " + messageEvent);
     }
 
+    // 🎯 新增拦截：收到手机端的全局设置同步包，先把开关状态存在本地供点击时读取
+    if ("/settings-sync".equalsIgnoreCase(messageEvent.getPath())) {
+        byte[] data = messageEvent.getData();
+        if (data != null && data.length >= 3) {
+            boolean powerSave = data[1] == 1;
+            boolean wearPowerSave = data[2] == 1;
+            // 只要这两个任意一个指示需要开启手錶省电，我们就认定省电开关在打开状态
+            boolean isPowerSaveEnabledOnPhone = powerSave && wearPowerSave;
+
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+            prefs.edit().putBoolean("phone_wear_power_save_state", isPowerSaveEnabledOnPhone).apply();
+            Log.d(TAG, "已同步并缓存手机端省电开关状态: " + isPowerSaveEnabledOnPhone);
+        }
+        return; // 处理完毕，退出
+    }
+
+    // 以下是你原有的 /wear-dnd-sync 拦截逻辑，保持不变
+    if (!messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
+        super.onMessageReceived(messageEvent);
+        return;
+    }
+
+    long currentTime = System.currentTimeMillis();
+    if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+        Log.d(TAG, "還在冷卻期，忽略本次信號");
+        return;
+    }
+    lastExecutionTime = currentTime;
+
+    byte[] data = messageEvent.getData();
+    if (data == null || data.length == 0) {
+        Log.d(TAG, "MessageClient 数据为空");
+        return;
+    }
+
+    int dndState = data[0];
+    Log.d(TAG, "收到 MessageClient DND: " + dndState);
+    applyDndState(dndState);
+}
     // =========================================
     // DataClient 兜底同步
     // =========================================
@@ -224,68 +236,73 @@ public class DNDSyncListenerService extends WearableListenerService
     // =========================================
     // 睡眠模式模拟点击
     // =========================================
+    
     private void toggleBedtimeMode() {
+    DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
 
-        DNDSyncAccessService serv =
-                DNDSyncAccessService.getSharedInstance();
-
-        if (serv == null) {
-            Log.d(TAG, "AccessibilityService 未连接");
-            return;
-        }
-
-        new Thread(() -> {
-
-            PowerManager.WakeLock wakeLock = null;
-
-            try {
-
-                PowerManager pm =
-                        (PowerManager)
-                                getSystemService(Context.POWER_SERVICE);
-
-                wakeLock = pm.newWakeLock(
-                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK
-                                | PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                        "dnd:sync"
-                );
-
-                // 唤醒屏幕
-                wakeLock.acquire(5000L);
-
-                Thread.sleep(1000);
-
-                // 下拉控制中心
-                serv.swipeDown();
-
-                Log.d(TAG, "执行手势下拉");
-
-                Thread.sleep(1200);
-
-                // 点击按钮
-                serv.clickIcon1_2();
-
-                Thread.sleep(800);
-
-                // 返回
-                serv.goBack();
-
-            } catch (Exception e) {
-
-                Log.e(TAG,
-                        "toggleBedtimeMode 异常",
-                        e);
-
-            } finally {
-
-                if (wakeLock != null
-                        && wakeLock.isHeld()) {
-
-                    wakeLock.release();
-                }
-            }
-        }).start();
+    if (serv == null) {
+        Log.d(TAG, "AccessibilityService 未连接");
+        return;
     }
+
+    new Thread(() -> {
+        PowerManager.WakeLock wakeLock = null;
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            wakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "dnd:sync"
+            );
+
+            // 唤醒屏幕
+            wakeLock.acquire(5000L);
+            Thread.sleep(1000);
+
+            // 下拉控制中心
+            serv.swipeDown();
+            Log.d(TAG, "执行手势下拉");
+            Thread.sleep(1200);
+
+            // 🎯 从本地缓存读取手机端发过来的开关状态
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+            boolean isPhonePowerSaveOpen = prefs.getBoolean("phone_wear_power_save_state", false);
+
+            if (isPhonePowerSaveOpen) {
+                // 🚀 剧本 A：手机省电模式打开了
+                Log.d(TAG, "手机端省电开关联动：准备先点击 (50%, 80%)，150ms后点击 (50%, 40%)");
+                
+                // 1. 先点击 80% 高度地方 (0ms 立即发射)
+                serv.clickIconAt80Percent(0);
+                
+                // 2. 过 150ms 自动发射点击原有的 40% 高度地方
+                serv.clickIcon1_2(150);
+                
+                // 给排队的手势留出执行时间
+                Thread.sleep(500); 
+            } else {
+                // 🚀 剧本 B：开关没有打开
+                Log.d(TAG, "手机端省电开关未联动：仅点击原设定 (50%, 40%) 的位置");
+                
+                // 只点击原有的 40% 高度地方
+                serv.clickIcon1_2(0);
+                
+                Thread.sleep(400);
+            }
+
+            // 返回桌面
+            serv.goBack();
+
+        } catch (Exception e) {
+            Log.e(TAG, "toggleBedtimeMode 异常", e);
+        } finally {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+            }
+        }
+    }).start();
+}
+     
+   
 
     // =========================================
     // 震动
