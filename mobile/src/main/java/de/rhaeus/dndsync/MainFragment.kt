@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -78,10 +79,22 @@ class MainFragment : Fragment() {
                                 val trigger = prefsTrigger.value
                                 val dndSync = remember(trigger) { sharedPrefs.getBoolean("dnd_sync_key", true) }
                                 val powerSave = remember(trigger) { sharedPrefs.getBoolean("power_save_key", false) }
+                                val wearPowerSave = remember(trigger) { sharedPrefs.getBoolean("wear_power_save_key", false) }
 
-                                SwitchItem("同步勿擾模式", "當手機開啟勿擾時，自動同步至手錶", dndSync) { updatePref("dnd_sync_key", it) }
+                                SwitchItem("同步勿擾模式", "當手機開啟勿擾時，自動同步至手錶", dndSync) { 
+                                    updatePref("dnd_sync_key", it)
+                                    syncSettingsToWear(appContext)
+                                }
                                 SwitchItem("聯動省電模式", "當同步勿擾模式觸發時，自動開啟省電", 
-                                    if (dndSync) powerSave else false, dndSync) { updatePref("power_save_key", it) }
+                                    if (dndSync) powerSave else false, dndSync) { 
+                                    updatePref("power_save_key", it)
+                                    syncSettingsToWear(appContext)
+                                }
+                                SwitchItem("手錶省電模式", "當勿擾同步時，同時開啟手錶省電模式", 
+                                    if (dndSync) wearPowerSave else false, dndSync) { 
+                                    updatePref("wear_power_save_key", it)
+                                    syncSettingsToWear(appContext)
+                                }
                             }
 
                             // 連線狀態
@@ -95,9 +108,9 @@ class MainFragment : Fragment() {
                             // 權限管理
                             CategoryGroup(title = "權限管理") {
                                 CardItem(
-                                    "通知管理權限",
+                                    "勿擾模式訪問權限",
                                     if (isDndAllowedState.value) "權限：已獲取" else "權限：未獲取 (點擊前往授權)",
-                                    onClick = { openNotificationListenerSettings(appContext) }
+                                    onClick = { openDNDPermissionRequest(appContext) }
                                 )
                             }
                         }
@@ -109,11 +122,32 @@ class MainFragment : Fragment() {
 
     private fun updatePref(key: String, value: Boolean) {
         sharedPrefs.edit().putBoolean(key, value).apply()
-        // 觸發重新組織 UI
         prefsTrigger.value += 1
     }
 
-    private fun openNotificationListenerSettings(context: Context) {
+    private fun syncSettingsToWear(context: Context) {
+        val dndSync = sharedPrefs.getBoolean("dnd_sync_key", true)
+        val powerSave = sharedPrefs.getBoolean("power_save_key", false)
+        val wearPowerSave = sharedPrefs.getBoolean("wear_power_save_key", false)
+
+        // 創建設置數據包並發送到手錶
+        Wearable.getNodeClient(context)
+            .getConnectedNodes()
+            .addOnSuccessListener { nodes ->
+                for (node in nodes) {
+                    // 將設置編碼成字節數組發送
+                    val data = byteArrayOf(
+                        if (dndSync) 1 else 0,
+                        if (powerSave) 1 else 0,
+                        if (wearPowerSave) 1 else 0
+                    )
+                    Wearable.getMessageClient(context)
+                        .sendMessage(node.id, "/settings-sync", data)
+                }
+            }
+    }
+
+    private fun openDNDPermissionRequest(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (manager?.isNotificationPolicyAccessGranted == false) {
             // 直接跳转到通知管理器设置（这会列出所有应用的通知权限）
@@ -126,7 +160,7 @@ class MainFragment : Fragment() {
                 Toast.makeText(context, "無法開啟通知管理設定", Toast.LENGTH_SHORT).show()
             }
         } else {
-            Toast.makeText(context, "通知管理權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "勿擾模式訪問權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
         }
     }
 
