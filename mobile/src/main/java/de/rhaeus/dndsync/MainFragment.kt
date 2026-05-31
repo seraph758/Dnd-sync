@@ -75,17 +75,11 @@ class MainFragment : Fragment() {
                             // === 同步設定（最上方）===
                             CategoryGroup(title = "同步設定") {
                                 val dndSync = sharedPrefs.getBoolean("dnd_sync_key", true)
-                                val dndAsBedtime = sharedPrefs.getBoolean("dnd_as_bedtime_key", false)
-                                val bedtimeSync = sharedPrefs.getBoolean("bedtime_sync_key", false)
                                 val powerSave = sharedPrefs.getBoolean("power_save_key", false)
 
-                                val isPowerSaveEnabled = dndAsBedtime || bedtimeSync
-
                                 SwitchItem("同步勿擾模式", "當手機開啟勿擾時，自動同步至手錶", dndSync) { updatePref("dnd_sync_key", it) }
-                                SwitchItem("將勿擾視為就寢模式", "開啟後，手機進入勿擾時手錶將同步觸發就寢模式", dndAsBedtime) { updatePref("dnd_as_bedtime_key", it) }
-                                SwitchItem("同步就寢模式", "獨立同步手機與手錶的就寢狀態", bedtimeSync) { updatePref("bedtime_sync_key", it) }
-                                SwitchItem("聯動省電模式", "當上述就寢或勿擾觸發時，自動開啟省電", 
-                                    if (isPowerSaveEnabled) powerSave else false, isPowerSaveEnabled) { updatePref("power_save_key", it) }
+                                SwitchItem("聯動省電模式", "當同步勿擾模式觸發時，自動開啟省電", 
+                                    if (dndSync) powerSave else false, dndSync) { updatePref("power_save_key", it) }
                             }
 
                             // 連線狀態
@@ -99,9 +93,9 @@ class MainFragment : Fragment() {
                             // 權限管理
                             CategoryGroup(title = "權限管理") {
                                 CardItem(
-                                    "勿擾模式訪問權限",
-                                    if (isDndAllowedState.value) "通知权限：已獲取" else "通知权限：未獲取 (點擊前往授權)",
-                                    onClick = { openDNDPermissionRequest(appContext) }
+                                    "通知管理權限",
+                                    if (isDndAllowedState.value) "權限：已獲取" else "權限：未獲取 (點擊前往授權)",
+                                    onClick = { openNotificationListenerSettings(appContext) }
                                 )
                             }
                         }
@@ -116,15 +110,20 @@ class MainFragment : Fragment() {
         prefsTrigger.value += 1
     }
 
-    private fun openDNDPermissionRequest(context: Context) {
+    private fun openNotificationListenerSettings(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         if (manager?.isNotificationPolicyAccessGranted == false) {
-            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            
-                .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-            context.startActivity(intent)
+            // 直接跳转到通知管理器设置（这会列出所有应用的通知权限）
+            val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "無法開啟通知管理設定", Toast.LENGTH_SHORT).show()
+            }
         } else {
-            Toast.makeText(context, "通知权限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "通知管理權限已獲取，無需重複開啟", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -232,4 +231,4 @@ class MainFragment : Fragment() {
             Wearable.getCapabilityClient(context).removeListener(it)
         }
     }
-} 
+}
