@@ -40,7 +40,9 @@ class MainFragment : Fragment() {
     private val prefsTrigger = mutableStateOf(0)
 
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
-    private lateinit val sharedPreferences: SharedPreferences
+    
+    // 🎯 修正：將 val 改為 var，這樣 lateinit 才可以正常編譯，且允許後面重新賦值
+    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
