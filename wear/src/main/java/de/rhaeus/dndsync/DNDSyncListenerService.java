@@ -26,10 +26,22 @@ public class DNDSyncListenerService extends WearableListenerService {
                 DataItem item = event.getDataItem();
                 String path = item.getUri().getPath();
                 
-                Log.d(TAG, "手錶收到變更，路徑: " + path);
+                Log.d(TAG, "手錶監聽到 DataLayer 信號更新，路徑: " + path);
+
+                if (path == null) continue;
+
+                // 🎯 核心修復：響應手機端的連線驗證信號
+                if (path.contains("handshake")) {
+                    DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
+                    String sender = dataMap.getString("sender", "");
+                    if ("phone".equals(sender)) {
+                        Log.d(TAG, "【連線成功】手錶成功簽收來自手機端的連線驗證信號！雙向通訊正常。");
+                    }
+                    continue;
+                }
 
                 // 簽收手機發往手錶專線的包裹
-                if (path != null && path.contains("phone_to_wear")) {
+                if (path.contains("phone_to_wear")) {
                     DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
                     
                     int rawDndValue = dataMap.getInt("raw_dnd_value", 1);
@@ -37,9 +49,10 @@ public class DNDSyncListenerService extends WearableListenerService {
                     boolean wearPowerSaveResponse = dataMap.getBoolean("wear_power_save_response", false);
                     boolean wearVibrateOnSync = dataMap.getBoolean("wear_vibrate_on_sync", false);
 
-                    Log.d(TAG, "【手錶簽收成功】目標值=" + rawDndValue);
+                    Log.d(TAG, "【數據簽收成功】勿擾目標值=" + rawDndValue + " | 託管=" + wearPowerSaveResponse);
 
                     if (!dndSyncSwitch) {
+                        Log.d(TAG, "手機同步總開關已關閉，跳過本次同步");
                         continue;
                     }
 
@@ -48,7 +61,6 @@ public class DNDSyncListenerService extends WearableListenerService {
                     if (mNotificationManager != null) {
                         int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
                         if (rawDndValue != currentFilter) {
-                            // 鎖定手錶本地發射源，防止狀態改變觸發回傳死循環
                             isInternalUpdate = true;
                             mNotificationManager.setInterruptionFilter(rawDndValue);
                             

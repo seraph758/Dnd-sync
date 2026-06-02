@@ -28,7 +28,6 @@ public class DNDNotificationService extends NotificationListenerService {
     public void onInterruptionFilterChanged(int interruptionFilter) {
         Log.d(TAG, "手錶本機勿擾狀態改變: " + interruptionFilter);
 
-        // 核心隔離：如果是因為收到手機請求導致的變更，直接攔截，禁止反向回傳
         if (DNDSyncListenerService.isInternalUpdate) {
             Log.d(TAG, "手錶內部更新攔截，防止反向回傳手機引發死循環");
             return;
@@ -40,10 +39,9 @@ public class DNDNotificationService extends NotificationListenerService {
     private void sendDNDSync(int dndState) {
         Log.d(TAG, "手錶開始用 DataClient 反向同步給手機: " + dndState);
 
-        // 設定獨立的手錶控手機專線通道 /dnd_state/wear_to_phone
-        PutDataMapRequest request = PutDataMapRequest.create(
-            "/dnd_state/wear_to_phone");
+        PutDataMapRequest request = PutDataMapRequest.create("/dnd_state/wear_to_phone");
         request.getDataMap().putInt("wear_dnd_value", dndState);
+        // 🎯 手錶端發送也同步加入動態時間戳，防止 DataLayer 快取攔截信號
         request.getDataMap().putLong("timestamp", System.currentTimeMillis());
 
         PutDataRequest putDataRequest = request.asPutDataRequest();
@@ -51,8 +49,7 @@ public class DNDNotificationService extends NotificationListenerService {
 
         Wearable.getDataClient(this)
                 .putDataItem(putDataRequest)
-                .addOnSuccessListener(dataItem -> Log.d(TAG, 
-                    "【手錶反向寫入成功】路徑: " + dataItem.getUri().getPath()))
+                .addOnSuccessListener(dataItem -> Log.d(TAG, "【手錶反向寫入成功】路徑: " + dataItem.getUri().getPath()))
                 .addOnFailureListener(e -> Log.e(TAG, "【手錶反向寫入失敗】", e));
     }
 }
