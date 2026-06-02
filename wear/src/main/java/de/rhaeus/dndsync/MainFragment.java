@@ -4,9 +4,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.Log;
 import android.widget.Toast;
 
 import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 
 import com.google.android.gms.wearable.CapabilityClient;
@@ -23,20 +25,49 @@ public class MainFragment extends PreferenceFragmentCompat {
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
-        // 1. 綁定組件（對應您的 root_preferences.xml 內定義的 Key）
+        // 1. 綁定需要顯示的組件
         connectivityPref = findPreference("connectivity_state_key");
         dndPref = findPreference("dnd_permission_key");
         accPref = findPreference("acc_permission_key");
 
-        // 🎯 核心遷移：徹底拔掉和移除手錶端舊的 bedtime_key 等開關 Preference 組件
-        Preference oldBedtimePref = findPreference("bedtime_key");
-        if (oldBedtimePref != null) {
-            getPreferenceScreen().removePreference(oldBedtimePref);
-        }
+        // =======================================================
+        // 🎯 核心修正：強行從 UI 樹節點中完美抹去被手機託管的開關與分組
+        // =======================================================
+        try {
+            Preference dndSyncSwitch = findPreference("dnd_sync_key");
+            Preference bedtimeSwitch = findPreference("bedtime_key");
+            Preference vibrateSwitch = findPreference("vibrate_key");
 
-        // 2. 🎯 通知權限只做檢測，不賦予 setOnPreferenceClickListener 點擊跳轉事件
+            // 正確移除包裹在 Category 內部的子組件
+            if (dndSyncSwitch != null && dndSyncSwitch.getParent() != null) {
+                dndSyncSwitch.getParent().removePreference(dndSyncSwitch);
+            }
+            if (bedtimeSwitch != null && bedtimeSwitch.getParent() != null) {
+                bedtimeSwitch.getParent().removePreference(bedtimeSwitch);
+            }
+            if (vibrateSwitch != null && vibrateSwitch.getParent() != null) {
+                vibrateSwitch.getParent().removePreference(vibrateSwitch);
+            }
+
+            // 尋找並強行隱藏那個空的 “遠端同步控制（已由手機託管）” 分組標題
+            // 遍歷所有組件，只要標題或內容匹配，就直接隱藏整個 Category
+            for (int i = 0; i < getPreferenceScreen().getPreferenceCount(); i++) {
+                Preference pref = getPreferenceScreen().getPreference(i);
+                if (pref instanceof PreferenceCategory) {
+                    CharSequence title = pref.getTitle();
+                    if (title != null && title.toString().contains("遠端同步控制")) {
+                        pref.setVisible(false); // 徹底讓這個分組標題在畫面上隱形
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e("WearMainFragment", "清除託管組件時發生錯誤: " + e.getMessage());
+        }
+        // =======================================================
+
+        // 2. 通知權限只做檢測，不賦予點擊跳轉事件
         if (dndPref != null) {
-            dndPref.setSelectable(false); // 設置為不可選取、不可點擊點按
+            dndPref.setSelectable(false); 
         }
 
         // 3. 無障礙權限保持可點擊引導跳轉手錶本機系統
@@ -71,8 +102,8 @@ public class MainFragment extends PreferenceFragmentCompat {
         Context ctx = getContext();
         if (ctx == null) return;
 
-        // 🎯 精確檢測：手錶 DNDNotificationService 通知監聽權限是否被激活
-        String flat = Settings.Secure.getString(ctx.getContentResolver(), "enabled_notification_listeners");
+        // 精確檢測：手錶通知監聽權限是否被激活
+        String flat = Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners");
         boolean notificationAllowed = flat != null && flat.contains(ctx.getPackageName());
         if (dndPref != null) {
             dndPref.setSummary(notificationAllowed ? "通知接聽權限：已啟用" : "通知接聽權限：未啟用 (請透過ADB授權)");
