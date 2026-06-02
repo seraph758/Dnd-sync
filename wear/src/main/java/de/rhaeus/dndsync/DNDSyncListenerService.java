@@ -1,6 +1,9 @@
 package de.rhaeus.dndsync;
 
+import android.app.NotificationManager;
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.util.Log;
@@ -14,6 +17,7 @@ import com.google.android.gms.wearable.WearableListenerService;
 public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "DNDSyncListener";
     public static boolean isInternalUpdate = false;
+    private static final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
@@ -22,47 +26,62 @@ public class DNDSyncListenerService extends WearableListenerService {
                 DataItem item = event.getDataItem();
                 String path = item.getUri().getPath();
                 
-                // 🎯 核心修復 1：改用 contains 模糊匹配，通殺 /dnd_status 和 /dnd_state
-                if (path != null && path.contains("dnd")) {
+                // 🎯 簽收手機發往手錶專線的包裹
+                if (path != null && path.equals("/dnd_state/phone_to_wear")) {
                     DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
                     
+                    int rawDndValue = dataMap.getInt("raw_dnd_value", 1);
+                    boolean dndSyncSwitch = dataMap.getBoolean("dnd_sync_switch", true);
                     boolean wearPowerSaveResponse = dataMap.getBoolean("wear_power_save_response", false);
-                    
-                    // 🎯 核心修復 2：精準對齊您手機端的 Key "wear_vibrate_on_sync"
                     boolean wearVibrateOnSync = dataMap.getBoolean("wear_vibrate_on_sync", false);
-                    boolean isDndOrBedtimeActive = dataMap.getBoolean("dnd_state_active", false);
 
-                    Log.d(TAG, "手錶成功攔截協議! 路徑: " + path + " | 託管=" + wearPowerSaveResponse + " | 震動=" + wearVibrateOnSync + " | 狀態=" + isDndOrBedtimeActive);
+                    Log.d(TAG, "【手錶端簽收成功】目標勿擾值=" + rawDndValue + " | 託管=" + wearPowerSaveResponse + " | 震動=" + wearVibrateOnSync);
 
-                    // 🎯 核心修復 3：只有當手機端傳來的震動開關為 true 時，手錶才允許震動
+                    if (!dndSyncSwitch) {
+                        Log.d(TAG, "手機同步總開關已關閉，跳過本次同步");
+                        continue;
+                    }
+
+                    NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (mNotificationManager != null) {
+                        int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
+                        if (rawDndValue != currentFilter) {
+                            // 🎯 鎖定手錶本地發射源，防止手錶改變勿擾後又回傳給手機
+                            isInternalUpdate = true;
+                            mNotificationManager.setInterruptionFilter(rawDndValue);
+                            Log.d(TAG, "手錶本機勿擾狀態已成功設置為: " + rawDndValue);
+                            
+                            handler.postDelayed(() -> {
+                                isInternalUpdate = false;
+                                Log.d(TAG, "手錶內部更新完成，解除發射鎖定");
+                            }, 2000);
+                        }
+                    }
+
+                    // 1. 震動反饋控制：完全聽從手機端 wearVibrateOnSync 開關
                     if (wearVibrateOnSync) {
                         Log.d(TAG, "震動開關開啟，手錶執行短震動反饋");
                         triggerWatchVibration();
                     } else {
-                        Log.d(TAG, "震動開關關閉，手錶安靜同步，絕不震動");
+                        Log.d(TAG, "震動開關關閉，手錶保持安靜同步");
                     }
 
-                    // 4. 省電模式自動點擊託管邏輯（調用您 AccessService 裡現有的 clickIcon 方法）
+                    // 2. 省電模式自動點擊連動託管
                     if (wearPowerSaveResponse) {
-                        isInternalUpdate = true;
                         DNDSyncAccessService accessService = DNDSyncAccessService.getSharedInstance();
                         if (accessService != null) {
                             Log.d(TAG, "執行無障礙點擊：80% 緊接 40%");
-                            accessService.clickIconAt80Percent(0);   // 0ms 立即點擊 80%
-                            accessService.clickIcon1_2(200);         // 200ms 後排隊點擊 40%
+                            accessService.clickIconAt80Percent(0);   // 0ms
+                            accessService.clickIcon1_2(200);         // 200ms
                         } else {
-                            Log.w(TAG, "模擬點擊失敗：手錶無障礙服務未啟動");
+                            Log.w(TAG, "自動點擊失敗：手錶端的無障礙自動點擊服務未開啟！");
                         }
-                        isInternalUpdate = false;
                     }
                 }
             }
         }
     }
 
-    /**
-     * 手錶短震動方法（標準 Java 語法）
-     */
     private void triggerWatchVibration() {
         try {
             Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
@@ -74,7 +93,7 @@ public class DNDSyncListenerService extends WearableListenerService {
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "手錶執行震動時出錯: " + e.getMessage());
+            Log.e(TAG, "手錶震動出錯: " + e.getMessage());
         }
     }
 }
