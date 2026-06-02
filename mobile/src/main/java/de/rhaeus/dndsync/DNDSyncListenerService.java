@@ -24,35 +24,33 @@ public class DNDSyncListenerService extends WearableListenerService {
                 DataItem item = event.getDataItem();
                 String path = item.getUri().getPath();
                 
-                // 🎯 簽收手錶發往手機專線的反向包
-                if (path != null && path.equals("/dnd_state/wear_to_phone")) {
+                Log.d(TAG, "手機收到 DataLayer 變更: " + path);
+
+                // 簽收手錶發往手機專線的反向包裹
+                if (path != null && path.contains("wear_to_phone")) {
                     DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
                     int wearDndValue = dataMap.getInt("wear_dnd_value", 1);
                     
-                    Log.d(TAG, "【手機端簽收反向包】收到手錶勿擾同步請求，目標值: " + wearDndValue);
+                    Log.d(TAG, "【手機簽收手錶反向包】目標值: " + wearDndValue);
 
-                    NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    NotificationManager mNotificationManager = (NotificationManager) 
+                        getSystemService(Context.NOTIFICATION_SERVICE);
                     if (mNotificationManager != null) {
                         int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
                         
                         if (wearDndValue != currentFilter) {
                             if (mNotificationManager.isNotificationPolicyAccessGranted()) {
                                 
-                                // 🎯 鎖定手機本地發射源，防止手機修改後又再次回傳給手錶
+                                // 鎖定手機本地發射源，防止再次回傳給手錶
                                 isInternalUpdate = true;
-                                Log.d(TAG, "鎖定手機本地發送邏輯，開始執行反向修改");
-                                
                                 mNotificationManager.setInterruptionFilter(wearDndValue);
                                 Log.d(TAG, "手機勿擾狀態已成功設置為: " + wearDndValue);
                                 
-                                // 2秒後解除鎖定
                                 handler.postDelayed(() -> {
                                     isInternalUpdate = false;
                                     Log.d(TAG, "手機內部更新完成，恢復監聽發送");
                                 }, 2000);
 
-                            } else {
-                                Log.d(TAG, "嘗試設定勿擾，但手機未被授予通知策略存取權限");
                             }
                         }
                     }
