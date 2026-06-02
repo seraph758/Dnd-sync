@@ -2,30 +2,28 @@ package de.rhaeus.dndsync;
 
 import android.app.NotificationManager;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.PowerManager;
-import android.provider.Settings;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.DataMapItem;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.WearableListenerService;
 
 public class DNDSyncListenerService extends WearableListenerService {
 
-    private static final String TAG = "DNDSyncListener";
-
+    private static final String TAG = "DNDSyncListenerService";
     private static final String DND_SYNC_MESSAGE_PATH = "/wear-dnd-sync";
-    
-    // 🎯 對接手機端全新的 Message 通路
-    private static final String SETTINGS_MSG_PATH = "/settings-sync-msg";
-    private static final String CMD_DND_SETTING = "/open-wear-dnd-setting";
-    private static final String CMD_ACC_SETTING = "/open-wear-acc-setting";
-    private static final String CMD_TEST_CLICK = "/test-wear-click";
+    private static final String DATA_PATH = "/dnd_state";
 
     private static long lastExecutionTime = 0;
     private static final long COOLDOWN_MS = 4000;
@@ -34,76 +32,61 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final Handler handler = new Handler();
 
     @Override
+    public void onDataChanged(@NonNull DataEventBuffer dataEvents) {
+        for (DataEvent event : dataEvents) {
+            if (event.getType() == DataEvent.TYPE_CHANGED) {
+                String path = event.getDataItem().getUri().getPath();
+                
+                // 🎯 接收並在手錶本地 SharedPrefs 中更新緩存手機發來的所有控制開關
+                if (DATA_PATH.equals(path)) {
+                    DataMap dataMap = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
+                    boolean dndSyncSwitch = dataMap.getBoolean("dnd_sync_switch", true);
+                    boolean phonePowerSave = dataMap.getBoolean("phone_power_save_link", false);
+                    boolean wearPowerSaveResponse = dataMap.getBoolean("wear_power_save_response", false);
+                    boolean wearVibrateOnSync = dataMap.getBoolean("wear_vibrate_on_sync", true);
+
+                    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+                    prefs.edit()
+                            .putBoolean("dnd_sync_switch", dndSyncSwitch)
+                            .putBoolean("phone_power_save_link", phonePowerSave)
+                            .putBoolean("wear_power_save_response", wearPowerSaveResponse)
+                            .putBoolean("wear_vibrate_on_sync", wearVibrateOnSync)
+                            .apply();
+
+                    Log.d(TAG, "【快取成功】配置已同步：勿擾同步=" + dndSyncSwitch + 
+                            ", 省電響應(開關C)=" + wearPowerSaveResponse + 
+                            ", 同步震動(開關D)=" + wearVibrateOnSync);
+                }
+            }
+        }
+    }
+
+    @Override
     public void onMessageReceived(@NonNull MessageEvent messageEvent) {
-        String path = messageEvent.getPath();
+        if (!messageEvent.getPath().equalsIgnoreCase(DND_SYNC_MESSAGE_PATH)) {
+            super.onMessageReceived(messageEvent);
+            return;
+        }
+
+        // 讀取開關 A 的本地快取狀態
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        if (!prefs.getBoolean("dnd_sync_switch", true)) {
+            Log.d(TAG, "手機已關閉勿擾同步總開關，略過本次事件");
+            return;
+        }
+
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastExecutionTime < COOLDOWN_MS) {
+            Log.d(TAG, "冷卻中...");
+            return;
+        }
+        lastExecutionTime = currentTime;
+
         byte[] data = messageEvent.getData();
+        if (data == null || data.length == 0) return;
 
-        Log.d(TAG, "手錶收到 Message 管道訊息, Path = " + path);
-
-        // 🎯 1. 攔截設定組態訊息，精準更新本地快遞緩存
-        if (SETTINGS_MSG_PATH.equalsIgnoreCase(path)) {
-            if (data != null && data.length >= 3) {
-                boolean dndSync = data[0] == 1;
-                boolean powerSave = data[1] == 1;
-                boolean wearPowerSave = data[2] == 1;
-
-                // 核心規則：手機省電和手錶聯動優化同時打開
-                boolean isPowerSaveEnabledOnPhone = powerSave && wearPowerSave;
-
-                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-                prefs.edit()
-                     .putBoolean("phone_wear_power_save_state", isPowerSaveEnabledOnPhone)
-                     .putBoolean("dnd_sync_switch", dndSync)
-                     .apply();
-                     
-                Log.d(TAG, "【核心成功】手錶已精準緩存聯動狀態為: " + isPowerSaveEnabledOnPhone);
-            }
-            return;
-        }
-
-        // 🎯 2. 接收手機 UI 移過來的遠端跳轉指令：開啟勿擾權限
-        if (CMD_DND_SETTING.equalsIgnoreCase(path)) {
-            Intent intent = new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-            return;
-        }
-
-        // 🎯 3. 接收手機 UI 移過來的遠端跳轉指令：開啟無障礙服務
-        if (CMD_ACC_SETTING.equalsIgnoreCase(path)) {
-            Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
-            return;
-        }
-
-        // 🎯 4. 接收手機 UI 移過來的遠端跳轉指令：直接手動測試模擬點擊劇本
-        if (CMD_TEST_CLICK.equalsIgnoreCase(path)) {
-            Log.d(TAG, "收到手機端遠端測試指令，直接空降執行點擊劇本");
-            toggleBedtimeMode();
-            return;
-        }
-
-        // 🎯 5. 處理標準勿擾狀態同步邏輯
-        if (DND_SYNC_MESSAGE_PATH.equalsIgnoreCase(path)) {
-            // 檢查手機端是否開啟了雙向同步開關
-            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-            if (!prefs.getBoolean("dnd_sync_switch", true)) {
-                Log.d(TAG, "手機端勿擾同步總開關已關閉，跳過狀態變更");
-                return;
-            }
-
-            long currentTime = System.currentTimeMillis();
-            if (currentTime - lastExecutionTime < COOLDOWN_MS) {
-                Log.d(TAG, "還在冷卻期，忽略本次信號");
-                return;
-            }
-            lastExecutionTime = currentTime;
-
-            if (data == null || data.length == 0) return;
-            int dndState = data[0];
-            applyDndState(dndState);
-        }
+        int dndState = data[0];
+        applyDndState(dndState);
     }
 
     private void applyDndState(int dndState) {
@@ -114,11 +97,11 @@ public class DNDSyncListenerService extends WearableListenerService {
                 if (mNotificationManager.isNotificationPolicyAccessGranted()) {
                     isInternalUpdate = true;
                     mNotificationManager.setInterruptionFilter(dndState);
-                    Log.d(TAG, "成功設置手錶勿擾狀態為: " + dndState);
-                    
-                    // 呼叫自動點擊
+                    Log.d(TAG, "手錶勿擾切換成功: " + dndState);
+
+                    // 執行自動手勢劇本與震動
                     toggleBedtimeMode();
-                    
+
                     handler.postDelayed(() -> isInternalUpdate = false, 2000);
                 }
             }
@@ -128,8 +111,15 @@ public class DNDSyncListenerService extends WearableListenerService {
     private void toggleBedtimeMode() {
         DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
         if (serv == null) {
-            Log.d(TAG, "AccessibilityService 無障礙服務尚未連接！請檢查權限");
+            Log.d(TAG, "無障礙服務未連線，跳過手勢點擊");
             return;
+        }
+
+        // 讀取開關 D 控制是否震動
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean shouldVibrate = prefs.getBoolean("wear_vibrate_on_sync", true);
+        if (shouldVibrate) {
+            vibrate();
         }
 
         new Thread(() -> {
@@ -143,41 +133,42 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                 // 1. 下拉控制中心
                 serv.swipeDown();
-                Log.d(TAG, "執行手勢下拉...");
-                
-                // 🎯 關鍵等待：等待控制中心菜單完全滑下並定格（1.4秒確保穩定）
-                Thread.sleep(1400);
+                Log.d(TAG, "控制中心下拉手勢已發送");
+                Thread.sleep(1300); // 靜置等待選單降落停穩
 
-                // 2. 判定儲存的省電優化狀態
-                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-                boolean isPhonePowerSaveOpen = prefs.getBoolean("phone_wear_power_save_state", false);
+                // 2. 根據開關 C 判斷執行單點劇本還是連擊防吞劇本
+                boolean isWearPowerSaveOpen = prefs.getBoolean("wear_power_save_response", false);
 
-                if (isPhonePowerSaveOpen) {
-                    Log.d(TAG, "【執行劇本 A】雙連擊防吞模式啟動！");
-                    
-                    // 🎯 先發射點擊 80% 高度（延遲 250ms 確保按鈕進入可點擊活躍態）
-                    serv.clickIconAt80Percent(250);
-                    
-                    // 🎯 再發射點擊 40% 高度（在 750ms 時觸發，中間預留 500ms 給系統響應彈窗）
-                    serv.clickIcon1_2(750);
-                    
-                    Thread.sleep(1200); 
+                if (isWearPowerSaveOpen) {
+                    Log.d(TAG, "【開關C已開啟】執行雙連擊防吞劇本：先點擊 80% 高度，再點擊 40% 高度");
+                    // 200ms 後發射點擊 (50%, 80%)
+                    serv.clickIconAt80Percent(200);
+                    // 550ms 後發射點擊 (50%, 40%)
+                    serv.clickIcon1_2(550);
+                    Thread.sleep(1000); 
                 } else {
-                    Log.d(TAG, "【執行劇本 B】常規單點 40% 高度模式");
-                    serv.clickIcon1_2(250);
-                    Thread.sleep(600);
+                    Log.d(TAG, "【開關C已關閉】執行常規單點劇本：僅點擊 40% 高度");
+                    serv.clickIcon1_2(0);
+                    Thread.sleep(500);
                 }
 
                 // 3. 返回桌面
                 serv.goBack();
 
             } catch (Exception e) {
-                Log.e(TAG, "toggleBedtimeMode 劇本異常", e);
+                Log.e(TAG, "手勢執行過程發生異常", e);
             } finally {
                 if (wakeLock != null && wakeLock.isHeld()) {
                     wakeLock.release();
                 }
             }
         }).start();
+    }
+
+    private void vibrate() {
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (v != null) {
+            v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
+        }
     }
 }
