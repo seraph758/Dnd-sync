@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
@@ -8,23 +9,6 @@
             android:key="connectivity_state_key"
             android:title="手機連線狀態"
             android:summary="正在檢測與手機的連接..."
-            app:iconSpaceReserved="false" />
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        android:title="@string/sync_header"
-        app:iconSpaceReserved="false">
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:key="dnd_sync_key"
-            android:title="同步勿擾模式"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:key="bedtime_key"
-            android:title="就寝模式同步 (模擬點擊)"
-            android:summary="開啟時將模擬點擊手錶的就寝模式"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
@@ -45,13 +29,31 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/other_header"
+        android:title="遠端同步控制（已由手機託管）"
+        android:visible="false"
         app:iconSpaceReserved="false">
+        
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="dnd_sync_key"
+            android:title="同步勿擾模式"
+            android:visible="false"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="bedtime_key"
+            android:title="就寝模式同步 (模擬點擊)"
+            android:visible="false"
+            app:iconSpaceReserved="false" />
+
         <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="vibrate_key"
             android:title="@string/vibrate_title"
+            android:visible="false"
             app:iconSpaceReserved="false" />
+            
     </PreferenceCategory>
 
 </PreferenceScreen>
