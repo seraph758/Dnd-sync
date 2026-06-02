@@ -3,6 +3,7 @@ package de.rhaeus.dndsync
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -11,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,9 +23,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.PutDataMapRequest
@@ -36,7 +40,7 @@ class MainFragment : Fragment() {
     private val prefsTrigger = mutableStateOf(0)
 
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
-    private lateinit var sharedPreferences: SharedPreferences
+    private lateinit val sharedPreferences: SharedPreferences
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -46,12 +50,40 @@ class MainFragment : Fragment() {
 
         return ComposeView(context).apply {
             setContent {
-                MaterialTheme {
+                val darkTheme = isSystemInDarkTheme()
+                val currentContext = LocalContext.current
+                
+                // 🎯 真正的動態取色：Android 12+ 從系統桌面桌布提取色彩，舊版本回退到預設調色盤
+                val colorScheme = when {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                        if (darkTheme) dynamicDarkColorScheme(currentContext) else dynamicLightColorScheme(currentContext)
+                    }
+                    darkTheme -> darkColorScheme(
+                        background = Color(0xFF121212),
+                        surface = Color(0xFF1E1E1E),
+                        onBackground = Color(0xFFE3E2E6),
+                        onSurface = Color(0xFFE3E2E6)
+                    )
+                    else -> lightColorScheme(
+                        background = Color(0xFFF7F9FC),
+                        surface = Color.White,
+                        onBackground = Color(0xFF1A1C1E),
+                        onSurface = Color(0xFF495057)
+                    )
+                }
+
+                // 🎯 狀態欄圖標黑白自我適應：亮色模式下狀態欄用黑字，暗色模式下用白字
+                val window = activity?.window
+                if (window != null) {
+                    val decorView = window.decorView
+                    WindowInsetsControllerCompat(window, decorView).isAppearanceLightStatusBars = !darkTheme
+                }
+
+                MaterialTheme(colorScheme = colorScheme) {
                     val isConnected by isConnectedState
                     val isNotificationAllowed by isNotificationAllowedState
                     val trigger by prefsTrigger
 
-                    // 從手機本地儲存讀取這 4 個原本屬於手錶功能的開關狀態
                     var dndSyncMode by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dnd_sync_switch", true)) }
                     var phonePowerSaveByLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("phone_power_save_link", false)) }
                     var wearPowerSaveResponse by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_power_save_response", false)) }
@@ -60,7 +92,7 @@ class MainFragment : Fragment() {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0xFFF7F9FC))
+                            .background(MaterialTheme.colorScheme.background) // 全螢幕背景跟隨桌布色，消除色彩斷層
                             .verticalScroll(rememberScrollState())
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -69,25 +101,24 @@ class MainFragment : Fragment() {
                             text = "DND Sync 同步控制中心",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1A1C1E)
+                            color = MaterialTheme.colorScheme.onBackground
                         )
 
-                        // 1. 手機端狀態看板卡片
+                        // 1. 狀態看板卡片
                         Card(
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().clickable {
-                                        // 🎯 修正：正確跳轉到手機系統的「通知存取權限/通知監聽器」設定頁面
                                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                                     },
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(text = "手機通知存取權限", fontSize = 15.sp, color = Color(0xFF495057))
+                                    Text(text = "手機通知存取權限", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                                     Text(
                                         text = if (isNotificationAllowed) "已授權" else "未授權 (點擊前往)",
                                         fontSize = 14.sp,
@@ -103,7 +134,7 @@ class MainFragment : Fragment() {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(text = "手錶連線狀態", fontSize = 15.sp, color = Color(0xFF495057))
+                                    Text(text = "手錶連線狀態", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                                     Text(
                                         text = if (isConnected) "已連線" else "未連線 (檢查藍牙/配對)",
                                         fontSize = 14.sp,
@@ -114,16 +145,20 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 2. 收納手錶設定的功能控制面板
-                        Text(text = "手錶端功能遠端控制", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6C757D))
+                        // 2. 控制面板標題
+                        Text(
+                            text = "手錶端功能遠端控制", 
+                            fontSize = 14.sp, 
+                            fontWeight = FontWeight.SemiBold, 
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                        )
 
                         Card(
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Column {
-                                // 開關 A: 啟用勿擾狀態同步
                                 SwitchRow(
                                     title = "啟用勿擾狀態同步",
                                     summary = "開啟後，手機的勿擾狀態將自動同步發送到手錶",
@@ -134,9 +169,11 @@ class MainFragment : Fragment() {
                                     pushSettingsToWear()
                                 }
                                 
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFE2E8F0))
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp), 
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                )
                                 
-                                // 開關 B: 手機端省電連動
                                 SwitchRow(
                                     title = "手機端省電連動",
                                     summary = "當手機進入省電模式時，觸發狀態變更",
@@ -147,9 +184,11 @@ class MainFragment : Fragment() {
                                     pushSettingsToWear()
                                 }
                                 
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFE2E8F0))
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp), 
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                )
 
-                                // 開關 C: 手錶端省電模式響應（防吞連擊劇本開關）
                                 SwitchRow(
                                     title = "手錶端省電模式響應",
                                     summary = "開啟後，若觸發省電，手錶將執行 (先點擊80%再點擊40%) 的防吞劇本",
@@ -160,9 +199,11 @@ class MainFragment : Fragment() {
                                     pushSettingsToWear()
                                 }
 
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFE2E8F0))
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp), 
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                )
 
-                                // 開關 D: 同步時震動開關
                                 SwitchRow(
                                     title = "同步成功時震動反饋",
                                     summary = "當手錶成功接收勿擾變更並執行手勢點擊時，手錶本機觸發短震動",
@@ -188,10 +229,14 @@ class MainFragment : Fragment() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Color(0xFF212529))
-                Text(text = summary, fontSize = 12.sp, color = Color(0xFF6C757D))
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
+                Text(text = summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(
+                checked = checked, 
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+            )
         }
     }
 
@@ -207,7 +252,6 @@ class MainFragment : Fragment() {
         unregisterConnectivityListener()
     }
 
-    // 🎯 修正：精確檢查手機本機的「通知存取/通知監聽權限」
     private fun checkNotificationPermission(): Boolean {
         val context = context ?: return false
         val packageName = context.packageName
@@ -219,9 +263,6 @@ class MainFragment : Fragment() {
         return allowed
     }
 
-    /**
-     * 🎯 利用最暢通無阻的 DataClient "/dnd_state" 管道將開關配置送達手錶快取
-     */
     private fun pushSettingsToWear() {
         val context = context ?: return
         val dndSync = sharedPreferences.getBoolean("dnd_sync_switch", true)
@@ -232,14 +273,14 @@ class MainFragment : Fragment() {
         val dataMapRequest = PutDataMapRequest.create("/dnd_state").apply {
             dataMap.putBoolean("dnd_sync_switch", dndSync)
             dataMap.putBoolean("phone_power_save_link", pSave)
-            dataMap.putBoolean("wear_power_save_response", wSave) // 開關 C 直接下發
-            dataMap.putBoolean("wear_vibrate_on_sync", wVibrate)   // 開關 D 直接下發
+            dataMap.putBoolean("wear_power_save_response", wSave)
+            dataMap.putBoolean("wear_vibrate_on_sync", wVibrate)
             dataMap.putLong("timestamp", System.currentTimeMillis())
         }
 
         Wearable.getDataClient(context).putDataItem(dataMapRequest.asPutDataRequest())
             .addOnSuccessListener {
-                Log.d("MobileSettings", "【通訊成功】已將最新4項控制配置同步至手錶 DataClient")
+                Log.d("MobileSettings", "【通訊成功】已將 4 項設定同步至手錶")
             }
     }
 
