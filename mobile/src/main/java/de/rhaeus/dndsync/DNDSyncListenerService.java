@@ -26,8 +26,10 @@ public class DNDSyncListenerService extends WearableListenerService {
                 
                 Log.d(TAG, "手機收到 DataLayer 變更: " + path);
 
+                if (path == null) continue;
+
                 // 簽收手錶發往手機專線的反向包裹
-                if (path != null && path.contains("wear_to_phone")) {
+                if (path.contains("wear_to_phone")) {
                     DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
                     int wearDndValue = dataMap.getInt("wear_dnd_value", 1);
                     
@@ -41,7 +43,6 @@ public class DNDSyncListenerService extends WearableListenerService {
                         if (wearDndValue != currentFilter) {
                             if (mNotificationManager.isNotificationPolicyAccessGranted()) {
                                 
-                                // 鎖定手機本地發射源，防止再次回傳給手錶
                                 isInternalUpdate = true;
                                 mNotificationManager.setInterruptionFilter(wearDndValue);
                                 Log.d(TAG, "手機勿擾狀態已成功設置為: " + wearDndValue);
