@@ -19,6 +19,10 @@ public class DNDSyncListenerService extends WearableListenerService {
     public static boolean isInternalUpdate = false;
     private static final Handler handler = new Handler(Looper.getMainLooper());
 
+    // 統一路徑
+    private static final String PATH_PHONE_TO_WEAR = "/dnd_state/phone_to_wear";
+    private static final String PATH_HANDSHAKE = "/dnd_state/handshake";
+
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
         for (DataEvent event : dataEvents) {
@@ -26,65 +30,44 @@ public class DNDSyncListenerService extends WearableListenerService {
                 DataItem item = event.getDataItem();
                 String path = item.getUri().getPath();
                 
-                Log.d(TAG, "手錶監聽到 DataLayer 信號更新，路徑: " + path);
+                Log.d(TAG, "手錶收到資料: " + path);
 
                 if (path == null) continue;
 
-                // 🎯 核心修復：響應手機端的連線驗證信號
-                if (path.contains("handshake")) {
+                if (PATH_HANDSHAKE.equals(path)) {
                     DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
                     String sender = dataMap.getString("sender", "");
                     if ("phone".equals(sender)) {
-                        Log.d(TAG, "【連線成功】手錶成功簽收來自手機端的連線驗證信號！雙向通訊正常。");
+                        Log.d(TAG, "✅ 手錶收到手機握手 → 雙向連線正常");
                     }
                     continue;
                 }
 
-                // 簽收手機發往手錶專線的包裹
-                if (path.contains("phone_to_wear")) {
+                if (PATH_PHONE_TO_WEAR.equals(path)) {
                     DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
                     
                     int rawDndValue = dataMap.getInt("raw_dnd_value", 1);
                     boolean dndSyncSwitch = dataMap.getBoolean("dnd_sync_switch", true);
                     boolean wearPowerSaveResponse = dataMap.getBoolean("wear_power_save_response", false);
-                    boolean wearVibrateOnSync = dataMap.getBoolean("wear_vibrate_on_sync", false);
+                    boolean wearVibrateOnSync = dataMap.getBoolean("wear_vibrate_on_sync", true);
 
-                    Log.d(TAG, "【數據簽收成功】勿擾目標值=" + rawDndValue + " | 託管=" + wearPowerSaveResponse);
+                    Log.d(TAG, "✅ 完整設定簽收 | DND=" + rawDndValue + " | 省電=" + wearPowerSaveResponse + " | 震動=" + wearVibrateOnSync);
 
-                    if (!dndSyncSwitch) {
-                        Log.d(TAG, "手機同步總開關已關閉，跳過本次同步");
-                        continue;
-                    }
+                    if (!dndSyncSwitch) continue;
 
-                    NotificationManager mNotificationManager = (NotificationManager) 
-                        getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (mNotificationManager != null) {
-                        int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
-                        if (rawDndValue != currentFilter) {
+                    // 執行 DND 同步
+                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm != null) {
+                        int current = nm.getCurrentInterruptionFilter();
+                        if (rawDndValue != current) {
                             isInternalUpdate = true;
-                            mNotificationManager.setInterruptionFilter(rawDndValue);
-                            
-                            handler.postDelayed(() -> {
-                                isInternalUpdate = false;
-                                Log.d(TAG, "手錶內部更新完成，解除鎖定");
-                            }, 2000);
+                            nm.setInterruptionFilter(rawDndValue);
+                            handler.postDelayed(() -> isInternalUpdate = false, 2000);
                         }
                     }
 
-                    // 1. 震動控制
-                    if (wearVibrateOnSync) {
-                        triggerWatchVibration();
-                    }
-
-                    // 2. 省電模式自動點擊連動託管
-                    if (wearPowerSaveResponse) {
-                        DNDSyncAccessService accessService = 
-                            DNDSyncAccessService.getSharedInstance();
-                        if (accessService != null) {
-                            accessService.clickIconAt80Percent(0);   
-                            accessService.clickIcon1_2(200);         
-                        }
-                    }
+                    if (wearVibrateOnSync) triggerWatchVibration();
+                    if (wearPowerSaveResponse) triggerPowerSaveAction();
                 }
             }
         }
@@ -92,17 +75,27 @@ public class DNDSyncListenerService extends WearableListenerService {
 
     private void triggerWatchVibration() {
         try {
-            Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            if (vibrator != null && vibrator.hasVibrator()) {
+            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null && v.hasVibrator()) {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(200, 
-                        VibrationEffect.DEFAULT_AMPLITUDE));
+                    v.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
                 } else {
-                    vibrator.vibrate(200);
+                    v.vibrate(200);
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "手錶震動出錯", e);
+            Log.e(TAG, "震動失敗", e);
+        }
+    }
+
+    private void triggerPowerSaveAction() {
+        DNDSyncAccessService service = DNDSyncAccessService.getSharedInstance();
+        if (service != null) {
+            service.clickIconAt80Percent(0);
+            service.clickIcon1_2(200);
+            Log.d(TAG, "已觸發省電模式自動點擊");
+        } else {
+            Log.w(TAG, "DNDSyncAccessService 為 null，無法執行省電動作");
         }
     }
 }
