@@ -1,16 +1,14 @@
 package de.rhaeus.dndsync
 
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
-import android.util.Log 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,19 +22,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.Fragment
 import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 
 class MainFragment : Fragment() {
 
     private val isConnectedState = mutableStateOf(false)
-    private val isDndAllowedState = mutableStateOf(false)
-    
-    // 用於觸發 Compose 刷新
+    private val isNotificationAllowedState = mutableStateOf(false)
     private val prefsTrigger = mutableStateOf(0)
 
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
@@ -52,13 +48,14 @@ class MainFragment : Fragment() {
             setContent {
                 MaterialTheme {
                     val isConnected by isConnectedState
-                    val isDndAllowed by isDndAllowedState
+                    val isNotificationAllowed by isNotificationAllowedState
                     val trigger by prefsTrigger
 
-                    // 讀取本地手機的開關狀態
-                    var dndSync by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dndSync", true)) }
-                    var powerSave by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("powerSave", false)) }
-                    var wearPowerSave by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wearPowerSave", false)) }
+                    // 從手機本地儲存讀取這 4 個原本屬於手錶功能的開關狀態
+                    var dndSyncMode by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dnd_sync_switch", true)) }
+                    var phonePowerSaveByLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("phone_power_save_link", false)) }
+                    var wearPowerSaveResponse by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_power_save_response", false)) }
+                    var wearVibrateOnSync by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_vibrate_on_sync", true)) }
 
                     Column(
                         modifier = Modifier
@@ -69,99 +66,117 @@ class MainFragment : Fragment() {
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(
-                            text = "DND Sync 智能控制中心",
+                            text = "DND Sync 同步控制中心",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1A1C1E),
-                            modifier = Modifier.padding(vertical = 8.dp)
+                            color = Color(0xFF1A1C1E)
                         )
 
-                        // 狀態卡片
+                        // 1. 手機端狀態看板卡片
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-                                StatusRow(label = "手機勿擾權限", isActive = isDndAllowed, activeText = "已獲取", inactiveText = "未獲取 (點擊前往)") {
-                                    startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        // 🎯 修正：正確跳轉到手機系統的「通知存取權限/通知監聽器」設定頁面
+                                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                    },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "手機通知存取權限", fontSize = 15.sp, color = Color(0xFF495057))
+                                    Text(
+                                        text = if (isNotificationAllowed) "已授權" else "未授權 (點擊前往)",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isNotificationAllowed) Color(0xFF28A745) else Color(0xFFDC3545)
+                                    )
                                 }
+                                
                                 Spacer(modifier = Modifier.height(12.dp))
-                                StatusRow(label = "手錶連線狀態", isActive = isConnected, activeText = "已連線", inactiveText = "未連線 (檢查藍牙)") {}
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "手錶連線狀態", fontSize = 15.sp, color = Color(0xFF495057))
+                                    Text(
+                                        text = if (isConnected) "已連線" else "未連線 (檢查藍牙/配對)",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isConnected) Color(0xFF28A745) else Color(0xFFDC3545)
+                                    )
+                                }
                             }
                         }
 
-                        Text(text = "同步設定 (手機端)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6C757D))
+                        // 2. 收納手錶設定的功能控制面板
+                        Text(text = "手錶端功能遠端控制", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6C757D))
 
-                        // 控制開關卡片
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Column(modifier = Modifier.padding(4.dp)) {
-                                SwitchRow(title = "啟用勿擾雙向同步", summary = "手機與手錶勿擾狀態實時保持一致", checked = dndSync) { checked ->
-                                    sharedPreferences.edit().putBoolean("dndSync", checked).apply()
+                            Column {
+                                // 開關 A: 啟用勿擾狀態同步
+                                SwitchRow(
+                                    title = "啟用勿擾狀態同步",
+                                    summary = "開啟後，手機的勿擾狀態將自動同步發送到手錶",
+                                    checked = dndSyncMode
+                                ) { checked ->
+                                    sharedPreferences.edit().putBoolean("dnd_sync_switch", checked).apply()
                                     prefsTrigger.value++
-                                    syncSettingsToWear()
+                                    pushSettingsToWear()
                                 }
+                                
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFE2E8F0))
-                                SwitchRow(title = "手機端省電開關", summary = "當手機進入省電模式時觸發連動", checked = powerSave) { checked ->
-                                    sharedPreferences.edit().putBoolean("powerSave", checked).apply()
+                                
+                                // 開關 B: 手機端省電連動
+                                SwitchRow(
+                                    title = "手機端省電連動",
+                                    summary = "當手機進入省電模式時，觸發狀態變更",
+                                    checked = phonePowerSaveByLink
+                                ) { checked ->
+                                    sharedPreferences.edit().putBoolean("phone_power_save_link", checked).apply()
                                     prefsTrigger.value++
-                                    syncSettingsToWear()
+                                    pushSettingsToWear()
                                 }
+                                
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFE2E8F0))
-                                SwitchRow(title = "手錶端省電優化", summary = "開啟後，手錶端會採用 (先80%再40%) 的防吞雙連擊劇本", checked = wearPowerSave) { checked ->
-                                    sharedPreferences.edit().putBoolean("wearPowerSave", checked).apply()
-                                    prefsTrigger.value++
-                                    syncSettingsToWear()
-                                }
-                            }
-                        }
 
-                        Text(text = "遠端管理手錶功能 (原手錶UI遷移)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF6C757D))
+                                // 開關 C: 手錶端省電模式響應（防吞連擊劇本開關）
+                                SwitchRow(
+                                    title = "手錶端省電模式響應",
+                                    summary = "開啟後，若觸發省電，手錶將執行 (先點擊80%再點擊40%) 的防吞劇本",
+                                    checked = wearPowerSaveResponse
+                                ) { checked ->
+                                    sharedPreferences.edit().putBoolean("wear_power_save_response", checked).apply()
+                                    prefsTrigger.value++
+                                    pushSettingsToWear()
+                                }
 
-                        // 原手錶UI遷移過來的操作卡片
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                ActionRow(title = "引導手錶開啟【勿擾權限】", summary = "點擊令手錶端自動彈出勿擾授權介面") {
-                                    sendRemoteCommandToWear("/open-wear-dnd-setting")
-                                }
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFE2E8F0))
-                                ActionRow(title = "引導手錶開啟【無障礙服務】", summary = "點擊令手錶端自動彈出無障礙輔助功能介面") {
-                                    sendRemoteCommandToWear("/open-wear-acc-setting")
-                                }
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color(0xFFE2E8F0))
-                                ActionRow(title = "遠端測試手錶【寢室模式點擊】", summary = "手動觸發一次手錶控制中心下拉與模擬點擊劇本") {
-                                    sendRemoteCommandToWear("/test-wear-click")
+
+                                // 開關 D: 同步時震動開關
+                                SwitchRow(
+                                    title = "同步成功時震動反饋",
+                                    summary = "當手錶成功接收勿擾變更並執行手勢點擊時，手錶本機觸發短震動",
+                                    checked = wearVibrateOnSync
+                                ) { checked ->
+                                    sharedPreferences.edit().putBoolean("wear_vibrate_on_sync", checked).apply()
+                                    prefsTrigger.value++
+                                    pushSettingsToWear()
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-    }
-
-    @Composable
-    fun StatusRow(label: String, isActive: Boolean, activeText: String, inactiveText: String, onClick: () -> Unit) {
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable { onClick() },
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = label, fontSize = 15.sp, color = Color(0xFF495057))
-            Text(
-                text = if (isActive) activeText else inactiveText,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (isActive) Color(0xFF28A745) else Color(0xFFDC3545)
-            )
         }
     }
 
@@ -180,21 +195,11 @@ class MainFragment : Fragment() {
         }
     }
 
-    @Composable
-    fun ActionRow(title: String, summary: String, onClick: () -> Unit) {
-        Column(
-            modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(16.dp)
-        ) {
-            Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color(0xFF007BFF))
-            Text(text = summary, fontSize = 12.sp, color = Color(0xFF6C757D), modifier = Modifier.padding(top = 2.dp))
-        }
-    }
-
     override fun onResume() {
         super.onResume()
-        checkDndPermission()
+        checkNotificationPermission()
         registerConnectivityListener()
-        syncSettingsToWear() // 每次進入主動向手錶重刷同步狀態
+        pushSettingsToWear()
     }
 
     override fun onPause() {
@@ -202,51 +207,40 @@ class MainFragment : Fragment() {
         unregisterConnectivityListener()
     }
 
-    private fun checkDndPermission(): Boolean {
+    // 🎯 修正：精確檢查手機本機的「通知存取/通知監聽權限」
+    private fun checkNotificationPermission(): Boolean {
         val context = context ?: return false
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
-        val allowed = manager.isNotificationPolicyAccessGranted
-        if (isDndAllowedState.value != allowed) isDndAllowedState.value = allowed
+        val packageName = context.packageName
+        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+        val allowed = flat != null && flat.contains(packageName)
+        if (isNotificationAllowedState.value != allowed) {
+            isNotificationAllowedState.value = allowed
+        }
         return allowed
     }
 
     /**
-     * 🎯【核心大優化】：放棄極易因路徑匹配失敗丟包的 DataClient，
-     * 改用直達、響應極快的 MessageClient 發送設置組態！
+     * 🎯 利用最暢通無阻的 DataClient "/dnd_state" 管道將開關配置送達手錶快取
      */
-    private fun syncSettingsToWear() {
+    private fun pushSettingsToWear() {
         val context = context ?: return
-        val pSave = if (sharedPreferences.getBoolean("powerSave", false)) 1 else 0
-        val wSave = if (sharedPreferences.getBoolean("wearPowerSave", false)) 1 else 0
-        val dSync = if (sharedPreferences.getBoolean("dndSync", true)) 1 else 0
-        
-        val payload = byteArrayOf(dSync.toByte(), pSave.toByte(), wSave.toByte())
+        val dndSync = sharedPreferences.getBoolean("dnd_sync_switch", true)
+        val pSave = sharedPreferences.getBoolean("phone_power_save_link", false)
+        val wSave = sharedPreferences.getBoolean("wear_power_save_response", false)
+        val wVibrate = sharedPreferences.getBoolean("wear_vibrate_on_sync", true)
 
-        Wearable.getNodeClient(context).connectedNodes.addOnSuccessListener { nodes ->
-            for (node in nodes) {
-                Wearable.getMessageClient(context).sendMessage(node.id, "/settings-sync-msg", payload)
-                    .addOnSuccessListener { Log.d("MobileSync", "成功發送配置快遞到手錶") }
-            }
+        val dataMapRequest = PutDataMapRequest.create("/dnd_state").apply {
+            dataMap.putBoolean("dnd_sync_switch", dndSync)
+            dataMap.putBoolean("phone_power_save_link", pSave)
+            dataMap.putBoolean("wear_power_save_response", wSave) // 開關 C 直接下發
+            dataMap.putBoolean("wear_vibrate_on_sync", wVibrate)   // 開關 D 直接下發
+            dataMap.putLong("timestamp", System.currentTimeMillis())
         }
-    }
 
-    /**
-     * 發送遠端控制命令給手錶
-     */
-    private fun sendRemoteCommandToWear(path: String) {
-        val context = context ?: return
-        Wearable.getNodeClient(context).connectedNodes.addOnSuccessListener { nodes ->
-            if (nodes.isEmpty()) {
-                Toast.makeText(context, "未找到已連線的手錶，無法傳送指令", Toast.LENGTH_SHORT).show()
-                return@addOnSuccessListener
+        Wearable.getDataClient(context).putDataItem(dataMapRequest.asPutDataRequest())
+            .addOnSuccessListener {
+                Log.d("MobileSettings", "【通訊成功】已將最新4項控制配置同步至手錶 DataClient")
             }
-            for (node in nodes) {
-                Wearable.getMessageClient(context).sendMessage(node.id, path, byteArrayOf(1))
-                    .addOnSuccessListener {
-                        Toast.makeText(context, "已遠端觸發手錶動作", Toast.LENGTH_SHORT).show()
-                    }
-            }
-        }
     }
 
     private fun registerConnectivityListener() {
