@@ -72,7 +72,7 @@ public class MainFragment extends PreferenceFragmentCompat {
         if (ctx == null) return;
 
         // 🎯 精確檢測：手錶 DNDNotificationService 通知監聽權限是否被激活
-        String flat = Settings.Secure.getString(ctx.contentResolver(), "enabled_notification_listeners");
+        String flat = Settings.Secure.getString(ctx.getContentResolver(), "enabled_notification_listeners");
         boolean notificationAllowed = flat != null && flat.contains(ctx.getPackageName());
         if (dndPref != null) {
             dndPref.setSummary(notificationAllowed ? "通知接聽權限：已啟用" : "通知接聽權限：未啟用 (請透過ADB授權)");
