@@ -3,7 +3,7 @@ package de.rhaeus.dndsync;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.os.Handler;
-import android.os.Looper; 
+import android.os.Looper;
 import android.util.Log;
 import com.google.android.gms.wearable.DataEvent;
 import com.google.android.gms.wearable.DataEventBuffer;
@@ -17,6 +17,9 @@ public class DNDSyncListenerService extends WearableListenerService {
     public static boolean isInternalUpdate = false;
     private static final Handler handler = new Handler(Looper.getMainLooper());
 
+    private static final String PATH_WEAR_TO_PHONE = "/dnd_state/wear_to_phone";
+    private static final String PATH_HANDSHAKE = "/dnd_state/handshake";
+
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
         for (DataEvent event : dataEvents) {
@@ -24,35 +27,33 @@ public class DNDSyncListenerService extends WearableListenerService {
                 DataItem item = event.getDataItem();
                 String path = item.getUri().getPath();
                 
-                Log.d(TAG, "手機收到 DataLayer 變更: " + path);
+                Log.d(TAG, "手機收到: " + path);
 
                 if (path == null) continue;
 
-                // 簽收手錶發往手機專線的反向包裹
-                if (path.contains("wear_to_phone")) {
+                if (PATH_HANDSHAKE.equals(path)) {
+                    DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
+                    String sender = dataMap.getString("sender", "");
+                    if ("wear".equals(sender)) {
+                        Log.d(TAG, "✅ 手機收到手錶握手 → 雙向連線確認！");
+                        // 可在此通知 UI 更新連接狀態
+                    }
+                    continue;
+                }
+
+                if (PATH_WEAR_TO_PHONE.equals(path)) {
                     DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
                     int wearDndValue = dataMap.getInt("wear_dnd_value", 1);
                     
-                    Log.d(TAG, "【手機簽收手錶反向包】目標值: " + wearDndValue);
+                    Log.d(TAG, "✅ 收到手錶反向 DND: " + wearDndValue);
 
-                    NotificationManager mNotificationManager = (NotificationManager) 
-                        getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (mNotificationManager != null) {
-                        int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
-                        
-                        if (wearDndValue != currentFilter) {
-                            if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-                                
-                                isInternalUpdate = true;
-                                mNotificationManager.setInterruptionFilter(wearDndValue);
-                                Log.d(TAG, "手機勿擾狀態已成功設置為: " + wearDndValue);
-                                
-                                handler.postDelayed(() -> {
-                                    isInternalUpdate = false;
-                                    Log.d(TAG, "手機內部更新完成，恢復監聽發送");
-                                }, 2000);
-
-                            }
+                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm != null && nm.isNotificationPolicyAccessGranted()) {
+                        int current = nm.getCurrentInterruptionFilter();
+                        if (wearDndValue != current) {
+                            isInternalUpdate = true;
+                            nm.setInterruptionFilter(wearDndValue);
+                            handler.postDelayed(() -> isInternalUpdate = false, 2000);
                         }
                     }
                 }
