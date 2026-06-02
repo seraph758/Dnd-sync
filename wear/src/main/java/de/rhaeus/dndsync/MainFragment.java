@@ -50,7 +50,6 @@ public class MainFragment extends PreferenceFragmentCompat {
             }
 
             // 尋找並強行隱藏那個空的 “遠端同步控制（已由手機託管）” 分組標題
-            // 遍歷所有組件，只要標題或內容匹配，就直接隱藏整個 Category
             for (int i = 0; i < getPreferenceScreen().getPreferenceCount(); i++) {
                 Preference pref = getPreferenceScreen().getPreference(i);
                 if (pref instanceof PreferenceCategory) {
@@ -102,8 +101,8 @@ public class MainFragment extends PreferenceFragmentCompat {
         Context ctx = getContext();
         if (ctx == null) return;
 
-        // 精確檢測：手錶通知監聽權限是否被激活
-        String flat = Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners");
+        // 🎯 修正：將 ctx.contentResolver 改為 ctx.getContentResolver() 符合 Java 語法
+        String flat = Settings.Secure.getString(ctx.getContentResolver(), "enabled_notification_listeners");
         boolean notificationAllowed = flat != null && flat.contains(ctx.getPackageName());
         if (dndPref != null) {
             dndPref.setSummary(notificationAllowed ? "通知接聽權限：已啟用" : "通知接聽權限：未啟用 (請透過ADB授權)");
