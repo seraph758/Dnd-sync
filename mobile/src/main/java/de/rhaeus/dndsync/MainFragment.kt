@@ -265,24 +265,28 @@ class MainFragment : Fragment() {
         return allowed
     }
 
+    // ... (前面的 import 和 class 結構不變) ...
+
     private fun pushSettingsToWear() {
         val context = context ?: return
+        
         val dndSync = sharedPreferences.getBoolean("dnd_sync_switch", true)
-        val pSave = sharedPreferences.getBoolean("phone_power_save_link", false)
         val wSave = sharedPreferences.getBoolean("wear_power_save_response", false)
         val wVibrate = sharedPreferences.getBoolean("wear_vibrate_on_sync", true)
 
-        val dataMapRequest = PutDataMapRequest.create("/dnd_state").apply {
+        val request = PutDataMapRequest.create(DNDNotificationService.PATH_PHONE_TO_WEAR).apply {
             dataMap.putBoolean("dnd_sync_switch", dndSync)
-            dataMap.putBoolean("phone_power_save_link", pSave)
             dataMap.putBoolean("wear_power_save_response", wSave)
             dataMap.putBoolean("wear_vibrate_on_sync", wVibrate)
             dataMap.putLong("timestamp", System.currentTimeMillis())
         }
 
-        Wearable.getDataClient(context).putDataItem(dataMapRequest.asPutDataRequest())
-            .addOnSuccessListener {
-                Log.d("MobileSettings", "【通訊成功】已將 4 項設定同步至手錶")
+        Wearable.getDataClient(context).putDataItem(request.asPutDataRequest().setUrgent())
+            .addOnSuccessListener { 
+                Log.d("MobileSettings", "✅ 設定推送成功 (統一通道)") 
+            }
+            .addOnFailureListener { e ->
+                Log.e("MobileSettings", "❌ 設定推送失敗", e)
             }
     }
 
