@@ -55,22 +55,29 @@ jobs:
         if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" wear-release.apk; else echo "错误: 找不到 Wear APK"; exit 1; fi
         ls -lh *.apk
 
-    - name: Upload APK Artifacts
+    - name: Create ZIP Package (flat)
+      run: |
+        echo "创建 ZIP 包，仅包含 APK 文件，不保留目录结构"
+        zip -j dnd-sync-v1.0.${{ github.run_number }}.zip \
+          mobile-release.apk \
+          wear-release.apk
+        ls -lh dnd-sync-v1.0.${{ github.run_number }}.zip
+
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: dnd-sync-apks-v1.0.${{ github.run_number }}
-        path: |
-          mobile-release.apk
-          wear-release.apk
+        name: dnd-sync-v1.0.${{ github.run_number }}
+        path: dnd-sync-v1.0.${{ github.run_number }}.zip
         retention-days: 7
 
-    - name: Create Release
-      id: create_release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v1.0.${{ github.run_number }}
-        name: Release v1.0.${{ github.run_number }}
-        generate_release_notes: true
-        files: |
-          mobile-release.apk
-          wear-release.apk
+    # 🎯 Release 推送步骤保留，但注释掉
+    # - name: Create Release
+    #   id: create_release
+    #   uses: softprops/action-gh-release@v2
+    #   with:
+    #     tag_name: v1.0.${{ github.run_number }}
+    #     name: Release v1.0.${{ github.run_number }}
+    #     generate_release_notes: true
+    #     files: |
+    #       mobile-release.apk
+    #       wear-release.apk
