@@ -6,6 +6,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
+import android.provider.Settings;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.android.gms.wearable.MessageEvent;
@@ -35,7 +36,7 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                 if ("wear".equalsIgnoreCase(sender)) return;
 
-                // ⚙️ 業務 A：處理勿擾同步
+                // ⚙️ 業務 A：處理勿擾與省電模式自動化
                 if ("dnd".equalsIgnoreCase(type)) {
                     int dndValue = json.optInt("dndValue", 1);
                     boolean wearPowerSave = json.optBoolean("wearPowerSave", false);
@@ -47,31 +48,50 @@ public class DNDSyncListenerService extends WearableListenerService {
                     if (mNotificationManager != null) {
                         int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
                         
-                        // 🔒 【修復問題3的核心防抖機制】
-                        // 如果手機發來的勿擾值跟手錶當前的勿擾值完全一樣，直接當作垃圾數據丟棄！
-                        // 這樣就能徹底免除「打開手機App手錶跟著震」以及「後台隨機震動」的Bug！
+                        // 🔒 狀態去重防抖鎖
                         if (dndValue == currentFilter) {
-                            Log.d(TAG, " 狀態無變更，防抖鎖攔截，拒絕重複執行震動與無障礙。");
+                            Log.d(TAG, " 狀態無變更，防抖鎖攔截。");
                             return; 
                         }
 
-                        // 狀態確實改變了，才放行執行
+                        // 狀態確實改變了，執行變更
                         isInternalUpdate = true;
                         mNotificationManager.setInterruptionFilter(dndValue);
                         handler.postDelayed(() -> isInternalUpdate = false, 2000);
                         
-                        // 🚀 【修復問題1】只有當狀態真正改變時，才允許執行手錶單次震動與無障礙防吞劇本！
                         if (wearVibrate) {
                             triggerSingleVibration();
                         }
 
-                        // 只有當進入勿擾/睡眠模式時（數值大於1），才去點擊無障礙面板
+                        // 🚀 【核心進化】：當進入勿擾/睡眠模式，且手機端開啟了手錶響應
                         if (wearPowerSave && dndValue > 1) {
-                            Log.d(TAG, " 勿擾狀態變更，且開啟了防吞響應，傳輸真實狀態值: " + dndValue + "。觸發輔助功能點擊...");
+                            Log.d(TAG, "🔥 觸發手錶端省電模式連動劇本...");
+                            
+                            // 1️⃣ 替代 80% 高度的動作：直接通過底層 Secure Settings 靜默開啟省電模式
+                            try {
+                                boolean success = Settings.Global.putInt(
+                                    getContentResolver(), 
+                                    "low_power", 
+                                    1 // 1 代表開啟省電
+                                );
+                                if (success) {
+                                    Log.d(TAG, "✅ [原生控制] 成功經由底層代碼靜默切換 [low_power = 1]");
+                                } else {
+                                    Log.e(TAG, "❌ [原生控制] 修改 low_power 失敗（未知原因）");
+                                }
+                            } catch (SecurityException se) {
+                                Log.e(TAG, "❌ [權限爆破失敗] 缺少 WRITE_SECURE_SETTINGS 權限！");
+                                Log.e(TAG, "請至電腦端執行命令: adb shell pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS");
+                            }
+
+                            // 2️⃣ 保留 40% 高度的動作：去觸發剩下的「睡眠模式」或自定義開關
+                            // 由於去掉了不穩定的 80% 下拉開關，我們此處直接呼叫無障礙去點擊 40% 介面
                             DNDSyncAccessService accessService = DNDSyncAccessService.getSharedInstance();
                             if (accessService != null) {
-                                accessService.clickIconAt80Percent(0);   
-                                accessService.clickIcon1_2(200);         
+                                Log.d(TAG, "🎯 [無障礙接力] 執行剩餘 40% 睡眠開關自動化點擊...");
+                                accessService.clickIcon1_2(100); // 直接執行原來的 40% 點擊
+                            } else {
+                                Log.w(TAG, "⚠️ 無障礙服務未開啟，跳過 40% 睡眠開關點擊");
                             }
                         }
                     }
@@ -80,13 +100,11 @@ public class DNDSyncListenerService extends WearableListenerService {
                 // ⚙️ 業務 B：處理手機鬧鐘聯動
                 if ("alarm".equalsIgnoreCase(type)) {
                     String alarmAction = json.optString("alarmAction", "");
-                    
                     if ("ringing".equalsIgnoreCase(alarmAction)) {
-                        Log.d(TAG, "⏰ 鬧鐘確認響鈴！激活手錶端持續震動機制。");
+                        Log.d(TAG, "⏰ 鬧鐘響鈴中... 啟動持續震動。");
                         startLoopVibration();
-                    } 
-                    else if ("stopped".equalsIgnoreCase(alarmAction)) {
-                        Log.d(TAG, "🛑 鬧鐘已在源端終止，解除手錶震動束縛。");
+                    } else if ("stopped".equalsIgnoreCase(alarmAction)) {
+                        Log.d(TAG, "🛑 鬧鐘已終止，解除手錶震動。");
                         stopLoopVibration();
                     }
                 }
