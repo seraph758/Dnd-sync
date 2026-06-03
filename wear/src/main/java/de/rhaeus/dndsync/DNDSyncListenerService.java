@@ -22,9 +22,12 @@ public class DNDSyncListenerService extends WearableListenerService {
     // 統一路徑
     private static final String PATH_PHONE_TO_WEAR = "/dnd_state/phone_to_wear";
     private static final String PATH_HANDSHAKE = "/dnd_state/handshake";
+    
 
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
+    Log.d(TAG, "====== 🔥 onDataChanged 被呼叫！事件數量: " + dataEvents.getCount() + " ======");
+
         for (DataEvent event : dataEvents) {
             if (event.getType() == DataEvent.TYPE_CHANGED) {
                 DataItem item = event.getDataItem();
