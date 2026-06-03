@@ -12,15 +12,12 @@ import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.WearableListenerService;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
-import java.util.Iterator;
 
 public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "WearSync_WearListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
     private static final Handler handler = new Handler(Looper.getMainLooper());
-    
-    // 全域控震器
     private static Vibrator globalVibrator = null;
 
     @Override
@@ -38,105 +35,93 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                 if ("wear".equalsIgnoreCase(sender)) return;
 
-                // 🎯 擴充亮點：即時在手錶日誌列印出手機 UI 自定義傳過來的所有未知新欄位
-                Iterator<String> keys = json.keys();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    Log.d(TAG, "【WearSync 動態屬性】" + key + " = " + json.get(key));
-                }
-
-                // 業務 A：處理勿擾同步
+                // ⚙️ 業務 A：處理勿擾同步
                 if ("dnd".equalsIgnoreCase(type)) {
                     int dndValue = json.optInt("dndValue", 1);
                     boolean wearPowerSave = json.optBoolean("wearPowerSave", false);
-                    boolean wearVibrate = json.optBoolean("wearVibrate", false);
+                    boolean wearVibrate = json.optBoolean("wearVibrate", true);
 
                     NotificationManager mNotificationManager = (NotificationManager) 
                             getSystemService(Context.NOTIFICATION_SERVICE);
+                    
                     if (mNotificationManager != null) {
                         int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
-                        if (dndValue != currentFilter) {
-                            isInternalUpdate = true;
-                            mNotificationManager.setInterruptionFilter(dndValue);
-                            handler.postDelayed(() -> isInternalUpdate = false, 2000);
+                        
+                        // 🔒 【修復問題3的核心防抖機制】
+                        // 如果手機發來的勿擾值跟手錶當前的勿擾值完全一樣，直接當作垃圾數據丟棄！
+                        // 這樣就能徹底免除「打開手機App手錶跟著震」以及「後台隨機震動」的Bug！
+                        if (dndValue == currentFilter) {
+                            Log.d(TAG, " 狀態無變更，防抖鎖攔截，拒絕重複執行震動與無障礙。");
+                            return; 
                         }
-                    }
 
-                    if (wearVibrate) triggerSingleVibration();
+                        // 狀態確實改變了，才放行執行
+                        isInternalUpdate = true;
+                        mNotificationManager.setInterruptionFilter(dndValue);
+                        handler.postDelayed(() -> isInternalUpdate = false, 2000);
+                        
+                        // 🚀 【修復問題1】只有當狀態真正改變時，才允許執行手錶單次震動與無障礙防吞劇本！
+                        if (wearVibrate) {
+                            triggerSingleVibration();
+                        }
 
-                    if (wearPowerSave) {
-                        DNDSyncAccessService accessService = DNDSyncAccessService.getSharedInstance();
-                        if (accessService != null) {
-                            accessService.clickIconAt80Percent(0);   
-                            accessService.clickIcon1_2(200);         
+                        // 只有當進入勿擾/睡眠模式時（數值大於1），才去點擊無障礙面板
+                        if (wearPowerSave && dndValue > 1) {
+                            Log.d(TAG, " 勿擾狀態變更，且開啟了防吞響應，傳輸真實狀態值: " + dndValue + "。觸發輔助功能點擊...");
+                            DNDSyncAccessService accessService = DNDSyncAccessService.getSharedInstance();
+                            if (accessService != null) {
+                                accessService.clickIconAt80Percent(0);   
+                                accessService.clickIcon1_2(200);         
+                            }
                         }
                     }
                 }
 
-                // 業務 B：處理手機鬧鐘聯動與「持續震動層級」
+                // ⚙️ 業務 B：處理手機鬧鐘聯動
                 if ("alarm".equalsIgnoreCase(type)) {
                     String alarmAction = json.optString("alarmAction", "");
                     
                     if ("ringing".equalsIgnoreCase(alarmAction)) {
-                        boolean hasDismiss = json.optBoolean("hasDismissButton", false);
-                        boolean hasSnooze = json.optBoolean("hasSnoozeButton", false);
-                        Log.d(TAG, "⏰ 鬧鐘響鈴！手錶預翻譯結果 -> 有關閉按鈕: " + hasDismiss + " | 有小睡按鈕: " + hasSnooze);
-                        
-                        // 🔥 核心觸發：啟動無限循環持續震動
+                        Log.d(TAG, "⏰ 鬧鐘確認響鈴！激活手錶端持續震動機制。");
                         startLoopVibration();
-                        
-                        // 這裡負責拉起手錶端的控制 Activity UI (UI 您之後可自由調整)
-                        // Intent intent = new Intent(this, WearAlarmActivity.class);
-                        // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        // intent.putExtra("hasDismiss", hasDismiss);
-                        // intent.putExtra("hasSnooze", hasSnooze);
-                        // startActivity(intent);
                     } 
                     else if ("stopped".equalsIgnoreCase(alarmAction)) {
-                        Log.d(TAG, "🛑 收到手機通知：鬧鐘已在別處被關閉，手錶奉命緊急停止震動");
+                        Log.d(TAG, "🛑 鬧鐘已在源端終止，解除手錶震動束縛。");
                         stopLoopVibration();
-                        // 這裡可以發送全域廣播通知手錶 UI 關閉 Activity
                     }
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "手錶解析 JSON 失敗", e);
+                Log.e(TAG, "解包處理失敗", e);
             }
         }
     }
 
-    // 🎯 啟動無限循環持續震動
     private void startLoopVibration() {
         try {
             if (globalVibrator == null) {
                 globalVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             }
             if (globalVibrator != null && globalVibrator.hasVibrator()) {
-                // 震動節奏：停0ms -> 震動1000ms -> 停500ms -> 震動1000ms
                 long[] pattern = {0, 1000, 500, 1000}; 
-                
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    // 核心：最後一個參數傳入 0，代表從陣列索引0開始【無限循環】
                     globalVibrator.vibrate(VibrationEffect.createWaveform(pattern, 0));
                 } else {
                     globalVibrator.vibrate(pattern, 0);
                 }
-                Log.d(TAG, "ℹ️ 手錶持續循環震動波形已成功注入底層");
             }
         } catch (Exception e) {
-            Log.e(TAG, "啟動持續震動失敗", e);
+            Log.e(TAG, "迴圈震動異常", e);
         }
     }
 
-    // 🎯 終止震動（全域公開方法，手錶 UI 點擊時也能直接調用）
     public static void stopLoopVibration() {
         try {
             if (globalVibrator != null) {
-                globalVibrator.cancel(); // 🎯 核心：物理切斷所有震動波形
-                Log.d(TAG, "ℹ️ 手錶震動已成功被 cancel() 終止");
+                globalVibrator.cancel();
             }
         } catch (Exception e) {
-            Log.e(TAG, "停止震動出錯", e);
+            Log.e(TAG, "停震異常", e);
         }
     }
 
