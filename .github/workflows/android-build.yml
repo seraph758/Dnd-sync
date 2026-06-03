@@ -44,30 +44,28 @@ jobs:
         GITHUB_RUN_NUMBER: ${{ github.run_number }}
       run: ./gradlew clean assembleRelease
 
-    - name: Rename APKs
+    - name: Copy APKs to root directory
       run: |
-        echo "正在搜索生成的 APK 文件..."
+        echo "拷贝 APK 到根目录"
         MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
         WEAR_PATH=$(find . -path "*/wear/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
-        echo "找到 Mobile APK 路径: $MOBILE_PATH"
-        echo "找到 Wear APK 路径: $WEAR_PATH"
-        if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
-        if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" wear-release.apk; else echo "错误: 找不到 Wear APK"; exit 1; fi
+        if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" ./mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
+        if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" ./wear-release.apk; else echo "错误: 找不到 Wear APK"; exit 1; fi
         ls -lh *.apk
 
-    - name: Create ZIP Package (flat)
+    - name: Create flat ZIP package
       run: |
-        echo "创建 ZIP 包，仅包含 APK 文件，不保留目录结构"
-        zip -j dnd-sync-v1.0.${{ github.run_number }}.zip \
-          mobile-release.apk \
-          wear-release.apk
-        ls -lh dnd-sync-v1.0.${{ github.run_number }}.zip
+        echo "生成平铺 ZIP"
+        zip -j ./dnd-sync-v1.0.${{ github.run_number }}.zip \
+          ./mobile-release.apk \
+          ./wear-release.apk
+        ls -lh ./dnd-sync-v1.0.${{ github.run_number }}.zip
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: dnd-sync-v1.0.${{ github.run_number }}
-        path: dnd-sync-v1.0.${{ github.run_number }}.zip
+        path: ./dnd-sync-v1.0.${{ github.run_number }}.zip
         retention-days: 7
 
     # 🎯 Release 推送步骤保留，但注释掉
