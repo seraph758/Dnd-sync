@@ -7,105 +7,151 @@ import android.os.Looper;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.util.Log;
-import com.google.android.gms.wearable.DataEvent;
-import com.google.android.gms.wearable.DataEventBuffer;
-import com.google.android.gms.wearable.DataItem;
-import com.google.android.gms.wearable.DataMap;
-import com.google.android.gms.wearable.DataMapItem;
+import androidx.annotation.NonNull;
+import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.WearableListenerService;
+import org.json.JSONObject;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 
 public class DNDSyncListenerService extends WearableListenerService {
-    private static final String TAG = "DNDSyncListener";
+    private static final String TAG = "WearSync_WearListener";
+    private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
     private static final Handler handler = new Handler(Looper.getMainLooper());
-
-    private static final String PATH_PHONE_TO_WEAR = "/dnd_state/phone_to_wear";
-    private static final String PATH_HANDSHAKE = "/dnd_state/handshake";
+    
+    // 全域控震器
+    private static Vibrator globalVibrator = null;
 
     @Override
-    public void onDataChanged(DataEventBuffer dataEvents) {
-        Log.d(TAG, "====== 🔥🔥🔥 onDataChanged 被系統呼叫！事件數量: " + dataEvents.getCount() + " ======");
+    public void onMessageReceived(@NonNull MessageEvent messageEvent) {
+        if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
+            byte[] data = messageEvent.getData();
+            if (data == null) return;
 
-        for (DataEvent event : dataEvents) {
-            if (event.getType() == DataEvent.TYPE_CHANGED) {
-                DataItem item = event.getDataItem();
-                String path = item.getUri().getPath();
+            try {
+                String jsonStr = new String(data, StandardCharsets.UTF_8);
+                JSONObject json = new JSONObject(jsonStr);
                 
-                Log.d(TAG, "📥 收到 DataItem 路徑: " + (path != null ? path : "null"));
+                String sender = json.optString("sender", "");
+                String type = json.optString("type", "");
 
-                if (path == null) continue;
+                if ("wear".equalsIgnoreCase(sender)) return;
 
-                if (PATH_HANDSHAKE.equals(path)) {
-                    DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
-                    String sender = dataMap.getString("sender", "");
-                    Log.d(TAG, "✅ 收到握手信號，發送者: " + sender);
-                    continue;
+                // 🎯 擴充亮點：即時在手錶日誌列印出手機 UI 自定義傳過來的所有未知新欄位
+                Iterator<String> keys = json.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    Log.d(TAG, "【WearSync 動態屬性】" + key + " = " + json.get(key));
                 }
 
-                if (PATH_PHONE_TO_WEAR.equals(path)) {
-                    Log.d(TAG, "🎯 收到手機端完整的 DND 同步資料！");
-                    DataMap dataMap = DataMapItem.fromDataItem(item).getDataMap();
-                    
-                    int rawDndValue = dataMap.getInt("raw_dnd_value", 1);
-                    boolean dndSyncSwitch = dataMap.getBoolean("dnd_sync_switch", true);
-                    boolean wearPowerSaveResponse = dataMap.getBoolean("wear_power_save_response", false);
-                    boolean wearVibrateOnSync = dataMap.getBoolean("wear_vibrate_on_sync", true);
+                // 業務 A：處理勿擾同步
+                if ("dnd".equalsIgnoreCase(type)) {
+                    int dndValue = json.optInt("dndValue", 1);
+                    boolean wearPowerSave = json.optBoolean("wearPowerSave", false);
+                    boolean wearVibrate = json.optBoolean("wearVibrate", false);
 
-                    Log.d(TAG, "📊 資料內容 | rawDND=" + rawDndValue + " | 同步開關=" + dndSyncSwitch 
-                            + " | 省電響應=" + wearPowerSaveResponse + " | 震動=" + wearVibrateOnSync);
-
-                    if (!dndSyncSwitch) {
-                        Log.d(TAG, "同步總開關已關閉，跳過");
-                        continue;
-                    }
-
-                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (nm != null) {
-                        int current = nm.getCurrentInterruptionFilter();
-                        if (rawDndValue != current) {
+                    NotificationManager mNotificationManager = (NotificationManager) 
+                            getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (mNotificationManager != null) {
+                        int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
+                        if (dndValue != currentFilter) {
                             isInternalUpdate = true;
-                            nm.setInterruptionFilter(rawDndValue);
-                            Log.d(TAG, "✅ 手錶 DND 已成功設定為: " + rawDndValue);
-                            handler.postDelayed(() -> {
-                                isInternalUpdate = false;
-                                Log.d(TAG, "內部更新標記已解除");
-                            }, 2000);
-                        } else {
-                            Log.d(TAG, "DND 狀態相同，無需變更");
+                            mNotificationManager.setInterruptionFilter(dndValue);
+                            handler.postDelayed(() -> isInternalUpdate = false, 2000);
                         }
                     }
 
-                    if (wearVibrateOnSync) triggerWatchVibration();
-                    if (wearPowerSaveResponse) triggerPowerSaveAction();
+                    if (wearVibrate) triggerSingleVibration();
+
+                    if (wearPowerSave) {
+                        DNDSyncAccessService accessService = DNDSyncAccessService.getSharedInstance();
+                        if (accessService != null) {
+                            accessService.clickIconAt80Percent(0);   
+                            accessService.clickIcon1_2(200);         
+                        }
+                    }
                 }
+
+                // 業務 B：處理手機鬧鐘聯動與「持續震動層級」
+                if ("alarm".equalsIgnoreCase(type)) {
+                    String alarmAction = json.optString("alarmAction", "");
+                    
+                    if ("ringing".equalsIgnoreCase(alarmAction)) {
+                        boolean hasDismiss = json.optBoolean("hasDismissButton", false);
+                        boolean hasSnooze = json.optBoolean("hasSnoozeButton", false);
+                        Log.d(TAG, "⏰ 鬧鐘響鈴！手錶預翻譯結果 -> 有關閉按鈕: " + hasDismiss + " | 有小睡按鈕: " + hasSnooze);
+                        
+                        // 🔥 核心觸發：啟動無限循環持續震動
+                        startLoopVibration();
+                        
+                        // 這裡負責拉起手錶端的控制 Activity UI (UI 您之後可自由調整)
+                        // Intent intent = new Intent(this, WearAlarmActivity.class);
+                        // intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        // intent.putExtra("hasDismiss", hasDismiss);
+                        // intent.putExtra("hasSnooze", hasSnooze);
+                        // startActivity(intent);
+                    } 
+                    else if ("stopped".equalsIgnoreCase(alarmAction)) {
+                        Log.d(TAG, "🛑 收到手機通知：鬧鐘已在別處被關閉，手錶奉命緊急停止震動");
+                        stopLoopVibration();
+                        // 這裡可以發送全域廣播通知手錶 UI 關閉 Activity
+                    }
+                }
+
+            } catch (Exception e) {
+                Log.e(TAG, "手錶解析 JSON 失敗", e);
             }
         }
     }
 
-    private void triggerWatchVibration() {
+    // 🎯 啟動無限循環持續震動
+    private void startLoopVibration() {
         try {
-            Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            if (vibrator != null && vibrator.hasVibrator()) {
+            if (globalVibrator == null) {
+                globalVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            }
+            if (globalVibrator != null && globalVibrator.hasVibrator()) {
+                // 震動節奏：停0ms -> 震動1000ms -> 停500ms -> 震動1000ms
+                long[] pattern = {0, 1000, 500, 1000}; 
+                
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
+                    // 核心：最後一個參數傳入 0，代表從陣列索引0開始【無限循環】
+                    globalVibrator.vibrate(VibrationEffect.createWaveform(pattern, 0));
                 } else {
-                    vibrator.vibrate(200);
+                    globalVibrator.vibrate(pattern, 0);
                 }
-                Log.d(TAG, "✅ 震動觸發");
+                Log.d(TAG, "ℹ️ 手錶持續循環震動波形已成功注入底層");
             }
         } catch (Exception e) {
-            Log.e(TAG, "震動失敗", e);
+            Log.e(TAG, "啟動持續震動失敗", e);
         }
     }
 
-    private void triggerPowerSaveAction() {
-        DNDSyncAccessService service = DNDSyncAccessService.getSharedInstance();
-        if (service != null) {
-            service.clickIconAt80Percent(0);
-            service.clickIcon1_2(200);
-            Log.d(TAG, "✅ 已執行省電模式自動點擊");
-        } else {
-            Log.w(TAG, "⚠️ DNDSyncAccessService 為 null，無法執行省電動作");
+    // 🎯 終止震動（全域公開方法，手錶 UI 點擊時也能直接調用）
+    public static void stopLoopVibration() {
+        try {
+            if (globalVibrator != null) {
+                globalVibrator.cancel(); // 🎯 核心：物理切斷所有震動波形
+                Log.d(TAG, "ℹ️ 手錶震動已成功被 cancel() 終止");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "停止震動出錯", e);
+        }
+    }
+
+    private void triggerSingleVibration() {
+        try {
+            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null && v.hasVibrator()) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    v.vibrate(200);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "單次震動異常", e);
         }
     }
 }
