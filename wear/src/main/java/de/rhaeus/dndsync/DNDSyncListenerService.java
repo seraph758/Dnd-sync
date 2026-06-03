@@ -36,7 +36,7 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                 if ("wear".equalsIgnoreCase(sender)) return;
 
-                // ⚙️ 業務 A：處理勿擾與省電模式自動化
+                // ⚙️ 業務 A：處理勿擾與手錶省電聯動（當手機勿擾改變時）
                 if ("dnd".equalsIgnoreCase(type)) {
                     int dndValue = json.optInt("dndValue", 1);
                     boolean wearPowerSave = json.optBoolean("wearPowerSave", false);
@@ -48,13 +48,11 @@ public class DNDSyncListenerService extends WearableListenerService {
                     if (mNotificationManager != null) {
                         int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
                         
-                        // 🔒 狀態去重防抖鎖
                         if (dndValue == currentFilter) {
-                            Log.d(TAG, " 狀態無變更，防抖鎖攔截。");
+                            Log.d(TAG, " 勿擾狀態無變更，防抖鎖攔截。");
                             return; 
                         }
 
-                        // 狀態確實改變了，執行變更
                         isInternalUpdate = true;
                         mNotificationManager.setInterruptionFilter(dndValue);
                         handler.postDelayed(() -> isInternalUpdate = false, 2000);
@@ -63,41 +61,29 @@ public class DNDSyncListenerService extends WearableListenerService {
                             triggerSingleVibration();
                         }
 
-                        // 🚀 【核心進化】：當進入勿擾/睡眠模式，且手機端開啟了手錶響應
                         if (wearPowerSave && dndValue > 1) {
-                            Log.d(TAG, "🔥 觸發手錶端省電模式連動劇本...");
-                            
-                            // 1️⃣ 替代 80% 高度的動作：直接通過底層 Secure Settings 靜默開啟省電模式
-                            try {
-                                boolean success = Settings.Global.putInt(
-                                    getContentResolver(), 
-                                    "low_power", 
-                                    1 // 1 代表開啟省電
-                                );
-                                if (success) {
-                                    Log.d(TAG, "✅ [原生控制] 成功經由底層代碼靜默切換 [low_power = 1]");
-                                } else {
-                                    Log.e(TAG, "❌ [原生控制] 修改 low_power 失敗（未知原因）");
-                                }
-                            } catch (SecurityException se) {
-                                Log.e(TAG, "❌ [權限爆破失敗] 缺少 WRITE_SECURE_SETTINGS 權限！");
-                                Log.e(TAG, "請至電腦端執行命令: adb shell pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS");
-                            }
+                            Log.d(TAG, "🔥 勿擾連動：觸發手錶端底層靜默開啟省電...");
+                            setWearPowerSaveMode(true);
 
-                            // 2️⃣ 保留 40% 高度的動作：去觸發剩下的「睡眠模式」或自定義開關
-                            // 由於去掉了不穩定的 80% 下拉開關，我們此處直接呼叫無障礙去點擊 40% 介面
                             DNDSyncAccessService accessService = DNDSyncAccessService.getSharedInstance();
                             if (accessService != null) {
-                                Log.d(TAG, "🎯 [無障礙接力] 執行剩餘 40% 睡眠開關自動化點擊...");
-                                accessService.clickIcon1_2(100); // 直接執行原來的 40% 點擊
-                            } else {
-                                Log.w(TAG, "⚠️ 無障礙服務未開啟，跳過 40% 睡眠開關點擊");
+                                Log.d(TAG, "🎯 [無障礙接力] 點擊 40% 睡眠開關...");
+                                accessService.clickIcon1_2(100);
                             }
                         }
                     }
                 }
 
-                // ⚙️ 業務 B：處理手機鬧鐘聯動
+                // 🎯 ⚙️ 業務 B：【全新加入】處理手機端省電模式連動
+                if ("phone_power_status".equalsIgnoreCase(type)) {
+                    boolean isPhonePowerSaveOn = json.optBoolean("isPhonePowerSaveOn", false);
+                    Log.d(TAG, "🔌 收到手機省電狀態封包，手機當前省電模式開啟 = " + isPhonePowerSaveOn);
+                    
+                    // 讓手錶的原生省電狀態 100% 複製手機的狀態
+                    setWearPowerSaveMode(isPhonePowerSaveOn);
+                }
+
+                // ⚙️ 業務 C：處理手機鬧鐘聯動
                 if ("alarm".equalsIgnoreCase(type)) {
                     String alarmAction = json.optString("alarmAction", "");
                     if ("ringing".equalsIgnoreCase(alarmAction)) {
@@ -112,6 +98,35 @@ public class DNDSyncListenerService extends WearableListenerService {
             } catch (Exception e) {
                 Log.e(TAG, "解包處理失敗", e);
             }
+        }
+    }
+
+    // 🚀 精簡封裝的底層 Secure Settings 省電模式靜默切換控制
+    private void setWearPowerSaveMode(boolean enable) {
+        try {
+            int targetValue = enable ? 1 : 0;
+            
+            // 防重覆設置檢查（選填，Settings.Global.putInt 本身已具備去重性）
+            int currentMode = Settings.Global.getInt(getContentResolver(), "low_power", 0);
+            if (currentMode == targetValue) {
+                Log.d(TAG, "手錶省電狀態已為 " + targetValue + "，跳過重複寫入。");
+                return;
+            }
+
+            boolean success = Settings.Global.putInt(
+                getContentResolver(), 
+                "low_power", 
+                targetValue
+            );
+            if (success) {
+                Log.d(TAG, "✅ [原生控制] 成功經由底層代碼同步手錶省電狀態為: " + targetValue);
+            } else {
+                Log.e(TAG, "❌ [原生控制] 修改 low_power 失敗");
+            }
+        } catch (SecurityException se) {
+            Log.e(TAG, "❌ [權限不足] 無法修改省電模式！請確保執行過 adb pm grant 授權！");
+        } catch (Exception e) {
+            Log.e(TAG, "設定省電模式異常", e);
         }
     }
 
