@@ -27,6 +27,12 @@
             </intent-filter>
         </activity>
 
+        <activity           
+            android:name=".WearAlarmActivity" 
+            android:exported="false" 
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+    
+            
         <uses-library
             android:name="com.google.android.wearable"
             android:required="true" />
