@@ -47,8 +47,8 @@ public class DNDSyncListenerService extends WearableListenerService {
                             
                             // 依據操作類型載入用戶配置的過濾字典
                             String targetKey = action.equals("dismiss") ? 
-                                    prefs.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭") :
-                                    prefs.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡");
+                                    prefs.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭,停止") :
+                                    prefs.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡,延后");
                             
                             // 尋找對應的 PendingIntent 並發射
                             for (Notification.Action act : notification.actions) {
