@@ -50,21 +50,13 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- 手錶端 Data Listener Service（接收手機同步） -->
+        <!-- 手錶端 Data Listener Service（接收手機資料） -->
         <service
             android:name=".DNDSyncListenerService"
             android:enabled="true"
             android:exported="true">
-            
-            <!-- 關鍵修正：DataClient -->
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-            </intent-filter>
-            
-            <!-- 保留原本 Message（相容） -->
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:host="*" android:path="/wear-dnd-sync" android:scheme="wear" />
             </intent-filter>
         </service>
 
