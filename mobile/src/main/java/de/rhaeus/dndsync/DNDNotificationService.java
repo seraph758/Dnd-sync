@@ -3,7 +3,6 @@ package de.rhaeus.dndsync;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -18,9 +17,7 @@ import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 public class DNDNotificationService extends NotificationListenerService {
     private static final String TAG = "WearSync_PhoneSource";
@@ -30,17 +27,18 @@ public class DNDNotificationService extends NotificationListenerService {
     public static boolean running = false;
     private int lastSentDndState = -1;
 
-    private BroadcastReceiver powerSaveReceiver = new BroadcastReceiver() {
+    // 🟢 聯動優化：手機端省電模式監聽器（綁定到全局 Context 確保生命週期安全）
+    private final BroadcastReceiver powerSaveReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (PowerManager.ACTION_POWER_SAVE_MODE_CHANGED.equals(intent.getAction())) {
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-                if (prefs.getBoolean("phone_power_save_link", false)) {
+                if (prefs.getBoolean("phone_power_save_link", true)) {
                     PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
                     if (pm != null) {
-                        boolean isPowerSaveOn = pm.isPowerSaveMode();
-                        Log.d(TAG, "🔌 偵測到手機省電模式變更: " + isPowerSaveOn + "，開始同步手錶...");
-                        sendPowerSaveJson(isPowerSaveOn);
+                        boolean isPhonePowerSaveOn = pm.isPowerSaveMode();
+                        Log.d(TAG, "🔌 [手機省電監聽] 狀態變更為: " + isPhonePowerSaveOn + "，發送至手錶...");
+                        sendPowerSaveJson(isPhonePowerSaveOn);
                     }
                 }
             }
@@ -50,12 +48,11 @@ public class DNDNotificationService extends NotificationListenerService {
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
-        Log.d(TAG, "WearSync 守護服務已連線");
         running = true;
         
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
-        registerReceiver(powerSaveReceiver, filter);
+        // 使用全局 ApplicationContext 註冊省電廣播，防止服務重啟時掉線
+        IntentFilter filter = new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
+        getApplicationContext().registerReceiver(powerSaveReceiver, filter);
 
         syncCurrentDndState();
     }
@@ -65,26 +62,17 @@ public class DNDNotificationService extends NotificationListenerService {
         super.onListenerDisconnected();
         running = false;
         try {
-            unregisterReceiver(powerSaveReceiver);
-        } catch (Exception e) {
-            // 忽略未註冊
-        }
-        try {
-            requestRebind(new ComponentName(this, DNDNotificationService.class));
-        } catch (Exception e) {
-            Log.e(TAG, "服務重綁失敗", e);
-        }
+            getApplicationContext().unregisterReceiver(powerSaveReceiver);
+        } catch (Exception e) {}
     }
 
     @Override
     public void onInterruptionFilterChanged(int interruptionFilter) {
-        if (DNDSyncListenerService.isInternalUpdate) return;
         if (interruptionFilter == lastSentDndState) return; 
-        
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         if (prefs.getBoolean("dnd_sync_switch", true)) {
             lastSentDndState = interruptionFilter;
-            sendJsonMessage(buildDynamicJson(interruptionFilter));
+            sendJsonMessage(buildDndJson(interruptionFilter));
         }
     }
 
@@ -94,37 +82,23 @@ public class DNDNotificationService extends NotificationListenerService {
             if (nm != null) {
                 int currentFilter = nm.getCurrentInterruptionFilter();
                 lastSentDndState = currentFilter;
-                sendJsonMessage(buildDynamicJson(currentFilter));
+                sendJsonMessage(buildDndJson(currentFilter));
             }
-        } catch (Exception e) {
-            Log.e(TAG, "獲取當前勿擾失敗", e);
-        }
+        } catch (Exception e) {}
     }
 
+    // 🔴 鬧鐘優化：完美相容「鎖屏全屏響鈴」與「亮屏使用時的頂部浮窗提示」
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         if (sbn == null) return;
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        if (!prefs.getBoolean("custom_alarm_sync_master_switch", false)) return;
-
-        String packageName = sbn.getPackageName().toLowerCase();
         Notification notification = sbn.getNotification();
         if (notification == null) return;
 
-        Set<String> allowedPackages = prefs.getStringSet("custom_alarm_allowed_packages", new HashSet<>());
-        boolean isAlarmApp = false;
-        if (!allowedPackages.isEmpty()) {
-            isAlarmApp = allowedPackages.contains(sbn.getPackageName());
-        } else {
-            isAlarmApp = packageName.contains("clock") 
-                    || packageName.contains("deskclock") 
-                    || packageName.contains("alarm")
-                    || Notification.CATEGORY_ALARM.equals(notification.category);
-        }
+        String packageName = sbn.getPackageName().toLowerCase();
+        boolean isClockApp = packageName.contains("clock") || packageName.contains("alarm") || Notification.CATEGORY_ALARM.equals(notification.category);
+        if (!isClockApp) return;
 
-        if (!isAlarmApp) return;
-
-        // 🎯 🌟【精準防誤觸核心】：提取標題與內容，全力撲殺即將響鈴預告通知
+        // 🌟 步驟 1：提取文字內容，啟動全文本關鍵字排他沙盒（強力撲殺提前預告通知）
         String title = "";
         String text = "";
         if (notification.extras != null) {
@@ -136,17 +110,29 @@ public class DNDNotificationService extends NotificationListenerService {
 
         if (title.contains("即将") || title.contains("upcoming") || title.contains("提前") || title.contains("预告")
             || text.contains("即将") || text.contains("upcoming") || text.contains("提前") || text.contains("预告")) {
-            Log.d(TAG, "🛑 [沙盒攔截] 檢測到鬧鐘即將響鈴的【預告通知】，已安全過濾，手錶不觸發震動。");
+            Log.d(TAG, "🛑 [沙盒攔截] 檢測到鬧鐘【提前預告通知】，非真實響鈴，已安全過濾。");
             return;
         }
 
-        // 🎯 🌟【核心保險】：響鈴中的鬧鐘必然帶有可交互動作按鈕，若無則為靜態提示，直接攔截
+        // 🌟 步驟 2：核心判定鐵證。無論是全屏響鈴還是亮屏浮窗，真實響鈴的鬧鐘必須帶有「關閉/稍後」等交互按鈕
         if (notification.actions == null || notification.actions.length == 0) {
-            Log.d(TAG, "🛑 [沙盒攔截] 該鬧鐘不含動作按鈕，判定為靜態狀態欄，忽略。");
+            Log.d(TAG, "🛑 [沙盒攔截] 該通知不含交互按鈕，判定為常駐狀態欄提示，已過濾。");
             return;
         }
 
-        Log.d(TAG, "🔥 [鬧鐘確認] 成功捕獲到真實【響鈴中】的鬧鐘事件: " + sbn.getPackageName());
+        // 🌟 步驟 3：排除滿足以上條件但優先級過低的靜態通知
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) {
+                android.app.NotificationChannel channel = nm.getNotificationChannel(notification.getChannelId());
+                if (channel != null && channel.getImportance() < NotificationManager.IMPORTANCE_HIGH) {
+                    Log.d(TAG, "🛑 [沙盒攔截] 通知渠道重要性不足，過濾。");
+                    return;
+                }
+            }
+        }
+
+        Log.d(TAG, "🔥 [鬧鐘確認] 觸發真實響鈴（支援全屏與亮屏浮窗）! 向手錶發送同步信號。");
         currentAlarmNotification = sbn;
 
         try {
@@ -154,42 +140,15 @@ public class DNDNotificationService extends NotificationListenerService {
             json.put("sender", "phone");
             json.put("type", "alarm");
             json.put("alarmAction", "ringing");
-            json.put("timestamp", System.currentTimeMillis());
-
-            String dismissKeys = prefs.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭").toLowerCase();
-            String snoozeKeys = prefs.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡").toLowerCase();
-
-            for (Notification.Action action : notification.actions) {
-                if (action.title != null) {
-                    String actTitle = action.title.toString().toLowerCase();
-                    for (String k : dismissKeys.split(",")) {
-                        if (!k.isEmpty() && actTitle.contains(k)) {
-                            json.put("hasDismissButton", true);
-                            break;
-                        }
-                    }
-                    for (String k : snoozeKeys.split(",")) {
-                        if (!k.isEmpty() && actTitle.contains(k)) {
-                            json.put("hasSnoozeButton", true);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            json.put("wearPowerSave", prefs.getBoolean("wear_power_save_response", false));
-            json.put("wearVibrate", prefs.getBoolean("wear_vibrate_on_sync", true));
             sendJsonMessage(json.toString());
-        } catch (Exception e) {
-            Log.e(TAG, "鬧鐘數據打包失敗", e);
-        }
+        } catch (Exception e) {}
     }
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
         if (sbn == null) return;
         if (currentAlarmNotification != null && sbn.getKey().equals(currentAlarmNotification.getKey())) {
-            Log.d(TAG, "🛑 偵測到手機鬧鐘移除/被掛斷，向手錶發送終止訊號。");
+            Log.d(TAG, "🛑 手動掛斷/小睡，通知消失，終止手錶端動作。");
             currentAlarmNotification = null;
             try {
                 JSONObject json = new JSONObject();
@@ -197,27 +156,18 @@ public class DNDNotificationService extends NotificationListenerService {
                 json.put("type", "alarm");
                 json.put("alarmAction", "stopped");
                 sendJsonMessage(json.toString());
-            } catch (Exception e) {
-                Log.e(TAG, "發送停止訊號失敗", e);
-            }
+            } catch (Exception e) {}
         }
     }
 
-    private String buildDynamicJson(int dndState) {
+    private String buildDndJson(int dndState) {
         try {
             JSONObject json = new JSONObject();
             json.put("sender", "phone");
             json.put("type", "dnd");
             json.put("dndValue", dndState);
-            json.put("timestamp", System.currentTimeMillis());
-
-            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-            json.put("wearPowerSave", prefs.getBoolean("wear_power_save_response", false));
-            json.put("wearVibrate", prefs.getBoolean("wear_vibrate_on_sync", true));
             return json.toString();
-        } catch (Exception e) {
-            return "";
-        }
+        } catch (Exception e) { return ""; }
     }
 
     private void sendPowerSaveJson(boolean isPhonePowerSaveOn) {
@@ -226,11 +176,8 @@ public class DNDNotificationService extends NotificationListenerService {
             json.put("sender", "phone");
             json.put("type", "phone_power_status"); 
             json.put("isPhonePowerSaveOn", isPhonePowerSaveOn);
-            json.put("timestamp", System.currentTimeMillis());
             sendJsonMessage(json.toString());
-        } catch (Exception e) {
-            Log.e(TAG, "省電狀態 JSON 打包失敗", e);
-        }
+        } catch (Exception e) {}
     }
 
     private void sendJsonMessage(String jsonStr) {
@@ -239,13 +186,10 @@ public class DNDNotificationService extends NotificationListenerService {
         new Thread(() -> {
             try {
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-                if (nodes == null || nodes.isEmpty()) return;
                 for (Node node : nodes) {
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "發送異常", e);
-            }
+            } catch (Exception e) {}
         }).start();
     }
 }
