@@ -4,8 +4,6 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.os.Handler;
-import android.os.Looper; 
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
 import androidx.annotation.NonNull;
@@ -19,7 +17,6 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "WearSync_PhoneListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
-    private static final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
     public void onMessageReceived(@NonNull MessageEvent messageEvent) {
@@ -34,79 +31,65 @@ public class DNDSyncListenerService extends WearableListenerService {
                 String sender = json.optString("sender", "");
                 String type = json.optString("type", "");
 
+                // 過濾掉手機自己發送的消息
                 if ("phone".equalsIgnoreCase(sender)) return;
 
-                // 1. 處理手錶反向同步勿擾
-                if ("dnd".equalsIgnoreCase(type)) {
-                    int wearDndValue = json.optInt("dndValue", 1);
-                    Log.d(TAG, "【簽收手錶勿擾】目標值: " + wearDndValue);
-
-                    NotificationManager mNotificationManager = (NotificationManager) 
-                            getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (mNotificationManager != null) {
-                        int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
-                        if (wearDndValue != currentFilter) {
-                            if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-                                isInternalUpdate = true;
-                                mNotificationManager.setInterruptionFilter(wearDndValue);
-                                handler.postDelayed(() -> isInternalUpdate = false, 2000);
-                            }
-                        }
-                    }
-                }
-
-                // 2. 處理手錶反向控制鬧鐘指令（關閉 或 小睡）
-                if ("alarm".equalsIgnoreCase(type)) {
-                    String alarmAction = json.optString("alarmAction", "");
-                    Log.d(TAG, "🚨 收到手錶遠端鬧鐘指令: " + alarmAction);
+                // 🎯 🌟【全渠道打通】：處理手錶端全螢幕 UI 發送過來的反向鬧鐘掛斷控制
+                if ("alarm_control".equalsIgnoreCase(type)) {
+                    String action = json.optString("action", "");
+                    Log.d(TAG, "📥 [遠端指揮中心] 收到手錶端全螢幕介面發送的鬧鐘控制動作: " + action);
                     
                     StatusBarNotification sbn = DNDNotificationService.currentAlarmNotification;
-                    if (sbn == null) {
-                        Log.w(TAG, "執行失敗：手機本地當前沒有緩存到任何正在響鈴的鬧鐘");
-                        return;
-                    }
-
-                    Notification notification = sbn.getNotification();
-                    if (notification == null || notification.actions == null) {
-                        Log.w(TAG, "執行失敗：緩存的鬧鐘通知中沒有包含任何可控制按鈕");
-                        return;
-                    }
-
-                    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-                    String targetKeywords = "";
-
-                    // 根據手錶點擊的按鈕類型，加載對應的 UI 自定義模糊關鍵字字典
-                    if ("dismiss".equalsIgnoreCase(alarmAction)) {
-                        targetKeywords = prefs.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭").toLowerCase();
-                    } else if ("snooze".equalsIgnoreCase(alarmAction)) {
-                        targetKeywords = prefs.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡").toLowerCase();
-                    }
-
-                    // 開始執行動態模糊匹配並點擊
-                    for (Notification.Action action : notification.actions) {
-                        if (action.title != null && action.actionIntent != null) {
-                            String title = action.title.toString().toLowerCase();
+                    if (sbn != null && sbn.getNotification() != null) {
+                        Notification notification = sbn.getNotification();
+                        if (notification.actions != null) {
+                            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
                             
-                            for (String keyword : targetKeywords.split(",")) {
-                                if (!keyword.isEmpty() && title.contains(keyword)) {
-                                    try {
-                                        // 🎯 核心射擊：模擬人類點擊該按鈕動作意圖，完美關閉/暫停鬧鐘！
-                                        action.actionIntent.send();
-                                        Log.d(TAG, "🎉 成功觸發手機通知按鈕 [" + action.title + "]，遠端控制大獲全勝！");
-                                        DNDNotificationService.currentAlarmNotification = null; // 清空緩存
-                                        return;
-                                    } catch (Exception e) {
-                                        Log.e(TAG, "觸發通知按鈕意圖失敗", e);
+                            // 依據操作類型載入用戶配置的過濾字典
+                            String targetKey = action.equals("dismiss") ? 
+                                    prefs.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭") :
+                                    prefs.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡");
+                            
+                            // 尋找對應的 PendingIntent 並發射
+                            for (Notification.Action act : notification.actions) {
+                                if (act.title != null) {
+                                    String title = act.title.toString().toLowerCase();
+                                    for (String k : targetKey.split(",")) {
+                                        if (!k.isEmpty() && title.contains(k.toLowerCase())) {
+                                            try {
+                                                Log.d(TAG, "🎯 [遠端執行成功] 成功代點手機本機鬧鐘按鈕: " + act.title);
+                                                act.actionIntent.send(); // 🚀 跨設備發射 PendingIntent！
+                                            } catch (Exception e) {
+                                                Log.e(TAG, "執行手機鬧鐘 Action 失敗", e);
+                                            }
+                                            return;
+                                        }
                                     }
                                 }
                             }
+                            Log.w(TAG, "⚠️ 未在手機鬧鐘通知中匹配到包含字典關鍵字的按鈕動作。");
+                        }
+                    } else {
+                        Log.w(TAG, "⚠️ 手機端目前無正在緩存響鈴中的有效鬧鐘快照。");
+                    }
+                }
+
+                // 處理手錶反向勿擾同步（保持原項目相容）
+                if ("dnd".equalsIgnoreCase(type)) {
+                    int dndValue = json.optInt("dndValue", 1);
+                    NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (mNotificationManager != null) {
+                        int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
+                        if (dndValue != currentFilter) {
+                            isInternalUpdate = true;
+                            mNotificationManager.setInterruptionFilter(dndValue);
+                            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> isInternalUpdate = false, 2000);
                         }
                     }
-                    Log.w(TAG, "未能在通知中匹配到符合您 UI 設定關鍵字的按鈕動作。");
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "手機解析動態 JSON 失敗", e);
+                Log.e(TAG, "解析手錶回傳指令失敗", e);
             }
         }
     }
