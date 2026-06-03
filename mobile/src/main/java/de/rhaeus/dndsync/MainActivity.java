@@ -8,13 +8,12 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // 全面相容 Android 12+ 系統動態配色調色盤
         com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this);
-
         super.onCreate(savedInstanceState);
-        
-        // 主題已經是 NoActionBar，這裡再保險隱藏一次
+
         if (getSupportActionBar() != null) {
-            getSupportActionBar().hide();
+            getSupportActionBar().hide(); // 徹底隱藏頂部 ActionBar
         }
 
         setContentView(R.layout.activity_main);
