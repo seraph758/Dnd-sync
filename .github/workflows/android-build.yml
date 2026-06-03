@@ -1,4 +1,4 @@
-name: Build and Release APKs
+Name: Build and Release APKs
 
 on:
   workflow_dispatch:   # 手动触发
@@ -55,7 +55,7 @@ jobs:
 
     - name: Create flat ZIP package
       run: |
-        echo "生成平铺 ZIP"
+        echo "生成平铺 ZIP (留作本地备份或未来备用)"
         zip -j ./dnd-sync-v1.0.${{ github.run_number }}.zip \
           ./mobile-release.apk \
           ./wear-release.apk
@@ -65,10 +65,13 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: dnd-sync-v1.0.${{ github.run_number }}
-        path: ./dnd-sync-v1.0.${{ github.run_number }}.zip
+        # 🎯 这里直接指定两个 APK，GitHub 自动打包下载时就不会再有“内层 ZIP”了
+        path: |
+          ./mobile-release.apk
+          ./wear-release.apk
         retention-days: 7
 
-    # 🎯 Release 推送步骤保留，但注释掉
+    # 🎯 Release 推送步骤：以后想用时，把下面所有行的 # 号删掉即可
     # - name: Create Release
     #   id: create_release
     #   uses: softprops/action-gh-release@v2
