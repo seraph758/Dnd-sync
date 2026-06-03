@@ -169,22 +169,85 @@ public class DNDNotificationService extends NotificationListenerService {
         }
     }
 
-    @Override
-    public void onNotificationRemoved(StatusBarNotification sbn) {
-        if (sbn == null) return;
-        if (currentAlarmNotification != null && sbn.getKey().equals(currentAlarmNotification.getKey())) {
-            currentAlarmNotification = null;
-            try {
-                JSONObject json = new JSONObject();
-                json.put("sender", "phone");
-                json.put("type", "alarm");
-                json.put("alarmAction", "stopped");
-                sendJsonMessage(json.toString());
-            } catch (Exception e) {
-                Log.e(TAG, "發送停止訊號失敗", e);
+@Override
+public void onNotificationPosted(StatusBarNotification sbn) {
+    if (sbn == null) return;
+    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+    if (!prefs.getBoolean("custom_alarm_sync_master_switch", false)) return;
+
+    String packageName = sbn.getPackageName().toLowerCase();
+    Notification notification = sbn.getNotification();
+    if (notification == null) return;
+
+    // 1️⃣ 基礎包名與類別判定
+    Set<String> allowedPackages = prefs.getStringSet("custom_alarm_allowed_packages", new HashSet<>());
+    boolean isAlarmApp = false;
+    if (!allowedPackages.isEmpty()) {
+        isAlarmApp = allowedPackages.contains(sbn.getPackageName());
+    } else {
+        isAlarmApp = packageName.contains("clock") 
+                || packageName.contains("deskclock") 
+                || packageName.contains("alarm")
+                || Notification.CATEGORY_ALARM.equals(notification.category);
+    }
+    if (!isAlarmApp) return;
+
+    // 2️⃣ 🌟【精準防誤觸】：過濾掉提前預告通知
+    CharSequence tickerText = notification.tickerText;
+    String title = notification.extras.getCharSequence(Notification.EXTRA_TITLE, "").toString().toLowerCase();
+    String text = notification.extras.getCharSequence(Notification.EXTRA_TEXT, "").toString().toLowerCase();
+    
+    if (title.contains("即将") || title.contains("upcoming") || title.contains("提前")
+        || text.contains("即将") || text.contains("upcoming") || text.contains("提前")) {
+        Log.d(TAG, "🛑 攔截到鬧鐘即將響鈴的【預告通知】，放棄同步震動。");
+        return;
+    }
+
+    // 必須包含可交互的按鈕動作（響鈴中的鬧鐘必然有暫停或關閉按鈕）
+    if (notification.actions == null || notification.actions.length == 0) {
+        Log.d(TAG, "🛑 該鬧鐘通知不帶任何按鈕操作，判定為靜態提示，忽略之。");
+        return;
+    }
+
+    Log.d(TAG, "🔥 [鬧鐘確認] 捕獲到真實【正在響鈴】事件: " + sbn.getPackageName());
+    currentAlarmNotification = sbn;
+
+    try {
+        JSONObject json = new JSONObject();
+        json.put("sender", "phone");
+        json.put("type", "alarm");
+        json.put("alarmAction", "ringing");
+        json.put("timestamp", System.currentTimeMillis());
+
+        // 解析按鈕，以便傳給手錶
+        String dismissKeys = prefs.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭").toLowerCase();
+        String snoozeKeys = prefs.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡").toLowerCase();
+
+        for (Notification.Action action : notification.actions) {
+            if (action.title != null) {
+                String actionTitle = action.title.toString().toLowerCase();
+                for (String k : dismissKeys.split(",")) {
+                    if (!k.isEmpty() && actionTitle.contains(k)) {
+                        json.put("hasDismissButton", true);
+                        break;
+                    }
+                }
+                for (String k : snoozeKeys.split(",")) {
+                    if (!k.isEmpty() && actionTitle.contains(k)) {
+                        json.put("hasSnoozeButton", true);
+                        break;
+                    }
+                }
             }
         }
+
+        json.put("wearVibrate", prefs.getBoolean("wear_vibrate_on_sync", true));
+        sendJsonMessage(json.toString());
+    } catch (Exception e) {
+        Log.e(TAG, "鬧鐘打包失敗", e);
     }
+}
+
 
     private String buildDynamicJson(int dndState) {
         try {
