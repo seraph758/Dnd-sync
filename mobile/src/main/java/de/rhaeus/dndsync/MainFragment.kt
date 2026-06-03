@@ -1,5 +1,6 @@
 package de.rhaeus.dndsync
 
+import android.app.NotificationManager  // 🎯 【修復錯誤1】補上缺失的系統通知管理器引用
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -308,7 +309,6 @@ class MainFragment : Fragment() {
         super.onResume()
         checkNotificationPermission()
         registerConnectivityListener()
-        // 🔒 【修復問題2、3】砍掉了這裡無腦發送 pushDynamicJsonToWear() 的指令，讓後台保持極靜音
     }
 
     override fun onPause() {
@@ -334,14 +334,14 @@ class MainFragment : Fragment() {
 
         Thread {
             try {
-                // UI 更改觸發的手動推送，嘗試獲取真實勿擾值
                 val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 val realDndValue = nm.currentInterruptionFilter
 
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "dnd")
-                    put("dndValue", realDndValue) 
+                    // 🎯 【修復錯誤2】使用 .put(String, Int) 明確多載，防止 Kotlin 編譯器產生重載歧義
+                    put("dndValue", realDndValue as Int) 
                     put("wearPowerSave", wSave)
                     put("wearVibrate", wVibrate)
                     put("timestamp", System.currentTimeMillis())
