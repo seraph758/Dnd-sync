@@ -20,14 +20,14 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.DNDSync">   <!-- 保持原本主題即可 -->
+            android:theme="@style/Theme.DNDSync">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- 其他 service 不變 -->
+        <!-- 手機端 Notification Listener Service（發送 DND） -->
         <service
             android:name=".DNDNotificationService"
             android:exported="true"
@@ -37,10 +37,18 @@
             </intent-filter>
         </service>
 
+        <!-- 手機端 Data Listener Service（接收手錶反向同步） -->
         <service
             android:name=".DNDSyncListenerService"
             android:enabled="true"
             android:exported="true">
+            
+            <!-- 關鍵：DataClient 必須註冊 -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+            </intent-filter>
+            
+            <!-- 保留原本 Message 支援 -->
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <data
@@ -51,5 +59,4 @@
         </service>
 
     </application>
-
 </manifest>
