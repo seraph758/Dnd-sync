@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
-        android:title="連線狀態"
+        android:title="Wear Sync 連線狀態"
         app:iconSpaceReserved="false">
         <Preference
             android:key="connectivity_state_key"
@@ -13,18 +13,18 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/permission_header"
+        android:title="系統底層自動化核心權限"
         app:iconSpaceReserved="false">
         <Preference
             android:key="dnd_permission_key"
-            android:title="@string/dnd_permission_title"
+            android:title="勿擾讀寫訪問權限"
             android:summary="勿擾訪問權限"
             app:iconSpaceReserved="false" />
 
         <Preference
             android:key="acc_permission_key"
-            android:title="輔助功能權限"
-            android:summary="模擬點擊需要此權限"
+            android:title="輔助功能防吞權限"
+            android:summary="防吞劇本自動模擬點擊需要此權限"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
@@ -43,14 +43,14 @@
         <SwitchPreferenceCompat
             android:defaultValue="true"
             android:key="bedtime_key"
-            android:title="就寝模式同步 (模擬點擊)"
+            android:title="就寝模式同步"
             android:visible="false"
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
             android:defaultValue="false"
             android:key="vibrate_key"
-            android:title="@string/vibrate_title"
+            android:title="同步震動"
             android:visible="false"
             app:iconSpaceReserved="false" />
             
