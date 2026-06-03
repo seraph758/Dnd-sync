@@ -84,16 +84,12 @@ class MainFragment : Fragment() {
                     val isNotificationAllowed by isNotificationAllowedState
                     val trigger by prefsTrigger
 
-                    // 1. 勿擾基本配置狀態
                     var dndSyncMode by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dnd_sync_switch", true)) }
                     var phonePowerSaveByLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("phone_power_save_link", false)) }
                     var wearPowerSaveResponse by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_power_save_response", false)) }
                     var wearVibrateOnSync by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_vibrate_on_sync", true)) }
 
-                    // 🎯 【級聯新核心】：一級鬧鐘同步連動總開關
                     var alarmMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false)) }
-                    
-                    // 🎯 【二級配置沙盒狀態】
                     var alarmDismissKeys by remember(trigger) { mutableStateOf(sharedPreferences.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭") ?: "") }
                     var alarmSnoozeKeys by remember(trigger) { mutableStateOf(sharedPreferences.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡") ?: "") }
 
@@ -105,7 +101,6 @@ class MainFragment : Fragment() {
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // 頂部大標題完美修改為 Wear Sync
                         Text(
                             text = "Wear Sync 萬能互聯中心",
                             fontSize = 22.sp,
@@ -113,7 +108,6 @@ class MainFragment : Fragment() {
                             color = MaterialTheme.colorScheme.onBackground
                         )
 
-                        // 1. 狀態看板卡片
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -145,7 +139,7 @@ class MainFragment : Fragment() {
                                 ) {
                                     Text(text = "手錶連線狀態", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                                     Text(
-                                        text = if (isConnected) "已連線" else "未連線 (檢查藍牙/配對)",
+                                        text = if (isConnected) "已連線" else "未連線",
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = if (isConnected) Color(0xFF28A745) else Color(0xFFDC3545)
@@ -154,7 +148,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 2. 控制面板標題
                         Text(
                             text = "遠端互聯與同步控制面板", 
                             fontSize = 14.sp, 
@@ -178,10 +171,7 @@ class MainFragment : Fragment() {
                                     pushDynamicJsonToWear()
                                 }
                                 
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp), 
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
                                 
                                 SwitchRow(
                                     title = "手機端省電連動",
@@ -193,14 +183,11 @@ class MainFragment : Fragment() {
                                     pushDynamicJsonToWear()
                                 }
                                 
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp), 
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
                                 SwitchRow(
                                     title = "手錶端省電模式響應",
-                                    summary = "開啟後，若觸發省電，手錶將執行 (先點擊80%再點擊40%) 的防吞劇本",
+                                    summary = "開啟後，若觸發省電，手錶將執行防吞自動模擬點擊劇本",
                                     checked = wearPowerSaveResponse
                                 ) { checked ->
                                     sharedPreferences.edit().putBoolean("wear_power_save_response", checked).apply()
@@ -208,14 +195,11 @@ class MainFragment : Fragment() {
                                     pushDynamicJsonToWear()
                                 }
 
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp), 
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
                                 SwitchRow(
                                     title = "同步成功時震動反饋",
-                                    summary = "當手錶成功接收勿擾變更並執行手勢點擊時，手錶本機觸發短震動",
+                                    summary = "當狀態真正發生變更時，手錶本機觸發短震動提示",
                                     checked = wearVibrateOnSync
                                 ) { checked ->
                                     sharedPreferences.edit().putBoolean("wear_vibrate_on_sync", checked).apply()
@@ -225,7 +209,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 🎯 3. 鬧鐘沙盒級聯面板標題
                         Text(
                             text = "進階級聯：鬧鐘自動化防漏沙盒", 
                             fontSize = 14.sp, 
@@ -239,10 +222,9 @@ class MainFragment : Fragment() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                                // 一級總開關
                                 SwitchRow(
                                     title = "啟用手機鬧鐘同步連動",
-                                    summary = "總閘關閉時，後台拒絕向手錶傳輸任何鬧鐘穿透數據",
+                                    summary = "總閘關閉時，後台將拒絕向手錶傳輸任何鬧鐘穿透數據",
                                     checked = alarmMasterSwitch
                                 ) { checked ->
                                     sharedPreferences.edit().putBoolean("custom_alarm_sync_master_switch", checked).apply()
@@ -250,30 +232,25 @@ class MainFragment : Fragment() {
                                     pushDynamicJsonToWear()
                                 }
 
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp), 
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                )
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
-                                // 二級菜單：藉由 Opacity 與 enabled 精準體現級聯狀態
                                 val secondaryAlpha = if (alarmMasterSwitch) 1.0f else 0.4f
                                 
                                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                                     Text(
-                                        text = "鬧鐘應用過濾篩選名單 (二級選單)",
+                                        text = "鬧鐘應用過濾篩選 (二級選單)",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = secondaryAlpha)
                                     )
                                     Text(
-                                        text = if (alarmMasterSwitch) "已點對點對接：預設放行含 clock 包名。可在UI後續版本中打勾篩選..." else "（請先開啟上方總開關）",
+                                        text = if (alarmMasterSwitch) "已動態相容：預設精準匹配谷歌、三星、小米等所有帶時鐘特徵應用。" else "（請先開啟上方總開關）",
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f * secondaryAlpha)
                                     )
                                     
                                     Spacer(modifier = Modifier.height(12.dp))
 
-                                    // 模糊匹配：關閉關鍵字輸入框
                                     OutlinedTextField(
                                         value = alarmDismissKeys,
                                         onValueChange = { 
@@ -285,13 +262,11 @@ class MainFragment : Fragment() {
                                         },
                                         label = { Text("自定義「關閉」模糊關鍵字字典") },
                                         enabled = alarmMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        placeholder = { Text("逗號分隔，如：关,消,dismiss") }
+                                        modifier = Modifier.fillMaxWidth()
                                     )
 
                                     Spacer(modifier = Modifier.height(10.dp))
 
-                                    // 模糊匹配：稍後再響關鍵字輸入框
                                     OutlinedTextField(
                                         value = alarmSnoozeKeys,
                                         onValueChange = { 
@@ -303,8 +278,7 @@ class MainFragment : Fragment() {
                                         },
                                         label = { Text("自定義「小睡/稍後再響」模糊關鍵字字典") },
                                         enabled = alarmMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        placeholder = { Text("逗號分隔，如：稍,睡,snooze") }
+                                        modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
@@ -326,11 +300,7 @@ class MainFragment : Fragment() {
                 Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
                 Text(text = summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
             }
-            Switch(
-                checked = checked, 
-                onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
-            )
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
         }
     }
 
@@ -338,7 +308,7 @@ class MainFragment : Fragment() {
         super.onResume()
         checkNotificationPermission()
         registerConnectivityListener()
-        pushDynamicJsonToWear()
+        // 🔒 【修復問題2、3】砍掉了這裡無腦發送 pushDynamicJsonToWear() 的指令，讓後台保持極靜音
     }
 
     override fun onPause() {
@@ -356,20 +326,22 @@ class MainFragment : Fragment() {
         return allowed
     }
 
-// 🎯 核心更替：將 DataClient 全面替換為高度擴充性的 MessageClient 動態 JSON 訊息流
     private fun pushDynamicJsonToWear() {
         val context = context ?: return
-        
         val dndSync = sharedPreferences.getBoolean("dnd_sync_switch", true)
         val wSave = sharedPreferences.getBoolean("wear_power_save_response", false)
         val wVibrate = sharedPreferences.getBoolean("wear_vibrate_on_sync", true)
 
         Thread {
             try {
+                // UI 更改觸發的手動推送，嘗試獲取真實勿擾值
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val realDndValue = nm.currentInterruptionFilter
+
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "dnd")
-                    put("dndValue", if (dndSync) 1 else 0) // 模擬原始勿擾規則
+                    put("dndValue", realDndValue) 
                     put("wearPowerSave", wSave)
                     put("wearVibrate", wVibrate)
                     put("timestamp", System.currentTimeMillis())
@@ -377,13 +349,11 @@ class MainFragment : Fragment() {
 
                 val data = json.toString().toByteArray(StandardCharsets.UTF_8)
                 val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
-                
                 for (node in nodes) {
                     Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
                 }
-                Log.d("WearSync_PhoneUI", "✅ 動態 JSON 配置推送成功")
             } catch (e: Exception) {
-                Log.e("WearSync_PhoneUI", "❌ 遠端動態同步推送失敗", e)
+                Log.e("WearSync_UI", "手動同步失敗", e)
             }
         }.start()
     }
