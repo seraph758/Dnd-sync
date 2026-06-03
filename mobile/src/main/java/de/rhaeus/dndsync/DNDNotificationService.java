@@ -2,8 +2,13 @@ package de.rhaeus.dndsync;
 
 import android.app.Notification;
 import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.os.PowerManager;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
@@ -23,9 +28,26 @@ public class DNDNotificationService extends NotificationListenerService {
     
     public static StatusBarNotification currentAlarmNotification = null;
     public static boolean running = false;
-    
-    // 引入本地勿擾狀態鎖，防止重複發送相同狀態導致手錶隨機震動
     private int lastSentDndState = -1;
+
+    // 🎯 監聽手機本機的省電模式狀態變更
+    private BroadcastReceiver powerSaveReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (PowerManager.ACTION_POWER_SAVE_MODE_CHANGED.equals(intent.getAction())) {
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+                // 檢查手機端省電連動總開關是否開啟
+                if (prefs.getBoolean("phone_power_save_link", false)) {
+                    PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+                    if (pm != null) {
+                        boolean isPowerSaveOn = pm.isPowerSaveMode();
+                        Log.d(TAG, "🔌 偵測到手機省電模式變更: " + isPowerSaveOn + "，開始同步手錶...");
+                        sendPowerSaveJson(isPowerSaveOn);
+                    }
+                }
+            }
+        }
+    };
 
     @Override
     public void onListenerConnected() {
@@ -33,7 +55,11 @@ public class DNDNotificationService extends NotificationListenerService {
         Log.d(TAG, "WearSync 守護服務已連線");
         running = true;
         
-        // 初始化時發送一次真實的勿擾狀態
+        // 註冊手機省電模式廣播
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
+        registerReceiver(powerSaveReceiver, filter);
+
         syncCurrentDndState();
     }
 
@@ -41,6 +67,11 @@ public class DNDNotificationService extends NotificationListenerService {
     public void onListenerDisconnected() {
         super.onListenerDisconnected();
         running = false;
+        try {
+            unregisterReceiver(powerSaveReceiver);
+        } catch (Exception e) {
+            // 忽略未註冊異常
+        }
         try {
             requestRebind(new ComponentName(this, DNDNotificationService.class));
         } catch (Exception e) {
@@ -51,11 +82,7 @@ public class DNDNotificationService extends NotificationListenerService {
     @Override
     public void onInterruptionFilterChanged(int interruptionFilter) {
         if (DNDSyncListenerService.isInternalUpdate) return;
-        
-        // 🔒 【修復問題2、3】狀態鎖：如果勿擾狀態沒變，絕對不重複發送
-        if (interruptionFilter == lastSentDndState) {
-            return; 
-        }
+        if (interruptionFilter == lastSentDndState) return; 
         
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         if (prefs.getBoolean("dnd_sync_switch", true)) {
@@ -77,28 +104,17 @@ public class DNDNotificationService extends NotificationListenerService {
         }
     }
 
-    // 🎯 【修復問題4】全方位放寬鬧鐘攔截網，精準捕獲谷歌時鐘
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         if (sbn == null) return;
-        
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        // 一級總開關攔截
-        if (!prefs.getBoolean("custom_alarm_sync_master_switch", false)) {
-            return;
-        }
+        if (!prefs.getBoolean("custom_alarm_sync_master_switch", false)) return;
 
         String packageName = sbn.getPackageName().toLowerCase();
         Notification notification = sbn.getNotification();
         if (notification == null) return;
 
-        // 讀取用戶自選 App 列表
         Set<String> allowedPackages = prefs.getStringSet("custom_alarm_allowed_packages", new HashSet<>());
-        
-        // 🚀 【終極相容過濾】滿足以下任意條件，即認定為鬧鐘：
-        // 1. 用戶在UI名單裡勾選了這個包名
-        // 2. 用戶沒勾選，但包名包含谷歌時鐘、三星、小米等標準時鐘關鍵字
-        // 3. 通知的類別明確是 CATEGORY_ALARM
         boolean isAlarmApp = false;
         if (!allowedPackages.isEmpty()) {
             isAlarmApp = allowedPackages.contains(sbn.getPackageName());
@@ -109,10 +125,7 @@ public class DNDNotificationService extends NotificationListenerService {
                     || Notification.CATEGORY_ALARM.equals(notification.category);
         }
 
-        // 如果不是鬧鐘 App，直接原地 return 丟棄！【徹底解決問題2的後台高頻刷屏】
-        if (!isAlarmApp) {
-            return; 
-        }
+        if (!isAlarmApp) return; 
 
         Log.d(TAG, "🔥 [鬧鐘確認] 成功捕獲目標鬧鐘事件: " + sbn.getPackageName());
         currentAlarmNotification = sbn;
@@ -147,13 +160,10 @@ public class DNDNotificationService extends NotificationListenerService {
                 }
             }
 
-            // 注入其他 UI 屬性並發送
             SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(this);
             json.put("wearPowerSave", p.getBoolean("wear_power_save_response", false));
             json.put("wearVibrate", p.getBoolean("wear_vibrate_on_sync", true));
-            
             sendJsonMessage(json.toString());
-
         } catch (Exception e) {
             Log.e(TAG, "鬧鐘打包失敗", e);
         }
@@ -163,7 +173,6 @@ public class DNDNotificationService extends NotificationListenerService {
     public void onNotificationRemoved(StatusBarNotification sbn) {
         if (sbn == null) return;
         if (currentAlarmNotification != null && sbn.getKey().equals(currentAlarmNotification.getKey())) {
-            Log.d(TAG, "🔊 鬧鐘通知消失，通知手錶解脫震動。");
             currentAlarmNotification = null;
             try {
                 JSONObject json = new JSONObject();
@@ -182,7 +191,7 @@ public class DNDNotificationService extends NotificationListenerService {
             JSONObject json = new JSONObject();
             json.put("sender", "phone");
             json.put("type", "dnd");
-            json.put("dndValue", dndState); // 🚀 【修復問題1】此處傳送真實的系統勿擾濾波值（如INTERRUPTION_FILTER_NONE=3）
+            json.put("dndValue", dndState);
             json.put("timestamp", System.currentTimeMillis());
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
@@ -191,6 +200,20 @@ public class DNDNotificationService extends NotificationListenerService {
             return json.toString();
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    // 🎯 專門打包並傳送手機省電開關狀態的 JSON 封包
+    private void sendPowerSaveJson(boolean isPhonePowerSaveOn) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("sender", "phone");
+            json.put("type", "phone_power_status"); // 標記為手機省電狀態通知
+            json.put("isPhonePowerSaveOn", isPhonePowerSaveOn);
+            json.put("timestamp", System.currentTimeMillis());
+            sendJsonMessage(json.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "省電狀態 JSON 打包失敗", e);
         }
     }
 
