@@ -32,128 +32,82 @@ public class DNDNotificationService extends NotificationListenerService implemen
     public void onListenerConnected() {
         super.onListenerConnected();
         running = true;
-        // 🎯【解決問題 2】手機端服務必須註冊藍牙穿戴訊息監聽，否則收不到手錶按鈕的反饋！
+        // 註冊藍牙穿戴訊息監聽，接收來自手錶端的控制信號
         Wearable.getMessageClient(this).addListener(this);
-        Log.d(TAG, "🚀 手機端 WearSync 核心監聽服務已成功啟動並與藍牙總線對齊");
+        Log.d(TAG, "🚀 穿戴互聯手機端發射服務已成功啟動並掛載監聽！");
     }
 
     @Override
     public void onListenerDisconnected() {
-        super.onListenerDisconnected();
-        running = false;
         Wearable.getMessageClient(this).removeListener(this);
+        running = false;
+        super.onListenerDisconnected();
     }
 
-    /**
-     * 🎯【核心實現】在這裡接收來自手錶端的所有反向控制代碼（拍照、鬧鐘關閉等）
-     */
     @Override
-    public void onMessageReceived(@NonNull MessageEvent messageEvent) {
-        if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
-            try {
-                String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
-                JSONObject json = new JSONObject(jsonStr);
-                
-                String sender = json.optString("sender", "");
-                String type = json.optString("type", "");
-                String action = json.optString("action", "");
+    public void onInterruptionFilterChanged(int interruptionFilter) {
+        if (DNDSyncListenerService.isInternalUpdate) {
+            DNDSyncListenerService.isInternalUpdate = false;
+            return;
+        }
+        Log.d(TAG, "📱 偵測到手機系統勿擾模式變更: " + interruptionFilter + "，啟動穿戴發射鏈條");
+        pushDndAndPowerStatusToWear(interruptionFilter);
+    }
 
-                // 只處理來自手錶的訊號
-                if ("wear".equalsIgnoreCase(sender)) {
-                    Log.d(TAG, "📥 收到來自手錶的遙控信號: type=" + type + ", action=" + action);
-                    
-                    if ("camera_control".equalsIgnoreCase(type)) {
-                        if ("TAKE_PHOTO".equalsIgnoreCase(action)) {
-                            Log.d(TAG, "📸 收到手錶快門指令！正在透過系統總線模擬物理快門按壓...");
-                            performGlobalShutterAction();
-                        } else if ("START_CAMERA".equalsIgnoreCase(action)) {
-                            Log.d(TAG, "📹 手錶端相機已就位，準備開始進行動態低延遲流投射...");
-                            // 在這裡可以擴充引導手機本地抓取 Surface 畫面
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "處理手錶反向控制封包失敗", e);
-            }
+    private void pushDndAndPowerStatusToWear(int dndState) {
+        SharedPreferences sharedPreferences = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+        boolean isDndSyncEnabled = sharedPreferences.getBoolean("dnd_sync_switch", true);
+        
+        if (!isDndSyncEnabled) {
+            Log.d(TAG, "DND 同步開關未開啟，中斷向手錶推送狀態。");
+            return;
+        }
+
+        // 讀取 UI 快取配置，實現與勿擾綁定的手錶省電狀態
+        boolean wearPowerSave = sharedPreferences.getBoolean("wear_power_save_response", false);
+        boolean wearVibrate = sharedPreferences.getBoolean("wear_vibrate_on_sync", true);
+
+        try {
+            JSONObject json = new JSONObject();
+            json.put("sender", "phone");
+            json.put("type", "dnd");
+            json.put("dndValue", dndState);
+            json.put("wearPowerSave", wearPowerSave);
+            json.put("wearVibrate", wearVibrate);
+            json.put("timestamp", System.currentTimeMillis());
+
+            sendJsonMessage(json.toString());
+            Log.d(TAG, "⚡ 成功向手錶發射同步封包: " + json.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to compile sync status packet", e);
         }
     }
 
-    /**
-     * 🎯 模擬物理音量鍵快門：這能相容市面上 99% 的手機原生及第三方相機應用
-     */
-    private void performGlobalShutterAction() {
-        new Handler(Looper.getMainLooper()).post(() -> {
-            try {
-                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                if (audioManager != null) {
-                    // 發送音量下鍵按下信號 (Android 相機通用快門)
-                    long now = android.os.SystemClock.uptimeMillis();
-                    KeyEvent downEvent = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN, 0);
-                    KeyEvent upEvent = new KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_VOLUME_DOWN, 0);
-                    
-                    audioManager.dispatchMediaKeyEvent(downEvent);
-                    audioManager.dispatchMediaKeyEvent(upEvent);
-                    Log.d(TAG, "✅ 物理快門模擬訊號發送完畢");
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "模擬快門失敗", e);
-            }
-        });
-    }
-
-    // ====================================================================
-    // 原有鬧鐘穿透與時鐘包名攔截判斷邏輯
-    // ====================================================================
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         if (sbn == null) return;
-        SharedPreferences prefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
-        
-        if (!prefs.getBoolean("custom_alarm_sync_master_switch", false)) {
-            return; 
-        }
-
         String currentPackage = sbn.getPackageName();
-        String allowedPackagesStr = prefs.getString("custom_allowed_clock_packages", "com.google.android.deskclock,com.sec.android.app.clockpackage,com.android.deskclock");
-        
+
+        SharedPreferences sharedPreferences = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+        boolean alarmMasterSwitch = sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false);
+
+        if (!alarmMasterSwitch) return;
+
+        String allowedClockPackages = sharedPreferences.getString("custom_allowed_clock_packages", "com.google.android.deskclock,com.sec.android.app.clockpackage,com.android.deskclock");
         boolean isClockApp = false;
-        if (allowedPackagesStr != null) {
-            String[] pkgs = allowedPackagesStr.split(",");
-            for (String pkg : pkgs) {
-                if (currentPackage.equalsIgnoreCase(pkg.trim())) {
+        if (allowedClockPackages != null) {
+            for (String pkg : allowedClockPackages.split(",")) {
+                if (currentPackage.trim().equalsIgnoreCase(pkg.trim())) {
                     isClockApp = true;
                     break;
                 }
             }
         }
 
-        if (!isClockApp) {
-            return; 
-        }
+        if (isClockApp) {
+            Notification notification = sbn.getNotification();
+            if (notification == null) return;
 
-        Notification notification = sbn.getNotification();
-        if (notification == null) return;
-
-        CharSequence titleObj = notification.extras.getCharSequence(Notification.EXTRA_TITLE);
-        CharSequence textObj = notification.extras.getCharSequence(Notification.EXTRA_TEXT);
-        String title = titleObj != null ? titleObj.toString() : "";
-        String text = textObj != null ? textObj.toString() : "";
-
-        String dismissKeywords = prefs.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭");
-        String snoozeKeywords = prefs.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡");
-
-        boolean matchesDismiss = false;
-        if (dismissKeywords != null) {
-            for (String k : dismissKeywords.split(",")) {
-                String tk = k.trim();
-                if (!tk.isEmpty() && (title.contains(tk) || text.contains(tk))) {
-                    matchesDismiss = true;
-                    break;
-                }
-            }
-        }
-
-        if (matchesDismiss) {
             currentAlarmNotification = sbn;
             try {
                 JSONObject json = new JSONObject();
@@ -179,7 +133,59 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 json.put("type", "alarm");
                 json.put("alarmAction", "stopped");
                 sendJsonMessage(json.toString());
+                Log.d(TAG, "🔒 手機鬧鐘已關閉/暫停，已同步通知手錶終止響鈴。");
             } catch (Exception e) {}
+        }
+    }
+    @Override
+    public void onMessageReceived(@NonNull MessageEvent messageEvent) {
+        if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
+            try {
+                String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
+                JSONObject json = new JSONObject(jsonStr);
+                
+                String sender = json.optString("sender", "");
+                if (!"wear".equals(sender)) return;
+
+                String type = json.optString("type", "");
+                
+                // 處理來自手錶端的遠端相機指令控制
+                if ("camera_control".equals(type)) {
+                    String action = json.optString("action", "");
+                    Log.d(TAG, "📥 接收到手錶端反向控制指令: " + action);
+
+                    SharedPreferences sharedPreferences = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+                    boolean cameraMasterSwitch = sharedPreferences.getBoolean("custom_camera_sync_master_switch", false);
+                    String allowedCameraPackages = sharedPreferences.getString("custom_allowed_camera_packages", "");
+
+                    // 修正 3：如果手機端沒有開啟相機連動，或者包名為空且未開啟任何相機，則不執行任何操作
+                    if (!cameraMasterSwitch) {
+                        Log.w(TAG, "相機連動未在 UI 啟用，拒絕執行手錶控制信號。");
+                        return;
+                    }
+
+                    if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
+                        // 執行拍照：向手機系統模擬發送音量鍵或相機物理快門按鍵事件，觸發拍照
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            try {
+                                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                                if (audioManager != null) {
+                                    // 透過模擬硬體快門鍵，完美相容所有主流手機內建相機的拍照
+                                    audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CAMERA));
+                                    audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CAMERA));
+                                    Log.d(TAG, "📸 已成功向手機系統注入快門按鍵事件！");
+                                }
+                            } catch (Exception e) {
+                                Log.e(TAG, "模擬快門失敗", e);
+                            }
+                        });
+                    } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+                        Log.d(TAG, "收到手錶退出信號，關閉手機相機通道。");
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "解析手錶反向回傳資料出錯", e);
+            }
         }
     }
 
@@ -192,7 +198,9 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 for (Node node : nodes) {
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                Log.e(TAG, "藍牙訊息通道傳輸失敗", e);
+            }
         }).start();
     }
 }
