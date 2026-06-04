@@ -11,7 +11,6 @@ import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
-import androidx.preference.PreferenceManager;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.Node;
@@ -34,6 +33,11 @@ public class DNDSyncListenerService extends WearableListenerService {
         serviceContext = getApplicationContext();
     }
 
+    // 🎯 統一手錶端命名空間，防止資料夾混亂
+    private SharedPreferences getDndSyncPreferences() {
+        return getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+    }
+
     @Override
     public void onMessageReceived(@NonNull MessageEvent messageEvent) {
         if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
@@ -43,139 +47,100 @@ public class DNDSyncListenerService extends WearableListenerService {
             try {
                 String jsonStr = new String(data, StandardCharsets.UTF_8);
                 JSONObject json = new JSONObject(jsonStr);
-                
+
                 String sender = json.optString("sender", "");
                 String type = json.optString("type", "");
 
-                if ("wear".equalsIgnoreCase(sender)) return;
+                if ("wear".equalsIgnoreCase(sender)) {
+                    return; 
+                }
 
-                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+                SharedPreferences prefs = getDndSyncPreferences();
 
-                // ⚙️ 業務 A：勿擾模式狀態更改（絕對控制中心）
-                if ("dnd".equalsIgnoreCase(type)) {
-                    int dndValue = json.optInt("dndValue", 1);
-                    boolean useBedtimeMode = prefs.getBoolean("bedtime_key", true);
-                    // 🌟 完美理解點 1：省電模式開關完全綁定並從屬於睡眠模式
-                    boolean linkPowerSaveWithBedtime = prefs.getBoolean("wear_power_save_key", true);
+                // ====================================================================
+                // 🌟 新增分支：手機端主動「相機控制」與「強行喚醒手錶畫布」
+                // ====================================================================
+                if ("camera_control".equalsIgnoreCase(type)) {
+                    String action = json.optString("action", "");
+                    
+                    if ("FORCE_WAKEUP_ACTIVITY".equalsIgnoreCase(action)) {
+                        Log.d(TAG, "🚀 收到手機端主動喚醒信號！正在拉起手錶相機畫布...");
+                        try {
+                            // 建立手錶端相機介面的 Intent
+                            Intent cameraIntent = new Intent(this, WearCameraActivity.class);
+                            // 關鍵標記：後台服務拉起 Activity 必須使用 NEW_TASK
+                            cameraIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                            startActivity(cameraIntent);
+                            
+                            // 喚醒時附帶一次清脆短震提示
+                            triggerSingleVibration();
+                        } catch (Exception e) {
+                            Log.e(TAG, "❌ 無法啟動 WearCameraActivity，請確認手錶端是否已建立該類別", e);
+                        }
+                    }
+                    return; // 處理完畢，直接結束
+                }
 
-                    NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (mNotificationManager != null) {
-                        int filterState = mNotificationManager.getCurrentInterruptionFilter();
-                        
-                        if (dndValue != filterState) {
-                            // 先同步手錶本地原生勿擾
-                            if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                // ====================================================================
+                // 原有勿擾同步邏輯
+                // ====================================================================
+                if ("dnd".equalsIgnoreCase(type) && prefs.getBoolean("dnd_sync_switch", true)) {
+                    int dndState = json.optInt("dndValue", -1);
+                    if (dndState != -1) {
+                        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                        if (notificationManager != null) {
+                            int currentFilter = notificationManager.getCurrentInterruptionFilter();
+                            if (currentFilter != dndState) {
                                 isInternalUpdate = true;
-                                mNotificationManager.setInterruptionFilter(dndValue);
-                                // 延時復位內部更新標記
-                                new Thread(() -> {
-                                    try { Thread.sleep(2000); } catch (Exception e) {}
-                                    isInternalUpdate = false;
-                                }).start();
-                            }
-
-                            // 只要勿擾狀態變更，必定切換睡眠模式
-                            if (useBedtimeMode) {
-                                boolean isEntering = (dndValue > 1);
-                                String tips = isEntering ? "進入睡眠模式" : "退出睡眠模式";
+                                notificationManager.setCurrentInterruptionFilter(dndState);
+                                Log.d(TAG, "成功同步手機勿擾狀態至手錶: " + dndState);
                                 
-                                Log.d(TAG, "⚡ 勿擾觸發 -> 啟動獨立 Thread 後台自動化手勢沙盒: " + tips);
-                                // 🌟 完美理解點 2：調用硬核 Thread 阻塞模式，防止手勢被吃
-                                executeSafeGestureThread(isEntering, linkPowerSaveWithBedtime, tips);
+                                if (json.optBoolean("wearVibrate", true)) {
+                                    triggerSingleVibration();
+                                }
                             }
                         }
                     }
                 }
 
-                // ⚙️ 業務 B：鬧鐘正向同步
+                // ====================================================================
+                // 原有省電模式聯動
+                // ====================================================================
+                if (json.has("wearPowerSave")) {
+                    boolean targetPowerSave = json.getBoolean("wearPowerSave");
+                    setLowPowerMode(targetPowerSave);
+                }
+
+                // ====================================================================
+                // 原有鬧鐘穿透聯動
+                // ====================================================================
                 if ("alarm".equalsIgnoreCase(type)) {
                     String alarmAction = json.optString("alarmAction", "");
                     if ("ringing".equalsIgnoreCase(alarmAction)) {
+                        Log.d(TAG, "⏰ 偵測到手機鬧鐘響鈴，正在拉起手錶全螢幕通知...");
+                        Intent alarmIntent = new Intent(this, WearAlarmActivity.class);
+                        alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        startActivity(alarmIntent);
                         startLoopVibration();
-                        Intent dialogIntent = new Intent(this, WearAlarmActivity.class);
-                        dialogIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                        startActivity(dialogIntent);
                     } else if ("stopped".equalsIgnoreCase(alarmAction)) {
+                        Log.d(TAG, "🛑 手機鬧鐘已停止，關閉手錶彈窗並停震");
+                        WearAlarmActivity.dismissActivity();
                         stopLoopVibration();
                     }
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "解析封包失敗", e);
+                Log.e(TAG, "解析藍牙 JSON 異常", e);
             }
         }
     }
 
-    /**
-     * 🚀 終極硬核 Thread 自動化手勢守護沙盒
-     * 使用單獨的後台線程進行精確的物理時間控制，確保手勢 100% 被系統識別。
-     */
-    private void executeSafeGestureThread(final boolean isEntering, final boolean linkPowerSave, final String tips) {
-        new Thread(() -> {
-            final DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-            if (serv == null) {
-                Log.w(TAG, "⚠️ 輔助功能服務未連接，跳過自動化手勢。");
-                return;
-            }
-
-            PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
-            PowerManager.WakeLock wakeLock = null;
-            try {
-                // 1. 強行點亮螢幕並持有最高優先級喚醒鎖
-                if (pm != null) {
-                    wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "dndsync:ThreadWLock");
-                    wakeLock.acquire(6000L); // 預留足夠長的鎖時間
-                }
-
-                Log.d(TAG, "📺 Thread 守護：已發出屏幕點亮信號，等待硬件層徹底清醒...");
-                // 🟢 【防吃核心優化】：利用 Thread.sleep 阻斷 800 毫秒，給手錶觸控驅動加載留足時間
-                Thread.sleep(800);
-
-                // 2. 執行下拉操作
-                Log.d(TAG, "📺 Thread 守護：執行下拉控制中心");
-                serv.swipeDown();
-                // 下拉動畫伸展需要時間，阻斷等待 1000 毫秒
-                Thread.sleep(1000);
-
-                // 3. 執行精確點擊 40% 反轉睡眠狀態
-                Log.d(TAG, "📺 Thread 守護：點擊睡眠模式圖標 (40% 坐標)");
-                serv.clickIcon1_2();
-                
-                // 🌟【核心功能綁定】：在觸發睡眠模式點擊的同時，檢查省電聯動開關
-                if (linkPowerSave) {
-                    Log.d(TAG, "🔌 [省電聯動] 開關已開啟，同步將手錶系統底層 low_power 修改為: " + (isEntering ? 1 : 0));
-                    setWearPowerSaveMode(isEntering);
-                } else {
-                    Log.d(TAG, "🔌 [省電聯動] 開關已關閉，不修改手錶省電狀態。");
-                }
-                
-                // 點擊事件生效及反轉動畫需要時間，阻斷等待 1000 毫秒
-                Thread.sleep(1000);
-
-                // 4. 收起面板返回桌面
-                Log.d(TAG, "📺 Thread 守護：手勢結束，返回收起控制面板");
-                serv.goBack();
-
-            } catch (InterruptedException e) {
-                Log.e(TAG, "Thread 自動化手勢被中斷", e);
-            } finally {
-                // 安全釋放喚醒鎖
-                if (wakeLock != null && wakeLock.isHeld()) {
-                    wakeLock.release();
-                    Log.d(TAG, "📺 Thread 守護：釋放 WakeLock 喚醒鎖");
-                }
-            }
-        }).start();
-    }
-
-    /**
-     * 修改系統設置控制手表的低功耗省電狀態
-     */
-    private void setWearPowerSaveMode(boolean enable) {
+    private void setLowPowerMode(boolean enable) {
         try {
-            int target = enable ? 1 : 0;
-            Settings.Global.putInt(getContentResolver(), "low_power", target);
-            Log.d(TAG, "✅ [系統設置修改] low_power 已成功寫入為: " + target);
+            Settings.Global.putInt(getContentResolver(), "low_power", enable ? 1 : 0);
+            Intent intent = new Intent("android.os.action.POWER_SAVE_MODE_CHANGED");
+            sendBroadcast(intent);
+            Log.d(TAG, "手錶低功耗狀態更新為: " + enable);
         } catch (Exception e) {
             Log.e(TAG, "❌ 修改系統 low_power 失敗", e);
         }
@@ -212,6 +177,21 @@ public class DNDSyncListenerService extends WearableListenerService {
     }
 
     public static void stopLoopVibration() {
-        if (globalVibrator != null) globalVibrator.cancel();
+        try {
+            if (globalVibrator != null) {
+                globalVibrator.cancel();
+            }
+        } catch (Exception e) {}
+    }
+
+    private void triggerSingleVibration() {
+        try {
+            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null && v.hasVibrator()) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
+                }
+            }
+        } catch (Exception e) {}
     }
 }
