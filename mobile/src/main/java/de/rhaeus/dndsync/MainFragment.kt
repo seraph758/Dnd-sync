@@ -93,11 +93,6 @@ class MainFragment : Fragment() {
 
                     var alarmMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false)) }
                     var syncCategoryAlarm by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_alarm", true)) }
-                    var syncCategoryEvent by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_event", false)) }
-                    var syncCategoryReminder by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_reminder", false)) }
-                    var syncCategoryUnknown by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_unknown", false)) }
-                    var alarmDismissKeys by remember(trigger) { mutableStateOf(sharedPreferences.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭") ?: "") }
-                    var alarmSnoozeKeys by remember(trigger) { mutableStateOf(sharedPreferences.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡") ?: "") }
                     var allowedClockPackages by remember(trigger) { 
                         mutableStateOf(sharedPreferences.getString("custom_allowed_clock_packages", "com.google.android.deskclock,com.sec.android.app.clockpackage,com.android.deskclock") ?: "") 
                     }
@@ -122,7 +117,7 @@ class MainFragment : Fragment() {
                             color = MaterialTheme.colorScheme.onBackground
                         )
 
-                        // 状态卡片
+                        // 状态卡片区
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -200,7 +195,7 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 闹钟控制
+                        // 闹钟控制分区
                         Text(text = "Advanced Alarm Sandbox / 闹钟自动化防漏沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -233,7 +228,6 @@ class MainFragment : Fragment() {
                                         sharedPreferences.edit().putBoolean("sync_category_alarm", checked).apply()
                                         prefsTrigger.value++
                                     }
-                                    // 其他Alarm复选框保持格式统一...
                                 }
                             }
                         }
@@ -294,7 +288,7 @@ class MainFragment : Fragment() {
         }
     }    
 
-@Composable
+    @Composable
     fun SwitchRow(title: String, summary: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
         val alpha = if (enabled) 1.0f else 0.4f
         Row(
