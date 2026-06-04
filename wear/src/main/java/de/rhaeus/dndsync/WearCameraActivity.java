@@ -1,10 +1,14 @@
 package de.rhaeus.dndsync;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.util.Log;
+import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import com.google.android.gms.tasks.Tasks;
@@ -15,7 +19,6 @@ import com.google.android.gms.wearable.Wearable;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 
 public class WearCameraActivity extends Activity implements MessageClient.OnMessageReceivedListener {
@@ -25,8 +28,8 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     
     private ImageView previewImage;
     private ImageButton btnCapture;
+    private PowerManager.WakeLock wakeLock = null;
     
-    // 用于接收分块图像数据
     private ByteArrayOutputStream imageBuffer;
     private int expectedChunks = 0;
     private int receivedChunks = 0;
@@ -34,109 +37,70 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // 1. 強行介入 Window 狀態，擊穿系統休眠，避免啟動時黑屏
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        } else {
+            getWindow().addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            );
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
         setContentView(R.layout.activity_wear_camera);
 
         previewImage = findViewById(R.id.preview_image);
         btnCapture = findViewById(R.id.btn_capture);
-        
-        imageBuffer = new ByteArrayOutputStream();
-        
-        // 🎯 监听手表快门点击，向通道异步下发拍照信号
-        if (btnCapture != null) {
-            btnCapture.setOnClickListener(v -> {
-                Log.d(TAG, "Capture button clicked on Wear, sending shutter command to phone...");
-                sendActionToPhone("TAKE_PHOTO");
-            });
+
+        // 2. 初始化電源鎖
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pm != null) {
+            wakeLock = pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
+                "WearSync:CameraWakeLockActive"
+            );
         }
-        
-        // 注册消息接收器
-        Wearable.getMessageClient(this).addListener(this);
-        
-        // 告知手机端，手表相机的 UI 画布已就位
-        sendActionToPhone("START_CAMERA");
+
+        imageBuffer = new ByteArrayOutputStream();
+
+        // 3. 拍照按鈕點擊事件
+        btnCapture.setOnClickListener(v -> {
+            sendActionToPhone("TAKE_PICTURE");
+        });
     }
 
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
-        if (CAMERA_STREAM_PATH.equals(messageEvent.getPath())) {
-            // 接收相机图像数据流
-            handleCameraStreamData(messageEvent.getData());
-        } else if (UNIVERSAL_SYNC_PATH.equals(messageEvent.getPath())) {
-            // 处理其他通用消息
-            try {
-                String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
-                JSONObject json = new JSONObject(jsonStr);
-                String type = json.optString("type", "");
-                
-                if ("camera_stream_end".equals(type)) {
-                    Log.d(TAG, "相机流结束，图像接收完成");
-                    displayReceivedImage();
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error parsing camera message", e);
-            }
-        }
-    }
-
-    /**
-     * 处理相机流数据
-     * 格式：第一个字节表示分块总数，之后的字节为JPEG数据
-     */
-    private void handleCameraStreamData(byte[] data) {
-        if (data == null || data.length < 1) return;
-        
         try {
-            // 如果是新的图像帧开始
-            if (data[0] == -1) {  // 0xFF 标志新开始
-                if (expectedChunks > 0 && receivedChunks == expectedChunks) {
-                    // 上一张图显示完了，重置缓冲区
-                    displayReceivedImage();
-                }
-                imageBuffer = new ByteArrayOutputStream();
-                receivedChunks = 0;
-                if (data.length > 2) {
-                    expectedChunks = ((data[1] & 0xFF) << 8) | (data[2] & 0xFF);
-                    Log.d(TAG, "新图像帧开始，总块数: " + expectedChunks);
-                }
-                return;
-            }
-            
-            // 写入JPEG数据
-            imageBuffer.write(data);
-            receivedChunks++;
-            
-            if (receivedChunks % 10 == 0) {
-                Log.d(TAG, "已接收 " + receivedChunks + "/" + expectedChunks + " 块");
-            }
-            
-            // 检查是否接收完整
-            if (expectedChunks > 0 && receivedChunks >= expectedChunks) {
-                displayReceivedImage();
-                expectedChunks = 0;
-                receivedChunks = 0;
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error processing camera stream data", e);
-        }
-    }
+            if (CAMERA_STREAM_PATH.equals(messageEvent.getPath())) {
+                byte[] data = messageEvent.getData();
+                if (data == null || data.length < 4) return;
 
-    /**
-     * 显示接收到的图像
-     */
-    private void displayReceivedImage() {
-        try {
-            byte[] imageData = imageBuffer.toByteArray();
-            if (imageData.length > 0) {
-                Bitmap bitmap = BitmapFactory.decodeByteArray(imageData, 0, imageData.length);
-                if (bitmap != null) {
-                    previewImage.setImageBitmap(bitmap);
-                    Log.d(TAG, "图像显示成功，大小: " + imageData.length + " bytes");
-                } else {
-                    Log.e(TAG, "Bitmap 解码失败");
+                int chunkIndex = ((data[0] & 0xFF) << 8) | (data[1] & 0xFF);
+                int totalChunks = ((data[2] & 0xFF) << 8) | (data[3] & 0xFF);
+
+                if (chunkIndex == 0) {
+                    imageBuffer.reset();
+                    expectedChunks = totalChunks;
+                    receivedChunks = 0;
+                }
+
+                imageBuffer.write(data, 4, data.length - 4);
+                receivedChunks++;
+
+                if (receivedChunks == expectedChunks) {
+                    byte[] fullImageData = imageBuffer.toByteArray();
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(fullImageData, 0, fullImageData.length);
+                    if (bitmap != null) {
+                        runOnUiThread(() -> previewImage.setImageBitmap(bitmap));
+                    }
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error displaying image", e);
+            Log.e(TAG, "Error processing incoming stream chunk", e);
         }
     }
 
@@ -163,12 +127,20 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     @Override
     protected void onResume() {
         super.onResume();
+        // 4. 獲取前台互動焦點時立即點亮螢幕
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            wakeLock.acquire(10000); // 獲取最高權限亮屏維持 10 秒
+        }
         Wearable.getMessageClient(this).addListener(this);
     }
 
     @Override
     protected void onPause() {
         Wearable.getMessageClient(this).removeListener(this);
+        // 5. 釋放鎖，防止手錶異常耗電
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
         super.onPause();
     }
 
