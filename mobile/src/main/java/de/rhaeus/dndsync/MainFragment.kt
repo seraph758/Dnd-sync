@@ -106,7 +106,7 @@ class MainFragment : Fragment() {
                         mutableStateOf(sharedPreferences.getString("custom_allowed_clock_packages", "com.google.android.deskclock,com.sec.android.app.clockpackage,com.android.deskclock") ?: "") 
                     }
 
-                    // --- 🌟 新增：萬能相機遙控沙盒配置讀取 ---
+                    // --- 🌟 萬能相機遙控沙盒配置讀取 ---
                     var cameraMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_camera_sync_master_switch", false)) }
                     // 🌟 2. 相機綁定包名
                     var allowedCameraPackages by remember(trigger) { 
@@ -187,7 +187,14 @@ class MainFragment : Fragment() {
                                     pushDynamicJsonToWear()
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                                SwitchRow(title = "手錶端省電模式響應", summary = "開啟後，觸發省電模式", checked = wearPowerSaveResponse) { checked ->
+                                
+                                // 🎯【優化點 2】手錶省電開關依附於勿擾同步總閘，且只有在對應模式激活時才與狀態一同傳包，不單獨孤立運作
+                                SwitchRow(
+                                    title = "手錶端省電模式響應", 
+                                    summary = "依附於同步機制：開啟後，當同步觸發時才會連動改變手錶省電狀態", 
+                                    checked = wearPowerSaveResponse,
+                                    enabled = dndSyncMode
+                                ) { checked ->
                                     sharedPreferences.edit().putBoolean("wear_power_save_response", checked).apply()
                                     prefsTrigger.value++
                                     pushDynamicJsonToWear()
@@ -217,7 +224,6 @@ class MainFragment : Fragment() {
 
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
-                                val alarmAlpha = if (alarmMasterSwitch) 1.0f else 0.4f
                                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                                     // 🌟 綁定時鐘包名輸入框
                                     OutlinedTextField(
@@ -283,7 +289,7 @@ class MainFragment : Fragment() {
                             }
                         }
 
-// 🌟 新增：相機控制分區（含包名設定、開關、主動喚醒手錶）
+                        // 🌟 相機控制分區
                         Text(text = "進階級聯：遠端相機畫布投射沙盒", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -304,7 +310,7 @@ class MainFragment : Fragment() {
 
                                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    // 🌟 綁定相機包名輸入框
+  // 🌟 綁定相機包名輸入框
                                     OutlinedTextField(
                                         value = allowedCameraPackages,
                                         onValueChange = { 
@@ -321,11 +327,14 @@ class MainFragment : Fragment() {
 
                                     Spacer(modifier = Modifier.height(16.dp))
 
-                                    // 🌟 主動喚醒手錶相機視窗的硬核按鈕
+                                    // 🌟【優化點 3】雙向主動拉起按鈕
                                     Button(
                                         onClick = { 
                                             if (isConnected) {
+                                                // 1. 先執行通知手錶端跳轉
                                                 sendActiveWakeupToWear(currentContext)
+                                                // 2. 隨後手機端根據輸入框內的包名，立刻強制開啟本地相機應用
+                                                launchLocalCameraByPackage(currentContext, allowedCameraPackages)
                                             } else {
                                                 Toast.makeText(currentContext, "手錶未連線，無法發送喚醒信號", Toast.LENGTH_SHORT).show()
                                             }
@@ -334,7 +343,7 @@ class MainFragment : Fragment() {
                                         modifier = Modifier.fillMaxWidth(),
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                     ) {
-                                        Text(text = "🚀 主動喚醒並拉起手錶相機畫面", fontWeight = FontWeight.Bold)
+                                        Text(text = "🚀 主動喚醒並連動打開雙端相機", fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -344,6 +353,7 @@ class MainFragment : Fragment() {
             }
         }
     }    
+
     @Composable
     fun SwitchRow(title: String, summary: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
         val alpha = if (enabled) 1.0f else 0.4f
@@ -360,9 +370,9 @@ class MainFragment : Fragment() {
         }
     }
 
+    // 🎯【優化點 1】此處在發送勿擾同步 JSON 時，底層封裝了當前變更指令時間戳記，以供手錶端搭配殼層指令進行深層睡眠模式喚醒與切換動作
     private fun pushDynamicJsonToWear() {
         val context = context ?: return
-        val dndSync = sharedPreferences.getBoolean("dnd_sync_switch", true)
         val wSave = sharedPreferences.getBoolean("wear_power_save_response", false)
         val wVibrate = sharedPreferences.getBoolean("wear_vibrate_on_sync", true)
 
@@ -374,9 +384,10 @@ class MainFragment : Fragment() {
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "dnd")
-                    put("dndValue", realDndValue as Int) 
+                    put("dndValue", realDndValue) 
                     put("wearPowerSave", wSave)
                     put("wearVibrate", wVibrate)
+                    put("actionTrigger", "TRIGGER_SYSTEM_MODE_SWITCH") // 🎯 傳遞深度同步信號
                     put("timestamp", System.currentTimeMillis())
                 }
 
@@ -391,16 +402,13 @@ class MainFragment : Fragment() {
         }.start()
     }
 
-    /**
-     * 🌟 透過藍牙傳輸管道，向手錶發出主動喚醒信號，強行拉起手錶端的 WearCameraActivity 視窗
-     */
     private fun sendActiveWakeupToWear(context: Context) {
         Thread {
             try {
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "camera_control")
-                    put("action", "FORCE_WAKEUP_ACTIVITY") // 強制彈出訊號
+                    put("action", "FORCE_WAKEUP_ACTIVITY") 
                     put("timestamp", System.currentTimeMillis())
                 }
                 val data = json.toString().toByteArray(StandardCharsets.UTF_8)
@@ -414,14 +422,49 @@ class MainFragment : Fragment() {
                 for (node in nodes) {
                     Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
                 }
-                
-                activity?.runOnUiThread { 
-                    Toast.makeText(context, "喚醒信號已發送，手錶正在載入畫布...", Toast.LENGTH_SHORT).show() 
-                }
             } catch (e: Exception) {
                 Log.e("WearSync_CameraUI", "發送相機喚醒信號失敗", e)
             }
         }.start()
+    }    
+    
+    /**
+     * 🎯【優化點 3 核心實現】根據用戶在輸入框中設定的相機包名，在手機端拉起該相機 App
+     */
+    private fun launchLocalCameraByPackage(context: Context, cameraPackages: String) {
+        activity?.runOnUiThread {
+            try {
+                val pm = context.packageManager
+                var launchIntent: Intent? = null
+                
+                // 如果用戶填寫了多個包名（用逗號隔開），順序嘗試啟動第一個可用的相機
+                val pkgList = cameraPackages.split(",")
+                for (pkg in pkgList) {
+                    val trimmedPkg = pkg.trim()
+                    if (trimmedPkg.isNotEmpty()) {
+                        launchIntent = pm.getLaunchIntentForPackage(trimmedPkg)
+                        if (launchIntent != null) {
+                            break
+                        }
+                    }
+                }
+
+                // 如果白名單內找不到，則降級使用系統標準的隱式相機 Intent
+                if (launchIntent == null) {
+                    launchIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                } else {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+
+                context.startActivity(launchIntent)
+                Toast.makeText(context, "已同步拉起手機端相機，開始向手錶投射畫面", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e("WearSync_CameraUI", "手機端啟動相機 App 失敗", e)
+                Toast.makeText(context, "手機端相機啟動失敗，請確認包名是否正確", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun onResume() {
