@@ -7,7 +7,6 @@ import android.content.SharedPreferences;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
-import androidx.preference.PreferenceManager;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.MessageClient;
@@ -23,6 +22,11 @@ public class DNDNotificationService extends NotificationListenerService implemen
     public static StatusBarNotification currentAlarmNotification = null;
     public static boolean running = false;
     private int lastSentDndState = -1;
+
+    // 🎯 獲取與 MainFragment.kt 一致的專屬 SharedPreferences 實例
+    private SharedPreferences getDndSyncPreferences() {
+        return getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+    }
 
     @Override
     public void onListenerConnected() {
@@ -42,7 +46,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
     @Override
     public void onInterruptionFilterChanged(int interruptionFilter) {
         if (interruptionFilter == lastSentDndState) return; 
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        SharedPreferences prefs = getDndSyncPreferences();
         if (prefs.getBoolean("dnd_sync_switch", true)) {
             lastSentDndState = interruptionFilter;
             sendJsonMessage(buildDndJson(interruptionFilter));
@@ -91,13 +95,36 @@ public class DNDNotificationService extends NotificationListenerService implemen
         Notification notification = sbn.getNotification();
         if (notification == null) return;
 
+        SharedPreferences prefs = getDndSyncPreferences();
+
+        // 🌟 1. 檢查手機鬧鐘連動總開關
+        boolean alarmMasterSwitch = prefs.getBoolean("custom_alarm_sync_master_switch", false);
+        if (!alarmMasterSwitch) {
+            return; // 總開關關閉，直接攔截不對接
+        }
+
+        // 🌟 2. 進行時鐘應用包名白名單精準校驗
         String packageName = sbn.getPackageName().toLowerCase();
+        String defaultClockPackages = "com.google.android.deskclock,com.sec.android.app.clockpackage,com.android.deskclock";
+        String allowedClockStr = prefs.getString("custom_allowed_clock_packages", defaultClockPackages).toLowerCase();
+
+        boolean isAllowedPackage = false;
+        String[] packageArray = allowedClockStr.split(",");
+        for (String pkg : packageArray) {
+            String trimmedPkg = pkg.trim();
+            if (!trimmedPkg.isEmpty() && packageName.contains(trimmedPkg)) {
+                isAllowedPackage = true;
+                break;
+            }
+        }
+
+        if (!isAllowedPackage) {
+            Log.d(TAG, "🛑 [包名攔截] 應用: " + packageName + " 不在時鐘白名單內");
+            return;
+        }
+
+        // 🌟 3. 包名驗證通過，進一步實施二級 Category 通知類型過濾
         String category = notification.category == null ? "none" : notification.category;
-
-        boolean isClockApp = packageName.contains("clock") || packageName.contains("alarm") || Notification.CATEGORY_ALARM.equals(category);
-        if (!isClockApp) return;
-
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         boolean allowAlarmType = prefs.getBoolean("sync_category_alarm", true);
         boolean allowEventType = prefs.getBoolean("sync_category_event", false);
         boolean allowReminderType = prefs.getBoolean("sync_category_reminder", false);
@@ -113,8 +140,12 @@ public class DNDNotificationService extends NotificationListenerService implemen
             shouldSync = prefs.getBoolean("sync_category_unknown", false);
         }
 
-        if (!shouldSync) return;
+        if (!shouldSync) {
+            Log.d(TAG, "🛑 [類型攔截] 包名正確，但 Category [" + category + "] 已被用戶關閉。");
+            return;
+        }
 
+        // ✨ 雙重驗證完美放行，推送給手錶
         currentAlarmNotification = sbn;
         try {
             JSONObject json = new JSONObject();
