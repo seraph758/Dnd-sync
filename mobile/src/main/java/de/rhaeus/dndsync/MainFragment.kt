@@ -188,7 +188,7 @@ class MainFragment : Fragment() {
 
                                 SwitchRow(
                                     title = "手錶端省電模式響應",
-                                    summary = "開啟後，觸發省電",
+                                    summary = "開啟後，觸發省電模式",
                                     checked = wearPowerSaveResponse
                                 ) { checked ->
                                     sharedPreferences.edit().putBoolean("wear_power_save_response", checked).apply()
