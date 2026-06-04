@@ -91,6 +91,13 @@ class MainFragment : Fragment() {
                     var wearVibrateOnSync by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_vibrate_on_sync", true)) }
 
                     var alarmMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false)) }
+                    
+                    // 🌟 新增：4個對應服務端 Java 邏輯的通知分類過濾開關狀態綁定
+                    var syncCategoryAlarm by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_alarm", true)) }
+                    var syncCategoryEvent by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_event", false)) }
+                    var syncCategoryReminder by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_reminder", false)) }
+                    var syncCategoryUnknown by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_unknown", false)) }
+
                     var alarmDismissKeys by remember(trigger) { mutableStateOf(sharedPreferences.getString("custom_alarm_dismiss_keys", "关,消,dismiss,stop,关闭") ?: "") }
                     var alarmSnoozeKeys by remember(trigger) { mutableStateOf(sharedPreferences.getString("custom_alarm_snooze_keys", "稍,睡,snooze,稍后,小睡") ?: "") }
 
@@ -235,22 +242,69 @@ class MainFragment : Fragment() {
 
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
+                                // 🌟 新增：動態二級篩選控制開關群組（依賴於 alarmMasterSwitch 是否開啟）
                                 val secondaryAlpha = if (alarmMasterSwitch) 1.0f else 0.4f
                                 
                                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                                     Text(
-                                        text = "鬧鐘應用過濾篩選 (二級選單)",
+                                        text = "鬧鐘與時鐘通知類型過濾篩選 (二級選單)",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = secondaryAlpha)
                                     )
                                     Text(
-                                        text = if (alarmMasterSwitch) "已動態相容：預設精準匹配谷歌、三星、小米等所有帶時鐘特徵應用。" else "（請先開啟上方總開關）",
+                                        text = if (alarmMasterSwitch) "勾選允許放行的 Android 通知類別（Category）：" else "（請先開啟上方總開關）",
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f * secondaryAlpha)
                                     )
                                     
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // 開關 1: CATEGORY_ALARM
+                                    SwitchRow(
+                                        title = "同步 ALARM 類型",
+                                        summary = "正在響鈴的標準手機鬧鐘（強烈建議開啟）",
+                                        checked = syncCategoryAlarm && alarmMasterSwitch,
+                                        enabled = alarmMasterSwitch
+                                    ) { checked ->
+                                        sharedPreferences.edit().putBoolean("sync_category_alarm", checked).apply()
+                                        prefsTrigger.value++
+                                    }
+
+                                    // 開關 2: CATEGORY_EVENT
+                                    SwitchRow(
+                                        title = "同步 EVENT 類型",
+                                        summary = "日曆日程，或部分時鐘應用的「即將到來」提前預告提示",
+                                        checked = syncCategoryEvent && alarmMasterSwitch,
+                                        enabled = alarmMasterSwitch
+                                    ) { checked ->
+                                        sharedPreferences.edit().putBoolean("sync_category_event", checked).apply()
+                                        prefsTrigger.value++
+                                    }
+
+                                    // 開關 3: CATEGORY_REMINDER
+                                    SwitchRow(
+                                        title = "同步 REMINDER 類型",
+                                        summary = "定時器、倒計時結束或普通的日常提醒通知",
+                                        checked = syncCategoryReminder && alarmMasterSwitch,
+                                        enabled = alarmMasterSwitch
+                                    ) { checked ->
+                                        sharedPreferences.edit().putBoolean("sync_category_reminder", checked).apply()
+                                        prefsTrigger.value++
+                                    }
+
+                                    // 開關 4: NONE / 空類型
+                                    SwitchRow(
+                                        title = "同步 NONE 未知類型",
+                                        summary = "相容部分國產魔改系統未規範標記時鐘類別的通知",
+                                        checked = syncCategoryUnknown && alarmMasterSwitch,
+                                        enabled = alarmMasterSwitch
+                                    ) { checked ->
+                                        sharedPreferences.edit().putBoolean("sync_category_unknown", checked).apply()
+                                        prefsTrigger.value++
+                                    }
+
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
 
                                     OutlinedTextField(
                                         value = alarmDismissKeys,
@@ -261,7 +315,7 @@ class MainFragment : Fragment() {
                                                 pushDynamicJsonToWear()
                                             }
                                         },
-                                        label = { Text("自定義「關閉」模糊關鍵字字典") },
+                                        label = { Text("自定義「停止」模糊關鍵字字典") },
                                         enabled = alarmMasterSwitch,
                                         modifier = Modifier.fillMaxWidth()
                                     )
@@ -290,18 +344,28 @@ class MainFragment : Fragment() {
         }
     }
 
+// 🌟 多載一個帶 enabled 狀態控制的 SwitchRow，方便在總閘關閉時讓子開關變灰、禁用點擊
     @Composable
-    fun SwitchRow(title: String, summary: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    fun SwitchRow(
+        title: String, 
+        summary: String, 
+        checked: Boolean, 
+        enabled: Boolean = true, 
+        onCheckedChange: (Boolean) -> Unit
+    ) {
+        val alpha = if (enabled) 1.0f else 0.4f
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground)
-                Text(text = summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = alpha))
+                Text(text = summary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f * alpha))
             }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
         }
     }
 
@@ -340,7 +404,6 @@ class MainFragment : Fragment() {
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "dnd")
-                    // 🎯 【修復錯誤2】使用 .put(String, Int) 明確多載，防止 Kotlin 編譯器產生重載歧義
                     put("dndValue", realDndValue as Int) 
                     put("wearPowerSave", wSave)
                     put("wearVibrate", wVibrate)
