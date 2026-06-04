@@ -4,62 +4,84 @@ import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import androidx.annotation.NonNull;
+import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageClient;
 import com.google.android.gms.wearable.MessageEvent;
+import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
+import org.json.JSONObject;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 public class WearCameraActivity extends Activity implements MessageClient.OnMessageReceivedListener {
+    private static final String TAG = "WearCameraActivity";
     private ImageView previewImage;
-    private static final String CAMERA_PATH = "/camera-preview";
+    private static final String CAMERA_PREVIEW_PATH = "/camera-preview";
+    private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.xml.activity_wear_camera); // 自定義手錶佈局
+        // 🎯 【修復錯誤3】路徑從 R.xml 改為 R.layout
+        setContentView(R.layout.activity_wear_camera); 
         
+        // 🎯 【修復錯誤4 & 5】有了上面的 XML，這裡就能順利找到組件了
         previewImage = findViewById(R.id.preview_image);
         ImageButton btnCapture = findViewById(R.id.btn_capture);
 
-        // 監聽拍照按鈕
-        btnCapture.setOnClickListener(v -> {
-            // 向手機發送拍照指令
-            sendControlToPhone("TAKE_PHOTO");
-        });
+        // 監聽手錶端點擊拍照
+        btnCapture.setOnClickListener(v -> sendControlToPhone("TAKE_PHOTO"));
 
-        // 註冊藍牙管道監聽
+        // 註冊藍牙穿戴訊息接收監聽器
         Wearable.getMessageClient(this).addListener(this);
         
-        // 進入視窗時，通知手機：「手錶已就位，請手機打開相機開始推流」
+        // 剛打開畫布時，通知手機端：手錶已就位，請開啟相機並推流
         sendControlToPhone("START_CAMERA");
     }
 
     @Override
-    public void onMessageReceived(MessageEvent messageEvent) {
-        if (CAMERA_PATH.equalsIgnoreCase(messageEvent.getPath())) {
+    public void onMessageReceived(@NonNull MessageEvent messageEvent) {
+        // 接收來自手機的高強度壓縮相機字節流
+        if (CAMERA_PREVIEW_PATH.equalsIgnoreCase(messageEvent.getPath())) {
             byte[] rawData = messageEvent.getData();
-            // 收到極致壓縮的圖片位元組，還原為 Bitmap 並直接刷到螢幕上
-            Bitmap bitmap = BitmapFactory.decodeByteArray(rawData, 0, rawData.length);
-            runOnUiThread(() -> previewImage.setImageBitmap(bitmap));
+            if (rawData != null) {
+                Bitmap bitmap = BitmapFactory.decodeByteArray(rawData, 0, rawData.length);
+                runOnUiThread(() -> previewImage.setImageBitmap(bitmap));
+            }
         }
     }
 
+    /**
+     * 🎯 【修復錯誤6】動態獲取手機 Node 節點並發送反向控制 JSON 指令
+     */
     private void sendControlToPhone(String action) {
         new Thread(() -> {
-            // 發送控制 JSON，通知手機端執行對應動作
             try {
-                String payload = "{\"sender\":\"wear\",\"type\":\"camera_control\",\"action\":\"" + action + "\"}";
-                // 複用您的萬能同步路徑發送，或者走獨立路徑
-                Wearable.getMessageClient(this).sendMessage(phoneNodeId, "/wear-universal-sync", payload.getBytes());
-            } catch (Exception e) {}
+                JSONObject json = new JSONObject();
+                json.put("sender", "wear");
+                json.put("type", "camera_control");
+                json.put("action", action);
+                byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
+
+                // 動態尋找當前連線的手機節點
+                List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
+                for (Node node : nodes) {
+                    Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "發送相機控制指令失敗: " + action, e);
+            }
         }).start();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // 關閉視窗時，通知手機關閉相機，省電
+        // 當用戶退出手錶相機介面時，通知手機及時關閉相機，防止手機發熱耗電
         sendControlToPhone("STOP_CAMERA");
         Wearable.getMessageClient(this).removeListener(this);
     }
