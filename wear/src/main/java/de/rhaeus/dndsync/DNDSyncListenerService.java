@@ -124,7 +124,7 @@ public class DNDSyncListenerService extends WearableListenerService {
                         startLoopVibration();
                     } else if ("stopped".equalsIgnoreCase(alarmAction)) {
                         Log.d(TAG, "🛑 手機鬧鐘已停止，關閉手錶彈窗並停震");
-                        WearAlarmActivity.dismissActivity();
+                        Intent dismissIntent = new Intent("de.rhaeus.dndsync.DISMISS_ALARM_ACTIVITY");                     sendBroadcast(dismissIntent);
                         stopLoopVibration();
                     }
                 }
