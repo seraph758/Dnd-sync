@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.ImageButton;
-import android.widget.Toast;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
@@ -17,19 +16,21 @@ public class WearCameraActivity extends Activity {
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
     @Override
-    protected void Bundle) {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_wear_camera);
 
         ImageButton btnCapture = findViewById(R.id.btn_capture);
         
-        // 🎯 監聽手錶按鈕點擊
-        btnCapture.setOnClickListener(v -> {
-            Log.d(TAG, "Capture button clicked on Wear, sending shutter command to phone...");
-            sendActionToPhone("TAKE_PHOTO");
-        });
+        // 🎯 监听手表快门点击，向通道异步下发拍照信号
+        if (btnCapture != null) {
+            btnCapture.setOnClickListener(v -> {
+                Log.d(TAG, "Capture button clicked on Wear, sending shutter command to phone...");
+                sendActionToPhone("TAKE_PHOTO");
+            });
+        }
         
-        // 通知手機端手錶已就位
+        // 告知手机端，手表相机的 UI 画布已就位
         sendActionToPhone("START_CAMERA");
     }
 
