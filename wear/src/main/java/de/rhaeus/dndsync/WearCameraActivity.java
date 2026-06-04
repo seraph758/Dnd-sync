@@ -38,7 +38,7 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 1. 強行介入 Window 狀態，擊穿系統休眠，避免啟動時黑屏
+        // 强行突破系统休眠与锁屏层
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
@@ -55,27 +55,26 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
         previewImage = findViewById(R.id.preview_image);
         btnCapture = findViewById(R.id.btn_capture);
 
-        // 2. 初始化電源鎖
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (pm != null) {
             wakeLock = pm.newWakeLock(
                 PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
-                "WearSync:CameraWakeLockActive"
+                "WearSync:CameraInteractiveWake"
             );
         }
 
         imageBuffer = new ByteArrayOutputStream();
 
-        // 3. 拍照按鈕點擊事件
         btnCapture.setOnClickListener(v -> {
+            Log.d(TAG, "📸 Capture button clicked manually on watch UI!");
             sendActionToPhone("TAKE_PICTURE");
         });
     }
 
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
-        try {
-            if (CAMERA_STREAM_PATH.equals(messageEvent.getPath())) {
+        if (CAMERA_STREAM_PATH.equals(messageEvent.getPath())) {
+            try {
                 byte[] data = messageEvent.getData();
                 if (data == null || data.length < 4) return;
 
@@ -98,9 +97,9 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
                         runOnUiThread(() -> previewImage.setImageBitmap(bitmap));
                     }
                 }
+            } catch (Exception e) {
+                Log.e(TAG, "Stream decoding collapsed", e);
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error processing incoming stream chunk", e);
         }
     }
 
@@ -117,9 +116,8 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
                 for (Node node : nodes) {
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
-                Log.d(TAG, "发送动作到手机: " + actionName);
             } catch (Exception e) {
-                Log.e(TAG, "Failed to send action to phone: " + actionName, e);
+                Log.e(TAG, "Failed to callback action: " + actionName, e);
             }
         }).start();
     }
@@ -127,17 +125,17 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     @Override
     protected void onResume() {
         super.onResume();
-        // 4. 獲取前台互動焦點時立即點亮螢幕
         if (wakeLock != null && !wakeLock.isHeld()) {
-            wakeLock.acquire(10000); // 獲取最高權限亮屏維持 10 秒
+            wakeLock.acquire(15000); // 强行维持15秒最高焦点的图像刷新通道
         }
+        // 重新请求强制将当前 Window 获取物理焦点
+        getWindow().getDecorView().requestFocus();
         Wearable.getMessageClient(this).addListener(this);
     }
 
     @Override
     protected void onPause() {
         Wearable.getMessageClient(this).removeListener(this);
-        // 5. 釋放鎖，防止手錶異常耗電
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
