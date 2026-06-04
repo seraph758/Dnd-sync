@@ -58,7 +58,7 @@ public class DNDSyncListenerService extends WearableListenerService {
                 SharedPreferences prefs = getDndSyncPreferences();
 
                 // ====================================================================
-                // 🌟 新增分支：手機端主動「相機控制」與「強行喚醒手錶畫布」
+                // 🌟 相機控制與強行喚醒手錶畫布分支
                 // ====================================================================
                 if ("camera_control".equalsIgnoreCase(type)) {
                     String action = json.optString("action", "");
@@ -66,19 +66,16 @@ public class DNDSyncListenerService extends WearableListenerService {
                     if ("FORCE_WAKEUP_ACTIVITY".equalsIgnoreCase(action)) {
                         Log.d(TAG, "🚀 收到手機端主動喚醒信號！正在拉起手錶相機畫布...");
                         try {
-                            // 建立手錶端相機介面的 Intent
                             Intent cameraIntent = new Intent(this, WearCameraActivity.class);
-                            // 關鍵標記：後台服務拉起 Activity 必須使用 NEW_TASK
                             cameraIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                             startActivity(cameraIntent);
                             
-                            // 喚醒時附帶一次清脆短震提示
                             triggerSingleVibration();
                         } catch (Exception e) {
                             Log.e(TAG, "❌ 無法啟動 WearCameraActivity，請確認手錶端是否已建立該類別", e);
                         }
                     }
-                    return; // 處理完畢，直接結束
+                    return; 
                 }
 
                 // ====================================================================
@@ -92,7 +89,9 @@ public class DNDSyncListenerService extends WearableListenerService {
                             int currentFilter = notificationManager.getCurrentInterruptionFilter();
                             if (currentFilter != dndState) {
                                 isInternalUpdate = true;
-                                notificationManager.setCurrentInterruptionFilter(dndState);
+                                
+                                // 🎯【🎯 這裡已完美修復】將原來的 setCurrentInterruptionFilter 改為標準的 setInterruptionFilter
+                                notificationManager.setInterruptionFilter(dndState);
                                 Log.d(TAG, "成功同步手機勿擾狀態至手錶: " + dndState);
                                 
                                 if (json.optBoolean("wearVibrate", true)) {
@@ -104,7 +103,7 @@ public class DNDSyncListenerService extends WearableListenerService {
                 }
 
                 // ====================================================================
-                // 原有省電模式聯動
+                // 原有省電模式連動
                 // ====================================================================
                 if (json.has("wearPowerSave")) {
                     boolean targetPowerSave = json.getBoolean("wearPowerSave");
@@ -112,7 +111,7 @@ public class DNDSyncListenerService extends WearableListenerService {
                 }
 
                 // ====================================================================
-                // 原有鬧鐘穿透聯動
+                // 原有鬧鐘穿透連動
                 // ====================================================================
                 if ("alarm".equalsIgnoreCase(type)) {
                     String alarmAction = json.optString("alarmAction", "");
@@ -124,7 +123,8 @@ public class DNDSyncListenerService extends WearableListenerService {
                         startLoopVibration();
                     } else if ("stopped".equalsIgnoreCase(alarmAction)) {
                         Log.d(TAG, "🛑 手機鬧鐘已停止，關閉手錶彈窗並停震");
-                        Intent dismissIntent = new Intent("de.rhaeus.dndsync.DISMISS_ALARM_ACTIVITY");                     sendBroadcast(dismissIntent);
+                        Intent dismissIntent = new Intent("de.rhaeus.dndsync.DISMISS_ALARM_ACTIVITY");
+                        sendBroadcast(dismissIntent);
                         stopLoopVibration();
                     }
                 }
