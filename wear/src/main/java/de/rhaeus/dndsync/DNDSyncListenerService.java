@@ -23,6 +23,8 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "DNDSyncListenerService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
+    
+    // 關鍵修復：還原全局靜態震動器與上下文，供外部分支 Activity 調用停止
     private static Vibrator globalVibrator = null;
     private static Context serviceContext = null;
 
@@ -30,10 +32,40 @@ public class DNDSyncListenerService extends WearableListenerService {
     public void onCreate() {
         super.onCreate();
         serviceContext = getApplicationContext();
+        if (globalVibrator == null) {
+            globalVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        }
     }
 
     private SharedPreferences getDndSyncPreferences() {
         return getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+    }
+
+    // 關鍵修復：還原外部 DNDNotificationService 和 WearAlarmActivity 強烈依賴的靜態解鎖方法
+    public static void stopLoopVibration() {
+        try {
+            if (globalVibrator != null && globalVibrator.hasVibrator()) {
+                globalVibrator.cancel();
+                Log.d(TAG, "⚡ 外部調用成功：已強制終止手錶端所有循環震動狀態");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to cancel loop vibration from static context", e);
+        }
+    }
+
+    public static void startLoopVibration(long[] pattern, int repeat) {
+        try {
+            if (globalVibrator != null && globalVibrator.hasVibrator()) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    globalVibrator.vibrate(VibrationEffect.createWaveform(pattern, repeat));
+                } else {
+                    globalVibrator.vibrate(pattern, repeat);
+                }
+                Log.d(TAG, "⚡ 循環震動成功開啟");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start loop vibration", e);
+        }
     }
 
     @Override
@@ -48,7 +80,7 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                 String type = json.optString("type", "");
 
-                // 勿扰控制逻辑
+                // 1. 勿扰连动控制
                 if ("dnd".equals(type)) {
                     int dndState = json.getInt("dndValue");
                     boolean wearPowerSave = json.optBoolean("wearPowerSave", false);
@@ -66,39 +98,47 @@ public class DNDSyncListenerService extends WearableListenerService {
                                 mNotificationManager.setInterruptionFilter(dndState);
                                 Log.d(TAG, "DND state synced smoothly to: " + dndState);
                                 
-                                // 触发配合旧版点击拉流的线程
                                 triggerSleepModeClickThread(dndState);
                             }
                         }
                     }
 
-                    // 省电模式连动
                     if (wearPowerSave) {
                         setLowPowerMode(true);
                     } else {
                         setLowPowerMode(false);
                     }
 
-                    // 震动提示
                     if (wearVibrate) {
                         triggerSingleVibration();
                     }
                 }
                 
-                // 相机远程唤醒通道逻辑
+                // 2. 鬧鐘遠端指令控制（整合舊版：關鍵字關閉與臨時暫停功能）
+                else if ("alarm_control".equals(type)) {
+                    String alarmAction = json.optString("action", "");
+                    Log.d(TAG, "收到手機端鬧鐘同步指令: " + alarmAction);
+                    
+                    Intent alarmIntent = new Intent("de.rhaeus.dndsync.ALARM_TRIGGER");
+                    alarmIntent.putExtra("action_type", alarmAction);
+                    
+                    // 發送廣播通知本地的 WearAlarmActivity 或 DNDNotificationService 執行響鈴或停止
+                    sendBroadcast(alarmIntent);
+                }
+                
+                // 3. 相机控制远程拉起通道
                 else if ("camera_control".equals(type)) {
                     String action = json.optString("action", "");
                     if ("FORCE_WAKEUP_ACTIVITY".equals(action)) {
                         Log.d(TAG, "Received camera wakeup signal from phone.");
                         
-                        // 使用最高优先级权限强行点亮屏幕再拉起界面
                         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
                         if (pm != null) {
                             PowerManager.WakeLock wl = pm.newWakeLock(
                                 PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
                                 "WearSync:ServiceForceWakeUp"
                             );
-                            wl.acquire(3000); // 强行点亮 3 秒确保过渡
+                            wl.acquire(3000);
                         }
 
                         Intent dialogIntent = new Intent(this, WearCameraActivity.class);
@@ -115,11 +155,8 @@ public class DNDSyncListenerService extends WearableListenerService {
     private void triggerSleepModeClickThread(int dndState) {
         new Thread(() -> {
             try {
-                // 這裡保留您本機中與舊程式碼配合完美的下滑及點擊流
                 Log.d(TAG, "Execution of automated pull-down gesture started for state: " + dndState);
-                
-                // 執行您原本舊版具體的下滑點擊流代碼即可
-                
+                // 在此處直接執行您原本舊版具體的下滑點擊流代碼
             } catch (Exception e) {
                 Log.e(TAG, "Automated pull-down thread execution failed", e);
             }
