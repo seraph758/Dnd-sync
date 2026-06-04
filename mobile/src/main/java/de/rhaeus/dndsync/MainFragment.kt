@@ -96,6 +96,9 @@ class MainFragment : Fragment() {
                     var allowedClockPackages by remember(trigger) { 
                         mutableStateOf(sharedPreferences.getString("custom_allowed_clock_packages", "com.google.android.deskclock,com.sec.android.app.clockpackage,com.android.deskclock") ?: "") 
                     }
+                    // 還原舊版：關閉關鍵字與暫停關鍵字
+                    var alarmDismissKey by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_dismiss_key", "关闭") ?: "关闭") }
+                    var alarmSnoozeKey by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_snooze_key", "稍后提醒") ?: "稍后提醒") }
 
                     var cameraMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_camera_sync_master_switch", false)) }
                     var allowedCameraPackages by remember(trigger) { 
@@ -117,7 +120,6 @@ class MainFragment : Fragment() {
                             color = MaterialTheme.colorScheme.onBackground
                         )
 
-                        // 状态卡片区
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -156,7 +158,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 勿扰控制分区
                         Text(text = "DND & Power Sync / 勿扰与省电控制", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -176,12 +177,7 @@ class MainFragment : Fragment() {
                                     pushDynamicJsonToWear()
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                                SwitchRow(
-                                    title = "Watch Battery Saver / 手表端省电模式响应", 
-                                    summary = "依附主开关：开启后，随状态包连动变更手表省电状态", 
-                                    checked = wearPowerSaveResponse,
-                                    enabled = dndSyncMode
-                                ) { checked ->
+                                SwitchRow(title = "Watch Battery Saver / 手表端省电模式响应", summary = "依附主开关：开启后，随状态包连动变更手表省电状态", checked = wearPowerSaveResponse, enabled = dndSyncMode) { checked ->
                                     sharedPreferences.edit().putBoolean("wear_power_save_response", checked).apply()
                                     prefsTrigger.value++
                                     pushDynamicJsonToWear()
@@ -195,7 +191,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 闹钟控制分区
                         Text(text = "Advanced Alarm Sandbox / 闹钟自动化防漏沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -219,7 +214,33 @@ class MainFragment : Fragment() {
                                                 sharedPreferences.edit().putString("custom_allowed_clock_packages", it).apply()
                                             }
                                         },
-                                        label = { Text("Clock App Packages / 时钟应用包名 (英文逗号隔开)") },
+                                        label = { Text("Clock App Packages / 时钟应用包名") },
+                                        enabled = alarmMasterSwitch,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = alarmDismissKey,
+                                        onValueChange = {
+                                            if (alarmMasterSwitch) {
+                                                alarmDismissKey = it
+                                                sharedPreferences.edit().putString("alarm_dismiss_key", it).apply()
+                                            }
+                                        },
+                                        label = { Text("Dismiss Keyword / 闹钟关闭关键字 (例: 关闭)") },
+                                        enabled = alarmMasterSwitch,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = alarmSnoozeKey,
+                                        onValueChange = {
+                                            if (alarmMasterSwitch) {
+                                                alarmSnoozeKey = it
+                                                sharedPreferences.edit().putString("alarm_snooze_key", it).apply()
+                                            }
+                                        },
+                                        label = { Text("Snooze Keyword / 临时暂停关键字 (例: 稍后提醒)") },
                                         enabled = alarmMasterSwitch,
                                         modifier = Modifier.fillMaxWidth()
                                     )
@@ -232,7 +253,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 相机控制分区
                         Text(text = "Remote Camera Sandbox / 远端相机画布投射沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -240,11 +260,7 @@ class MainFragment : Fragment() {
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Column(modifier = Modifier.padding(bottom = 16.dp)) {
-                                SwitchRow(
-                                    title = "Enable Camera Stream / 启用远端相机连动",
-                                    summary = "控制手表端图像流通道的开启状态",
-                                    checked = cameraMasterSwitch
-                                ) { checked ->
+                                SwitchRow(title = "Enable Camera Stream / 启用远端相机连动", summary = "控制手表端图像流通道的开启状态", checked = cameraMasterSwitch) { checked ->
                                     sharedPreferences.edit().putBoolean("custom_camera_sync_master_switch", checked).apply()
                                     prefsTrigger.value++
                                 }
@@ -365,7 +381,7 @@ class MainFragment : Fragment() {
                 if (launchIntent == null) {
                     launchIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
                 }
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 context.startActivity(launchIntent)
             } catch (e: Exception) {
                 Log.e("WearSync_CameraUI", "Failed to launch camera app", e)
