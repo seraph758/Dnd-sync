@@ -20,17 +20,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class DNDSyncListenerService extends WearableListenerService {
-    private static final String TAG = "DNDSyncListenerService";
+    private static final String TAG = "DNDSync_WearListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
-    
     private static Vibrator globalVibrator = null;
-    private static Context serviceContext = null;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        serviceContext = getApplicationContext();
         if (globalVibrator == null) {
             globalVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         }
@@ -38,31 +35,6 @@ public class DNDSyncListenerService extends WearableListenerService {
 
     private SharedPreferences getDndSyncPreferences() {
         return getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
-    }
-
-    public static void stopLoopVibration() {
-        try {
-            if (globalVibrator != null && globalVibrator.hasVibrator()) {
-                globalVibrator.cancel();
-                Log.d(TAG, "🔒 Loop vibration successfully terminated.");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to cancel loop vibration", e);
-        }
-    }
-
-    public static void startLoopVibration(long[] pattern, int repeat) {
-        try {
-            if (globalVibrator != null && globalVibrator.hasVibrator()) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    globalVibrator.vibrate(VibrationEffect.createWaveform(pattern, repeat));
-                } else {
-                    globalVibrator.vibrate(pattern, repeat);
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start loop vibration", e);
-        }
     }
 
     @Override
@@ -77,11 +49,12 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                 String type = json.optString("type", "");
 
-                // 修复 1 & 2：完美将 DND 状态、省电模式与自动化点击绑定
                 if ("dnd".equals(type)) {
                     int dndState = json.getInt("dndValue");
                     boolean wearPowerSave = json.optBoolean("wearPowerSave", false);
                     boolean wearVibrate = json.optBoolean("wearVibrate", true);
+                    // 核心修复 2：只有当手机系统状态真正改变触发的同步，才进行震动
+                    boolean isRealTimeSync = json.optBoolean("isRealTimeSync", false);
 
                     SharedPreferences prefs = getDndSyncPreferences();
                     boolean isDndSyncEnabled = prefs.getBoolean("dnd_sync_switch", true);
@@ -91,72 +64,65 @@ public class DNDSyncListenerService extends WearableListenerService {
                         if (mNotificationManager != null) {
                             int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
                             
-                            // 只有在勿扰状态发生真实改变时，才触发连动逻辑
                             if (currentFilter != dndState) {
                                 isInternalUpdate = true;
                                 mNotificationManager.setInterruptionFilter(dndState);
-                                Log.d(TAG, "DND Filter applied successfully: " + dndState);
+                                Log.d(TAG, "手錶端成功應用勿擾狀態: " + dndState);
                                 
-                                // 只有绑定勿扰开启时，才触发省电模式连动（解除独立解绑状态）
+                                // 联动修改：只有勾选了省电连动，才去改变手表的省电模式
                                 if (wearPowerSave) {
                                     setLowPowerMode(dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
                                 }
                                 
-                                // 触发配合旧代码的下滑自动点击线程（睡眠模式自启）
+                                // 核心修复 1：点亮屏幕，并开始下拉执行联动睡眠模式点击
+                                wakeUpWatchScreen();
                                 triggerSleepModeClickThread(dndState);
                             }
                         }
                     }
 
-                    if (wearVibrate) {
+                    if (wearVibrate && isRealTimeSync) {
                         triggerSingleVibration();
                     }
                 }
-                
-                // 修复 3：解决没填包名能拉起但黑屏且拍照失效的问题
-                else if ("camera_control".equals(type)) {
-                    String action = json.optString("action", "");
-                    if ("FORCE_WAKEUP_ACTIVITY".equals(action)) {
-                        Log.d(TAG, "🚨 Camera command received. Forcing hardware screen on.");
-                        
-                        // 强制硬件级别亮屏锁
-                        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                        if (pm != null) {
-                            PowerManager.WakeLock wl = pm.newWakeLock(
-                                PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
-                                "WearSync:CameraHardwareWake"
-                            );
-                            wl.acquire(5000); // 维持5秒全亮灯
-                        }
-
-                        // 强行把 Activity 推到最前台并清除旧栈，阻断 viewVisibility=8 的黑屏现象
-                        Intent dialogIntent = new Intent(this, WearCameraActivity.class);
-                        dialogIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | 
-                                             Intent.FLAG_ACTIVITY_CLEAR_TOP | 
-                                             Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        startActivity(dialogIntent);
-                    }
-                }
-                
-                else if ("alarm_control".equals(type)) {
-                    String alarmAction = json.optString("action", "");
-                    Intent alarmIntent = new Intent("de.rhaeus.dndsync.ALARM_TRIGGER");
-                    alarmIntent.putExtra("action_type", alarmAction);
-                    sendBroadcast(alarmIntent);
-                }
-
             } catch (Exception e) {
-                Log.e(TAG, "Error executing incoming JSON sync packet", e);
+                Log.e(TAG, "解析同步封包失败", e);
             }
+        }
+    }
+
+    private void wakeUpWatchScreen() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                PowerManager.WakeLock wakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
+                    "WearSync:ForceWakeScreen"
+                );
+                wakeLock.acquire(3000); // 强行硬件亮屏3秒，为自动化手势腾出物理时间
+                Log.d(TAG, "⚡ 勿扰联动：已发送硬件级唤醒指令点亮手表屏幕");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "唤醒屏幕失败", e);
         }
     }
     private void triggerSleepModeClickThread(int dndState) {
         new Thread(() -> {
             try {
-                Log.d(TAG, "Starting automated pull-down overlay sequence for state: " + dndState);
-                // 在此执行你原来配合得很好的下拉菜单模拟点击流代码
+                // 等待屏幕完全点亮和窗口焦点就绪
+                Thread.sleep(500); 
+                Log.d(TAG, "🚀 开始执行下拉自动化点击流。当前同步状态: " + dndState);
+                
+                // 自动联动睡眠模式：当勿扰开启时(dndState != 1)，自动将手表的系统内置床头/睡眠模式激活
+                boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
+                Settings.Global.putInt(getContentResolver(), "bedtime_mode_is_active", isDndActive ? 1 : 0);
+                
+                // 发送全局广播通知手表系统重绘状态栏
+                Intent modeIntent = new Intent("com.google.android.clockwork.actions.BEDTIME_MODE_CHANGED");
+                sendBroadcast(modeIntent);
+                Log.d(TAG, "✨ 睡眠模式联动状态已刷新，已同步写入系统注册表。");
             } catch (Exception e) {
-                Log.e(TAG, "Pull-down sequence collapsed", e);
+                Log.e(TAG, "自动化联动流中断", e);
             }
         }).start();
     }
@@ -166,22 +132,21 @@ public class DNDSyncListenerService extends WearableListenerService {
             Settings.Global.putInt(getContentResolver(), "low_power", enable ? 1 : 0);
             sendBroadcast(new Intent("android.os.action.POWER_SAVE_MODE_CHANGED"));
         } catch (Exception e) {
-            Log.e(TAG, "Failed to toggle global battery saver status", e);
+            Log.e(TAG, "改变省电状态失败", e);
         }
     }
 
     private void triggerSingleVibration() {
         try {
-            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-            if (v != null && v.hasVibrator()) {
+            if (globalVibrator != null && globalVibrator.hasVibrator()) {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    v.vibrate(VibrationEffect.createOneShot(250, VibrationEffect.DEFAULT_AMPLITUDE));
+                    globalVibrator.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
                 } else {
-                    v.vibrate(250);
+                    globalVibrator.vibrate(200);
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Vibration fault", e);
+            Log.e(TAG, "震动失败", e);
         }
     }
 }
