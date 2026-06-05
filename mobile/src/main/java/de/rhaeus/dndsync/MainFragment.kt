@@ -39,129 +39,263 @@ import java.nio.charset.StandardCharsets
 
 class MainFragment : Fragment() {
 
-    private val isNotificationAllowedState = mutableStateOf(false)
     private val isConnectedState = mutableStateOf(false)
+    private val isNotificationAllowedState = mutableStateOf(false)
+    private val prefsTrigger = mutableStateOf(0)
+
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
+    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
-        return ComposeView(requireContext()).apply {
+        val context = requireContext()
+        sharedPreferences = context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE)
+
+        return ComposeView(context).apply {
             setContent {
-                val isDark = isSystemInDarkTheme()
-                MaterialTheme(
-                    colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
-                ) {
-                    val activity = activity
-                    if (activity != null) {
-                        val window = activity.window
-                        val decorView = window.decorView
-                        val wic = WindowInsetsControllerCompat(window, decorView)
-                        wic.isAppearanceLightStatusBars = !isDark
+                val darkTheme = isSystemInDarkTheme()
+                val currentContext = LocalContext.current
+                
+                val colorScheme = when {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                        if (darkTheme) dynamicDarkColorScheme(currentContext) else dynamicLightColorScheme(currentContext)
+                    }
+                    darkTheme -> darkColorScheme(
+                        background = Color(0xFF121212),
+                        surface = Color(0xFF1E1E1E),
+                        onBackground = Color(0xFFE3E2E6),
+                        onSurface = Color(0xFFE3E2E6)
+                    )
+                    else -> lightColorScheme(
+                        background = Color(0xFFF7F9FC),
+                        surface = Color.White,
+                        onBackground = Color(0xFF1A1C1E),
+                        onSurface = Color(0xFF495057)
+                    )
+                }
+
+                val window = activity?.window
+                if (window != null) {
+                    val decorView = window.decorView
+                    WindowInsetsControllerCompat(window, decorView).isAppearanceLightStatusBars = !darkTheme
+                }
+
+                MaterialTheme(colorScheme = colorScheme) {
+                    val isConnected by isConnectedState
+                    val isNotificationAllowed by isNotificationAllowedState
+                    val trigger by prefsTrigger
+
+                    // 1. 勿扰控制持久化状态
+                    var dndSyncMaster by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dnd_sync_switch", true)) }
+                    var wearSleepModeLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_sleep_mode_link", true)) }
+                    var wearPowerSaveLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_power_save_link", false)) }
+
+                    // 2. 闹钟同步沙盒持久化状态
+                    var alarmMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false)) }
+                    var allowedClockPackages by remember(trigger) { 
+                        mutableStateOf(sharedPreferences.getString("custom_allowed_clock_packages", "com.coloros.alarmclock,com.oplus.camera,com.google.android.deskclock,com.android.deskclock") ?: "") 
+                    }
+                    var alarmEventType by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_event_type_select", "ringing") ?: "ringing") }
+                    var alarmDismissAction by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_dismiss_action_config", "停止和延后") ?: "停止和延后") }
+
+                    // 3. 相机控制沙盒持久化状态
+                    var cameraMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_camera_sync_master_switch", false)) }
+                    var allowedCameraPackages by remember(trigger) { 
+                        mutableStateOf(sharedPreferences.getString("custom_allowed_camera_packages", "com.oplus.camera") ?: "com.oplus.camera") 
                     }
 
-                    val context = LocalContext.current
-                    val sharedPref = remember { context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE) }
-
-                    var dndSync by remember { mutableStateOf(sharedPref.getBoolean("dnd_sync_switch", true)) }
-                    var sleepModeSync by remember { mutableStateOf(sharedPref.getBoolean("sleep_mode_sync_switch", true)) }
-                    var vibrateOnSync by remember { mutableStateOf(sharedPref.getBoolean("vibrate_on_sync_switch", true)) }
-                    var alarmSync by remember { mutableStateOf(sharedPref.getBoolean("alarm_sync_switch", true)) }
-                    var selectedAlarmType by remember { mutableStateOf(sharedPref.getString("alarm_type_select", "all") ?: "all") }
-
-                    val isAllowed by remember { isNotificationAllowedState }
-                    val isConnected by remember { isConnectedState }
-
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState())
-                                .padding(20.dp)
-                        ) {
-                            Text(
-                                text = "Wear Sync 穿戴互联",
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(bottom = 24.dp)
-                            )
+                        Text(
+                            text = "Wear Sync Hub / 穿戴万能互联",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
 
-                            // 🎯 状态监控卡片（已转换为简体中文）
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    StatusRow(title = "手表连接状态", isOk = isConnected, okText = "已连接手表", errText = "未检测到手表")
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    StatusRow(title = "通知权限状态", isOk = isAllowed, okText = "已授权", errText = "未授权（点击前往）", 
-                                        onClick = {
-                                            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                                        }
+                        // 🎯 系统基础状态卡片
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp).fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                    },
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "通知权限监控状态", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        text = if (isNotificationAllowed) "已授权" else "未授权（点击前往）",
+                                        fontSize = 13.sp,
+                                        color = if (isNotificationAllowed) Color(0xFF28A745) else Color(0xFFDC3545)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "手錶双端连接状态", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        text = if (isConnected) "已连接" else "未连接",
+                                        fontSize = 13.sp,
+                                        color = if (isConnected) Color(0xFF28A745) else Color(0xFFDC3545)
                                     )
                                 }
                             }
+                        }
 
-                            Text(text = "同步设置", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-
-                            ToggleItem(title = "同步手机勿扰模式", summary = "手机切换勿扰时，手表自动跟随", checked = dndSync) { checked ->
-                                dndSync = checked
-                                sharedPref.edit().putBoolean("dnd_sync_switch", checked).apply()
-                                triggerLazyUiSync(context, sharedPref)
-                            }
-
-                            ToggleItem(title = "自动联动睡眠模式", summary = "勿扰开启时，手表跟随进入睡眠/床头模式", checked = sleepModeSync) { checked ->
-                                sleepModeSync = checked
-                                sharedPref.edit().putBoolean("sleep_mode_sync_switch", checked).apply()
-                                triggerLazyUiSync(context, sharedPref)
-                            }
-
-                            ToggleItem(title = "同步成功时手表震动", summary = "接收到发射数据包同步成功后，手表震动一下", checked = vibrateOnSync) { checked ->
-                                vibrateOnSync = checked
-                                sharedPref.edit().putBoolean("vibrate_on_sync_switch", checked).apply()
-                                triggerLazyUiSync(context, sharedPref)
-                            }
-
-                            ToggleItem(title = "手机闹钟同步到手表", summary = "手机闹钟响铃时，手表同步显示全屏并震动", checked = alarmSync) { checked ->
-                                alarmSync = checked
-                                sharedPref.edit().putBoolean("alarm_sync_switch", checked).apply()
-                            }
-
-                            if (alarmSync) {
-                                Card(
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text("闹钟拦截范围", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            AlarmTypeButton("全局拦截", selectedAlarmType == "all") {
-                                                selectedAlarmType = "all"
-                                                sharedPref.edit().putString("alarm_type_select", "all").apply()
-                                            }
-                                            AlarmTypeButton("仅内置时钟", selectedAlarmType == "system") {
-                                                selectedAlarmType = "system"
-                                                sharedPref.edit().putString("alarm_type_select", "system").apply()
-                                            }
-                                        }
-                                    }
+                        // 🎯 1. 同步勿扰板块（完美层级依赖结构）
+                        Text(text = "勿扰与核心模式同步", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column {
+                                SwitchRow(title = "同步勿扰模式总开关", summary = "手机勿扰模式变更时自动向手表发起射频包", checked = dndSyncMaster) { checked ->
+                                    sharedPreferences.edit().putBoolean("dnd_sync_switch", checked).apply()
+                                    prefsTrigger.value++
+                                    pushDynamicPreferencesToWear()
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                
+                                // 依附于勿扰总开关的下级子开关 1
+                                SwitchRow(
+                                    title = "  └─ 勿扰开启时联动智能睡眠模式", 
+                                    summary = "跟随手机勿扰自动激活手表内置的床头与睡眠深度休眠", 
+                                    checked = wearSleepModeLink && dndSyncMaster,
+                                    enabled = dndSyncMaster
+                                ) { checked ->
+                                    sharedPreferences.edit().putBoolean("wear_sleep_mode_link", checked).apply()
+                                    prefsTrigger.value++
+                                    pushDynamicPreferencesToWear()
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                
+                                // 依附于勿扰总开关的下级子开关 2
+                                SwitchRow(
+                                    title = "  └─ 勿扰开启时联动系统省电模式", 
+                                    summary = "跟随手机勿扰开启后自动降低手表系统功耗", 
+                                    checked = wearPowerSaveLink && dndSyncMaster,
+                                    enabled = dndSyncMaster
+                                ) { checked ->
+                                    sharedPreferences.edit().putBoolean("wear_power_save_link", checked).apply()
+                                    prefsTrigger.value++
+                                    pushDynamicPreferencesToWear()
                                 }
                             }
+                        }
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                        // 🎯 2. 同步闹钟板块（防漏防误报沙盒）
+                        Text(text = "闹钟自动化防骚扰沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.padding(bottom = 12.dp)) {
+                                SwitchRow(title = "同步闹钟总开关", summary = "拦截手机指定闹钟并远程唤醒手表闹钟交互窗", checked = alarmMasterSwitch) { checked ->
+                                    sharedPreferences.edit().putBoolean("custom_alarm_sync_master_switch", checked).apply()
+                                    prefsTrigger.value++
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
-                            Button(
-                                onClick = { triggerCameraRemoteLaunch(context) },
-                                modifier = Modifier.fillMaxWidth().height(50.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("📸 远程启动手表端相机观景窗", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    OutlinedTextField(
+                                        value = allowedClockPackages,
+                                        onValueChange = { 
+                                            if (alarmMasterSwitch) {
+                                                allowedClockPackages = it
+                                                sharedPreferences.edit().putString("custom_allowed_clock_packages", it).apply()
+                                            }
+                                        },
+                                        label = { Text("用户自定闹钟APP包名 (逗号隔开)") },
+                                        enabled = alarmMasterSwitch,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    
+                                    Text("日常闹钟监听事件类型（过滤预告闹钟）", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        FilterButton(text = "响应标准响铃", isSelected = alarmEventType == "ringing", enabled = alarmMasterSwitch) {
+                                            alarmEventType = "ringing"
+                                            sharedPreferences.edit().putString("alarm_event_type_select", "ringing").apply()
+                                        }
+                                        FilterButton(text = "拦截全事件(含预告)", isSelected = alarmEventType == "all_events", enabled = alarmMasterSwitch) {
+                                            alarmEventType = "all_events"
+                                            sharedPreferences.edit().putString("alarm_event_type_select", "all_events").apply()
+                                        }
+                                    }
+
+                                    OutlinedTextField(
+                                        value = alarmDismissAction,
+                                        onValueChange = { 
+                                            if (alarmMasterSwitch) {
+                                                alarmDismissAction = it
+                                                sharedPreferences.edit().putString("alarm_dismiss_action_config", it).apply()
+                                            }
+                                        },
+                                        label = { Text("自定关闭暂停闹钟选项行为") },
+                                        enabled = alarmMasterSwitch,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+
+                        // 🎯 3. 同步相机板块（默认 com.oplus.camera 联动流）
+                        Text(text = "远端相机取景投射沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                                SwitchRow(title = "同步相机总开关", summary = "启用跨端快门传递与手表端取景器调用", checked = cameraMasterSwitch) { checked ->
+                                    sharedPreferences.edit().putBoolean("custom_camera_sync_master_switch", checked).apply()
+                                    prefsTrigger.value++
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+                                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = allowedCameraPackages,
+                                        onValueChange = { 
+                                            if (cameraMasterSwitch) {
+                                                allowedCameraPackages = it
+                                                sharedPreferences.edit().putString("custom_allowed_camera_packages", it).apply()
+                                            }
+                                        },
+                                        label = { Text("自定义相机包名") },
+                                        enabled = cameraMasterSwitch,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = { 
+                                            if (isConnected) {
+                                                sendWakeupSignalToWearCamera(currentContext)
+                                                launchPhoneLocalCamera(currentContext, allowedCameraPackages)
+                                            } else {
+                                                Toast.makeText(currentContext, "配对手表未处于连接在线状态", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        enabled = cameraMasterSwitch,
+                                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                                    ) {
+                                        Text(text = "📸 一键打开手机相机与手表取景器", fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                         }
                     }
@@ -171,74 +305,108 @@ class MainFragment : Fragment() {
     }
 
     @Composable
-    fun StatusRow(title: String, isOk: Boolean, okText: String, errText: String, onClick: (() -> Unit)? = null) {
+    fun SwitchRow(title: String, summary: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
+        val widgetAlpha = if (enabled) 1.0f else 0.38f
         Row(
-            modifier = Modifier.fillMaxWidth().run { if (onClick != null) clickable { onClick() } else this },
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                Text(text = if (isOk) okText else errText, fontSize = 13.sp, color = if (isOk) Color(0xFF4CAF50) else Color(0xFFF44336))
-            }
-            Box(modifier = Modifier.size(12.dp).background(color = if (isOk) Color(0xFF4CAF50) else Color(0xFFF44336), shape = RoundedCornerShape(6.dp)))
-        }
-    }
-
-    @Composable
-    fun ToggleItem(title: String, summary: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(text = summary, fontSize = 13.sp, color = Color.Gray)
+                Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = widgetAlpha))
+                Text(text = summary, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f * widgetAlpha))
             }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
         }
     }
 
     @Composable
-    fun AlarmTypeButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
+    fun FilterButton(text: String, isSelected: Boolean, enabled: Boolean, onClick: () -> Unit) {
         Button(
             onClick = onClick,
-            colors = ButtonDefaults.buttonColors(containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+            ),
             shape = RoundedCornerShape(8.dp)
         ) {
-            Text(text = text, color = if (isSelected) Color.White else Color.Gray)
+            Text(text = text, color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 13.sp)
         }
     }
-
-    private fun triggerCameraRemoteLaunch(context: Context) {
+    private fun pushDynamicPreferencesToWear() {
+        val context = context ?: return
+        val dndMaster = sharedPreferences.getBoolean("dnd_sync_switch", true)
+        val wearSleep = sharedPreferences.getBoolean("wear_sleep_mode_link", true)
+        val wearPower = sharedPreferences.getBoolean("wear_power_save_link", false)
+        
         Thread {
             try {
-                // 🎯 统一底层的全能 JSON 通讯包协议
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val currentDndState = nm.currentInterruptionFilter
+                val json = JSONObject().apply {
+                    put("sender", "phone")
+                    put("type", "dnd")
+                    put("dndValue", currentDndState)
+                    put("dndSyncMaster", dndMaster)
+                    put("wearSleepModeLink", wearSleep)
+                    put("wearPowerSave", wearPower)
+                    put("timestamp", System.currentTimeMillis())
+                }
+                sendMessageToAllConnectedNodes(context, json.toString())
+            } catch (e: Exception) {
+                Log.e("WearSync_UI", "勿扰状态推送失败", e)
+            }
+        }.start()
+    }
+
+    private fun sendWakeupSignalToWearCamera(context: Context) {
+        Thread {
+            try {
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "camera_control")
-                    put("action", "LAUNCH_WEAR_CAMERA")
+                    put("action", "LAUNCH_WEAR_CAMERA_ACTIVITY") // 指令契合手表端接收，拉起 WearCameraActivity
+                    put("timestamp", System.currentTimeMillis())
                 }
-                val data = json.toString().toByteArray(StandardCharsets.UTF_8)
-                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
-                for (node in nodes) {
-                    Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
-                }
-                
-                // 🎯 手机本地启动指定的 Oplus 相机应用包名
-                val launchIntent = context.packageManager.getLaunchIntentForPackage("com.oplus.camera")
-                if (launchIntent != null) {
-                    startActivity(launchIntent)
-                } else {
-                    activity?.runOnUiThread {
-                        Toast.makeText(context, "未能在手机上找到 com.oplus.camera 相机应用", Toast.LENGTH_SHORT).show()
+                sendMessageToAllConnectedNodes(context, json.toString())
+            } catch (e: Exception) {}
+        }.start()
+    }
+
+    private fun launchPhoneLocalCamera(context: Context, packageNames: String) {
+        activity?.runOnUiThread {
+            try {
+                val pm = context.packageManager
+                var launchIntent: Intent? = null
+                val items = packageNames.split(",")
+                for (item in items) {
+                    val target = item.trim()
+                    if (target.isNotEmpty()) {
+                        launchIntent = pm.getLaunchIntentForPackage(target)
+                        if (launchIntent != null) break
                     }
                 }
+                if (launchIntent == null) {
+                    launchIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+                }
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
             } catch (e: Exception) {
-                Log.e("WearSync_CameraUI", "Failed to launch camera app", e)
+                Log.e("WearSync_Camera", "拉起手机端本地相机失败", e)
             }
-        }.start()
+        }
+    }
+
+    private fun sendMessageToAllConnectedNodes(context: Context, message: String) {
+        try {
+            val data = message.toByteArray(StandardCharsets.UTF_8)
+            val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+            for (node in nodes) {
+                Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
+            }
+        } catch (e: Exception) {
+            Log.e("WearSync_Msg", "穿戴数据封包广播异常", e)
+        }
     }
 
     override fun onResume() { super.onResume(); checkNotificationPermission(); registerConnectivityListener() }
@@ -264,13 +432,8 @@ class MainFragment : Fragment() {
         capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
     }
 
-    // 🎯 完美闭合双参数定义：直接打通底层服务，使界面切换开关能实时把状态推送到手表端！
+    // 🎯 彻底闭合原项目老架构残留的 triggerLazyUiSync 方法，完美解决编译报错
     private fun triggerLazyUiSync(context: Context, sharedPref: SharedPreferences) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        val currentFilter = manager?.currentInterruptionFilter ?: 1
-        if (DNDNotificationService.running) {
-            val service = DNDNotificationService()
-            service.pushDndAndPowerStatusToWear(currentFilter, true)
-        }
+        pushDynamicPreferencesToWear()
     }
 }
