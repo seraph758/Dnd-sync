@@ -6,7 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioManager;
-import android.os.Build; // 🎯 补上了之前漏掉的核心引用
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.service.notification.NotificationListenerService;
@@ -27,7 +27,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
     private static final String TAG = "WearSync_PhoneService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     
-    // 🎯 关键修改：名字必须对齐手表端 DNDSyncListenerService 调用的句柄，彻底解开 Build 编译死锁
     public static StatusBarNotification currentAlarmNotification = null;
     public static boolean running = false;
 
@@ -59,6 +58,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
             json.put("dndValue", interruptionFilter);
             json.put("wearSleepModeLink", prefs.getBoolean("wear_sleep_mode_link", true));
             json.put("wearPowerSave", prefs.getBoolean("wear_power_save_link", false));
+            json.put("vibrateTipsEnable", prefs.getBoolean("wear_vibrate_on_sync", true));
             json.put("timestamp", System.currentTimeMillis());
             sendJsonMessage(json.toString());
         } catch (Exception e) {
@@ -100,13 +100,12 @@ public class DNDNotificationService extends NotificationListenerService implemen
         }
 
         if (Notification.CATEGORY_ALARM.equals(notification.category) || (notification.flags & Notification.FLAG_INSISTENT) != 0) {
-            currentAlarmNotification = sbn; // 🎯 同步对齐变量赋值
+            currentAlarmNotification = sbn;
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "phone");
                 json.put("type", "alarm");
                 json.put("alarmAction", "LAUNCH_WEAR_ALARM_ACTIVITY");
-                json.put("dismissActionConfig", prefs.getString("alarm_dismiss_action_config", "停止和延后"));
                 sendJsonMessage(json.toString());
                 Log.d(TAG, "🔥 触发闹钟流硬联锁：向手表发出同步拉起 WearAlarmActivity 广播");
             } catch (Exception e) {
@@ -141,14 +140,38 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 String type = json.optString("type", "");
                 
                 if ("alarm_control".equalsIgnoreCase(type)) {
-                    String action = json.optString("action", "");
-                    Log.d(TAG, "📥 收到手表 WearAlarmActivity 传回的闹钟关闭/暂停行为指令: " + action);
+                    String action = json.optString("action", ""); // 手表传回来的指令："DISMISS" 或 "SNOOZE"
+                    Log.d(TAG, "📥 收到手表传回的精准控制要求: " + action);
                     
-                    if (currentAlarmNotification != null) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            if (currentAlarmNotification.getNotification().actions != null && currentAlarmNotification.getNotification().actions.length > 0) {
-                                currentAlarmNotification.getNotification().actions[0].actionIntent.send();
-                                Log.d(TAG, "⚡ 成功代替本地手机执行闹钟拦截框架消费动作");
+                    if (currentAlarmNotification != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        Notification.Action[] actions = currentAlarmNotification.getNotification().actions;
+                        if (actions != null && actions.length > 0) {
+                            boolean executed = false;
+                            for (Notification.Action act : actions) {
+                                String title = act.title.toString().toLowerCase();
+                                // 🎯 精准判别：停止、清除、关闭、消警
+                                if ("dismiss".equalsIgnoreCase(action)) {
+                                    if (title.contains("停") || title.contains("关") || title.contains("消") || title.contains("解") || title.contains("dis")) {
+                                        act.actionIntent.send();
+                                        Log.d(TAG, "⚡ 成功定位手机闹钟【停止】按钮并执行点击");
+                                        executed = true;
+                                        break;
+                                    }
+                                }
+                                // 🎯 精准判别：延后、稍后提醒、再响
+                                if ("snooze".equalsIgnoreCase(action)) {
+                                    if (title.contains("延") || title.contains("稍") || title.contains("后") || title.contains("再") || title.contains("snoo")) {
+                                        act.actionIntent.send();
+                                        Log.d(TAG, "⚡ 成功定位手机闹钟【延后】按钮并执行点击");
+                                        executed = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            // 如果以上关键字都没有匹配成功，则执行兜底逻辑（点击第一个按钮）
+                            if (!executed) {
+                                actions[0].actionIntent.send();
+                                Log.d(TAG, "⚠️ 未匹配到特定动作关键字，默认执行第一项清除意图");
                             }
                         }
                     }
@@ -157,22 +180,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 Log.e(TAG, "处理手表端反向协议包失败", e);
             }
         }
-    }
-
-    public void pushDndAndPowerStatusToWear(int dndState, boolean isRealTimeSync) {
-        SharedPreferences prefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
-        if (!prefs.getBoolean("dnd_sync_switch", true)) return;
-        try {
-            JSONObject json = new JSONObject();
-            json.put("sender", "phone");
-            json.put("type", "dnd");
-            json.put("dndValue", dndState);
-            json.put("wearSleepModeLink", prefs.getBoolean("wear_sleep_mode_link", true));
-            json.put("wearPowerSave", prefs.getBoolean("wear_power_save_link", false));
-            json.put("isRealTimeSync", isRealTimeSync);
-            json.put("timestamp", System.currentTimeMillis());
-            sendJsonMessage(json.toString());
-        } catch (Exception e) {}
     }
 
     private void sendJsonMessage(String jsonStr) {

@@ -86,17 +86,20 @@ class MainFragment : Fragment() {
                     val isNotificationAllowed by isNotificationAllowedState
                     val trigger by prefsTrigger
 
+                    // 1. 勿扰控制持久化状态
                     var dndSyncMaster by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dnd_sync_switch", true)) }
                     var wearSleepModeLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_sleep_mode_link", true)) }
                     var wearPowerSaveLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_power_save_link", false)) }
+                    var wearVibrateOnSync by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_vibrate_on_sync", true)) }
 
+                    // 2. 闹钟同步沙盒持久化状态
                     var alarmMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false)) }
                     var allowedClockPackages by remember(trigger) { 
                         mutableStateOf(sharedPreferences.getString("custom_allowed_clock_packages", "com.coloros.alarmclock,com.oplus.camera,com.google.android.deskclock,com.android.deskclock") ?: "") 
                     }
                     var alarmEventType by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_event_type_select", "ringing") ?: "ringing") }
-                    var alarmDismissAction by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_dismiss_action_config", "停止和延后") ?: "停止和延后") }
 
+                    // 3. 相机控制沙盒持久化状态
                     var cameraMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_camera_sync_master_switch", false)) }
                     var allowedCameraPackages by remember(trigger) { 
                         mutableStateOf(sharedPreferences.getString("custom_allowed_camera_packages", "com.oplus.camera") ?: "com.oplus.camera") 
@@ -117,6 +120,7 @@ class MainFragment : Fragment() {
                             color = MaterialTheme.colorScheme.onBackground
                         )
 
+                        // 🎯 系统基础状态卡片
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -153,6 +157,7 @@ class MainFragment : Fragment() {
                             }
                         }
 
+                        // 🎯 1. 同步勿扰与依附板块
                         Text(text = "勿扰与核心模式同步", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -168,7 +173,7 @@ class MainFragment : Fragment() {
                                 
                                 SwitchRow(
                                     title = "  └─ 勿扰开启时联动智能睡眠模式", 
-                                    summary = "跟随手机勿扰自动激活手表内置的床头与睡眠深度休眠", 
+                                    summary = "跟随手机勿扰通过手表端无障碍框架触控激活床头休眠", 
                                     checked = wearSleepModeLink && dndSyncMaster,
                                     enabled = dndSyncMaster
                                 ) { checked ->
@@ -188,16 +193,30 @@ class MainFragment : Fragment() {
                                     prefsTrigger.value++
                                     pushDynamicPreferencesToWear()
                                 }
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+
+                                // 🎯 新增：状态切换手表触觉反馈开关
+                                SwitchRow(
+                                    title = "  └─ 状态同步切换时手錶同步震动提示", 
+                                    summary = "同步指令投递成功后，令手表短暂震动进行物理反馈", 
+                                    checked = wearVibrateOnSync && dndSyncMaster,
+                                    enabled = dndSyncMaster
+                                ) { checked ->
+                                    sharedPreferences.edit().putBoolean("wear_vibrate_on_sync", checked).apply()
+                                    prefsTrigger.value++
+                                    pushDynamicPreferencesToWear()
+                                }
                             }
                         }
 
+                        // 🎯 2. 同步闹钟板块
                         Text(text = "闹钟自动化防骚扰沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
                             Column(modifier = Modifier.padding(bottom = 12.dp)) {
-                                SwitchRow(title = "同步闹钟总开关", summary = "拦截手机指定闹钟并远程唤醒手表闹钟交互窗", checked = alarmMasterSwitch) { checked ->
+                                SwitchRow(title = "同步闹钟总开关", summary = "拦截手机指定闹钟并在手表端拉起持续唤醒交互窗", checked = alarmMasterSwitch) { checked ->
                                     sharedPreferences.edit().putBoolean("custom_alarm_sync_master_switch", checked).apply()
                                     prefsTrigger.value++
                                 }
@@ -228,23 +247,11 @@ class MainFragment : Fragment() {
                                             sharedPreferences.edit().putString("alarm_event_type_select", "all_events").apply()
                                         }
                                     }
-
-                                    OutlinedTextField(
-                                        value = alarmDismissAction,
-                                        onValueChange = { 
-                                            if (alarmMasterSwitch) {
-                                                alarmDismissAction = it
-                                                sharedPreferences.edit().putString("alarm_dismiss_action_config", it).apply()
-                                            }
-                                        },
-                                        label = { Text("自定关闭暂停闹钟选项行为") },
-                                        enabled = alarmMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
                                 }
                             }
                         }
 
+                        // 🎯 3. 同步相机板块
                         Text(text = "远端相机取景投射沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -324,11 +331,13 @@ class MainFragment : Fragment() {
             Text(text = text, color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 13.sp)
         }
     }
-    private fun pushDynamicPreferencesToWear() {
+
+  private fun pushDynamicPreferencesToWear() {
         val context = context ?: return
         val dndMaster = sharedPreferences.getBoolean("dnd_sync_switch", true)
         val wearSleep = sharedPreferences.getBoolean("wear_sleep_mode_link", true)
         val wearPower = sharedPreferences.getBoolean("wear_power_save_link", false)
+        val wearVibrate = sharedPreferences.getBoolean("wear_vibrate_on_sync", true)
         
         Thread {
             try {
@@ -341,6 +350,7 @@ class MainFragment : Fragment() {
                     put("dndSyncMaster", dndMaster)
                     put("wearSleepModeLink", wearSleep)
                     put("wearPowerSave", wearPower)
+                    put("vibrateTipsEnable", wearVibrate)
                     put("timestamp", System.currentTimeMillis())
                 }
                 sendMessageToAllConnectedNodes(context, json.toString())
@@ -421,10 +431,5 @@ class MainFragment : Fragment() {
     private fun unregisterConnectivityListener() {
         val context = context ?: return
         capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
-    }
-
-    // 🎯 精简掉了未使用的变量，保留无参或兼容性映射，完美消除 w: Parameter is never used 警告
-    private fun triggerLazyUiSync() {
-        pushDynamicPreferencesToWear()
     }
 }
