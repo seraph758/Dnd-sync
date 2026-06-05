@@ -23,12 +23,7 @@ public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "DNDSync_WearListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
-    
     private static Vibrator globalVibrator = null;
-    
-    // 🎯 核心控制：鬧鐘持續循環震動與響鈴的狀態鎖
-    private static boolean isVibratingLoop = false;
-    private static Thread alarmVibrationThread = null;
 
     @Override
     public void onCreate() {
@@ -38,187 +33,154 @@ public class DNDSyncListenerService extends WearableListenerService {
         }
     }
 
-    private SharedPreferences getDndSyncPreferences() {
-        return getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+    // 提供给 Activity 调用的静态停止震动方法
+    public static void stopLoopVibration() {
+        try {
+            if (globalVibrator != null) {
+                globalVibrator.cancel();
+                Log.d(TAG, "🛑 收到停止持续震动指令，已成功拦截关断");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "停止震动发生异常", e);
+        }
     }
 
     @Override
     public void onMessageReceived(@NonNull MessageEvent messageEvent) {
+        // 确保只处理匹配我们万能互联协议路径的数据
         if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
             try {
                 String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
-                JSONObject json = new JSONObject(jsonStr);
-                
-                String sender = json.optString("sender", "");
-                // 過濾掉穿戴端自己發出的反向控制
-                if (!"phone".equals(sender)) return;
+                Log.d(TAG, "📥 手表端收到高优先级互联数据包: " + jsonStr);
 
-                String type = json.optString("type", "");
+                // 1. 尝试使用全新的标准 JSON 数据包模式进行高阶沙盒解析
+                try {
+                    JSONObject json = new JSONObject(jsonStr);
+                    String sender = json.optString("sender", "");
+                    if ("wear".equalsIgnoreCase(sender)) return; // 过滤自身回环
 
-                // ==================== 1. 處理勿擾模式同步 ====================
-                if ("dnd".equals(type)) {
-                    int dndState = json.getInt("dndValue");
-                    boolean wearPowerSave = json.optBoolean("wearPowerSave", false);
-                    boolean wearVibrate = json.optBoolean("wearVibrate", true);
-                    boolean isRealTimeSync = json.optBoolean("isRealTimeSync", false);
+                    String type = json.optString("type", "");
 
-                    SharedPreferences prefs = getDndSyncPreferences();
-                    boolean isDndSyncEnabled = prefs.getBoolean("dnd_sync_switch", true);
-
-                    if (isDndSyncEnabled) {
-                        NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                        if (mNotificationManager != null) {
-                            int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
-                            
-                            if (currentFilter != dndState) {
-                                isInternalUpdate = true;
-                                mNotificationManager.setInterruptionFilter(dndState);
-                                Log.d(TAG, "手錶端成功應用勿擾狀態: " + dndState);
-                                
-                                if (wearPowerSave) {
-                                    setLowPowerMode(dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
-                                }
-                                
-                                wakeUpWatchScreen();
-                                triggerSleepModeClickThread(dndState);
-                            }
-                        }
-                    }
-
-                    if (wearVibrate && isRealTimeSync) {
-                        triggerSingleVibration();
-                    }
-                }
-                
-                // ==================== 2. 🎯 處理手機鬧鐘同步（新增核心處理） ====================
-                else if ("alarm".equals(type)) {
-                    String alarmAction = json.optString("alarmAction", "");
-                    Log.d(TAG, "⏰ 收到手機鬧鐘信號，行為: " + alarmAction);
-                    
-                    if ("ringing".equalsIgnoreCase(alarmAction)) {
-                        // 喚醒手錶螢幕，並啟動獨立線程進行無限循環震動
-                        wakeUpWatchScreen();
-                        startLoopVibration();
+                    // 🎯 A. 闹钟防漏沙盒逻辑响应区
+                    if ("alarm".equalsIgnoreCase(type)) {
+                        String alarmAction = json.optString("alarmAction", "");
+                        Log.d(TAG, "⏰ 捕获到手机端传来的闹钟硬联动信号: " + alarmAction);
                         
-                        // 🚀 核心聯動：自動拉起你寫好的全螢幕鬧鐘 Activity (WearAlarmActivity)
-                        Intent alarmIntent = new Intent();
-                        alarmIntent.setClassName(getPackageName(), "de.rhaeus.dndsync.WearAlarmActivity");
-                        alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
-                                           | Intent.FLAG_ACTIVITY_CLEAR_TOP 
-                                           | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        startActivity(alarmIntent);
-                    } 
-                    else if ("stopped".equalsIgnoreCase(alarmAction) || "snooze".equalsIgnoreCase(alarmAction)) {
-                        // 手機端掛斷或小睡了，手錶端立刻停震並收工
-                        stopLoopVibration();
-                    }
-                }
-
-            } catch (Exception e) {
-                Log.e(TAG, "解析同步封包失敗", e);
-            }
-        }
-    }
-
-    // 🎯 啟動背景非阻塞循環震動執行緒
-    private synchronized void startLoopVibration() {
-        if (isVibratingLoop) return; // 防止重複觸發導致多重震動鎖死
-        isVibratingLoop = true;
-        
-        alarmVibrationThread = new Thread(() -> {
-            try {
-                Log.d(TAG, "📳 手錶鬧鐘循環震動執行緒啟動...");
-                while (isVibratingLoop) {
-                    if (globalVibrator != null && globalVibrator.hasVibrator()) {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            // 採用 800ms 震動 + 400ms 間隔的強烈节奏
-                            globalVibrator.vibrate(VibrationEffect.createOneShot(800, VibrationEffect.DEFAULT_AMPLITUDE));
-                        } else {
-                            globalVibrator.vibrate(800);
+                        if ("LAUNCH_WEAR_ALARM_ACTIVITY".equalsIgnoreCase(alarmAction)) {
+                            // 核心硬拉起：直接唤醒手表的 WearAlarmActivity
+                            Intent alarmIntent = new Intent();
+                            alarmIntent.setClassName(getPackageName(), "de.rhaeus.dndsync.WearAlarmActivity");
+                            alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                            alarmIntent.putExtra("dismissActionConfig", json.optString("dismissActionConfig", "停止和延后"));
+                            startActivity(alarmIntent);
+                            Log.d(TAG, "🚀 成功硬拉起手表端 WearAlarmActivity.java");
+                        } else if ("FORCE_STOP_WEAR_ALARM".equalsIgnoreCase(alarmAction)) {
+                            // 手机端闹钟挂断或被划掉，发送本地广播通知 WearAlarmActivity 自毁销毁
+                            Intent stopBroadcast = new Intent("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI");
+                            sendBroadcast(stopBroadcast);
+                            stopLoopVibration();
                         }
+                        return; // 消费完毕，直接截断返回
                     }
-                    // 執行緒睡眠 1.2 秒後進入下一次震動判定
-                    Thread.sleep(1200);
+
+                    // 🎯 B. 相机取景投射沙盒逻辑响应区
+                    if ("camera_control".equalsIgnoreCase(type)) {
+                        String action = json.optString("action", "");
+                        Log.d(TAG, "📸 捕获到手机端传来的相机投射信号: " + action);
+                        
+                        if ("LAUNCH_WEAR_CAMERA_ACTIVITY".equalsIgnoreCase(action)) {
+                            // 核心硬拉起：直接唤醒手表的 WearCameraActivity
+                            Intent cameraIntent = new Intent();
+                            cameraIntent.setClassName(getPackageName(), "de.rhaeus.dndsync.WearCameraActivity");
+                            cameraIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                            startActivity(cameraIntent);
+                            Log.d(TAG, "🚀 成功硬拉起手表端 WearCameraActivity.java");
+                        }
+                        return; // 消费完毕，直接截断返回
+                    }
+
+                    // 🎯 C. 勿扰与核心模式深度联动响应区（睡眠模式/省电模式都在这里处理）
+                    if ("dnd".equalsIgnoreCase(type)) {
+                        int dndState = json.optInt("dndValue", NotificationManager.INTERRUPTION_FILTER_ALL);
+                        boolean dndMaster = json.optBoolean("dndSyncMaster", true);
+                        boolean wearSleepLink = json.optBoolean("wearSleepModeLink", true);
+                        boolean wearPowerLink = json.optBoolean("wearPowerSave", false);
+
+                        if (!dndMaster) {
+                            Log.d(TAG, "⚠️ 勿扰总开关未开启，放弃本次勿扰相关联动");
+                            return;
+                        }
+
+                        // 执行手表端勿扰设置
+                        setWearDndState(dndState);
+
+                        // ⚡ 完美解密并强制同步【智能睡眠模式】
+                        if (wearSleepLink) {
+                            boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
+                            setWearBedtimeMode(isDndActive);
+                        }
+
+                        // ⚡ 完美解密并强制同步【系统省电模式】
+                        if (wearPowerLink) {
+                            boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
+                            setLowPowerMode(isDndActive);
+                        }
+                        return;
+                    }
+
+                } catch (Exception jsonEx) {
+                    // 2. 备用降级逻辑：如果传过来的是旧版框架的纯文本/纯数字，走降级兼容处理
+                    Log.d(TAG, "ℹ️ 降级为旧版本数据流解析...");
+                    String valStr = jsonStr.trim();
+                    int dndVal = Integer.parseInt(valStr);
+                    setWearDndState(dndVal);
                 }
-            } catch (InterruptedException e) {
-                Log.d(TAG, "執行緒收到插斷信號，正常退出震動");
+
             } catch (Exception e) {
-                Log.e(TAG, "循環震動異常", e);
+                Log.e(TAG, "穿戴端核心消息消费流彻底崩溃：", e);
             }
-        });
-        alarmVibrationThread.start();
-    }
-
-    // 🎯 靜態公共方法：供本服務或者 WearAlarmActivity / DNDNotificationService 呼叫
-    public static synchronized void stopLoopVibration() {
-        try {
-            Log.d(TAG, "🛑 收到全局停止持續震動控制訊號");
-            isVibratingLoop = false;
-            
-            if (alarmVibrationThread != null) {
-                alarmVibrationThread.interrupt();
-                alarmVibrationThread = null;
-            }
-            if (globalVibrator != null) {
-                globalVibrator.cancel();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "停止循環震動失敗", e);
         }
     }
 
-    private void wakeUpWatchScreen() {
+    // 内部抽象出的高阶原子操作：更改手表勿扰状态
+    private void setWearDndState(int dndState) {
         try {
-            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (pm != null) {
-                PowerManager.WakeLock wakeLock = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
-                    "WearSync:ForceWakeScreen"
-                );
-                wakeLock.acquire(3000); // 強行亮屏3秒
-                Log.d(TAG, "⚡ 已發送硬體級喚醒指令點亮手錶屏幕");
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (notificationManager != null) {
+                isInternalUpdate = true;
+                notificationManager.setInterruptionFilter(dndState);
+                Log.d(TAG, "🎯 手表系统原生勿扰状态已成功强制解算同步为: " + dndState);
             }
         } catch (Exception e) {
-            Log.e(TAG, "喚醒屏幕失敗", e);
+            Log.e(TAG, "手表写入勿扰通道失败", e);
         }
     }
 
-    private void triggerSleepModeClickThread(int dndState) {
+    // 内部抽象出的高阶原子操作：强制修改手表系统注册表实现【睡眠模式同步】
+    private void setWearBedtimeMode(boolean active) {
         new Thread(() -> {
             try {
-                Thread.sleep(500); 
-                boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
-                Settings.Global.putInt(getContentResolver(), "bedtime_mode_is_active", isDndActive ? 1 : 0);
+                // 写入 WearOS 核心骨架注册表中的智能睡眠模式键值
+                Settings.Global.putInt(getContentResolver(), "bedtime_mode_is_active", active ? 1 : 0);
                 
+                // 向系统内核群发床头/睡眠状态变更的系统级广播，强迫 WearOS 状态栏和系统重绘
                 Intent modeIntent = new Intent("com.google.android.clockwork.actions.BEDTIME_MODE_CHANGED");
                 sendBroadcast(modeIntent);
-                Log.d(TAG, "✨ 睡眠模式聯動狀態已刷新。");
+                Log.d(TAG, "🌙 睡眠模式(Bedtime Mode)深度联动同步成功 -> " + (active ? "激活" : "关闭"));
             } catch (Exception e) {
-                Log.e(TAG, "自動化聯動流中斷", e);
+                Log.e(TAG, "深度联动睡眠模式失败", e);
             }
         }).start();
     }
 
+    // 内部抽象出的高阶原子操作：强制修改手表系统注册表实现【省电模式同步】
     private void setLowPowerMode(boolean enable) {
         try {
             Settings.Global.putInt(getContentResolver(), "low_power", enable ? 1 : 0);
             sendBroadcast(new Intent("android.os.action.POWER_SAVE_MODE_CHANGED"));
+            Log.d(TAG, "🔋 系统省电模式深度状态联动同步成功 -> " + (enable ? "开启" : "关闭"));
         } catch (Exception e) {
-            Log.e(TAG, "改變省電狀態失敗", e);
-        }
-    }
-
-    private void triggerSingleVibration() {
-        try {
-            if (globalVibrator != null && globalVibrator.hasVibrator()) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    globalVibrator.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
-                } else {
-                    globalVibrator.vibrate(200);
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "震動失敗", e);
+            Log.e(TAG, "改变手表省电状态失败", e);
         }
     }
 }
