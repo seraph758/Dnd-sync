@@ -53,7 +53,6 @@ class MainFragment : Fragment() {
                 MaterialTheme(
                     colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
                 ) {
-                    // 控制狀態列顏色
                     val activity = activity
                     if (activity != null) {
                         val window = activity.window
@@ -65,7 +64,6 @@ class MainFragment : Fragment() {
                     val context = LocalContext.current
                     val sharedPref = remember { context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE) }
 
-                    // UI 交互狀態持久化
                     var dndSync by remember { mutableStateOf(sharedPref.getBoolean("dnd_sync_switch", true)) }
                     var sleepModeSync by remember { mutableStateOf(sharedPref.getBoolean("sleep_mode_sync_switch", true)) }
                     var vibrateOnSync by remember { mutableStateOf(sharedPref.getBoolean("vibrate_on_sync_switch", true)) }
@@ -86,22 +84,22 @@ class MainFragment : Fragment() {
                                 .padding(20.dp)
                         ) {
                             Text(
-                                text = "Wear Sync 穿戴互聯",
+                                text = "Wear Sync 穿戴互联",
                                 fontSize = 26.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(bottom = 24.dp)
                             )
 
-                            // 🎯 權限與連接狀態區（核心監控 UI）
+                            // 🎯 状态监控卡片（已转换为简体中文）
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
-                                    StatusRow(title = "手錶連線狀態", isOk = isConnected, okText = "已連接手錶", errText = "未偵測到手錶")
+                                    StatusRow(title = "手表连接状态", isOk = isConnected, okText = "已连接手表", errText = "未检测到手表")
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    StatusRow(title = "通知項目權限", isOk = isAllowed, okText = "已授權", errText = "未授權（點擊前往）", 
+                                    StatusRow(title = "通知权限状态", isOk = isAllowed, okText = "已授权", errText = "未授权（点击前往）", 
                                         onClick = {
                                             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                                         }
@@ -109,29 +107,27 @@ class MainFragment : Fragment() {
                                 }
                             }
 
-                            // 🎯 設定開關面板 (此處已精確修正為 8.dp)
-                            Text(text = "同步設定", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+                            Text(text = "同步设置", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
 
-                            ToggleItem(title = "同步手機勿擾模式", summary = "手機切換勿擾時，手錶自動跟隨", checked = dndSync) { checked ->
+                            ToggleItem(title = "同步手机勿扰模式", summary = "手机切换勿扰时，手表自动跟随", checked = dndSync) { checked ->
                                 dndSync = checked
                                 sharedPref.edit().putBoolean("dnd_sync_switch", checked).apply()
                                 triggerLazyUiSync(context, sharedPref)
                             }
 
-                            ToggleItem(title = "自動聯動睡眠模式", summary = "勿擾開啟時，手錶跟隨進入睡眠/床頭模式", checked = sleepModeSync) { checked ->
+                            ToggleItem(title = "自动联动睡眠模式", summary = "勿扰开启时，手表跟随进入睡眠/床头模式", checked = sleepModeSync) { checked ->
                                 sleepModeSync = checked
                                 sharedPref.edit().putBoolean("sleep_mode_sync_switch", checked).apply()
                                 triggerLazyUiSync(context, sharedPref)
                             }
 
-                            ToggleItem(title = "同步成功時手錶震動", summary = "接受到發射封包同步成功後，手錶震動一下", checked = vibrateOnSync) { checked ->
+                            ToggleItem(title = "同步成功时手表震动", summary = "接收到发射数据包同步成功后，手表震动一下", checked = vibrateOnSync) { checked ->
                                 vibrateOnSync = checked
                                 sharedPref.edit().putBoolean("vibrate_on_sync_switch", checked).apply()
                                 triggerLazyUiSync(context, sharedPref)
                             }
 
-                            // 🎯 鬧鐘同步設定 UI
-                            ToggleItem(title = "手機鬧鐘同步到手錶", summary = "手機鬧鐘響鈴時，手錶同步顯示全螢幕並震動", checked = alarmSync) { checked ->
+                            ToggleItem(title = "手机闹钟同步到手表", summary = "手机闹钟响铃时，手表同步显示全屏并震动", checked = alarmSync) { checked ->
                                 alarmSync = checked
                                 sharedPref.edit().putBoolean("alarm_sync_switch", checked).apply()
                             }
@@ -142,14 +138,14 @@ class MainFragment : Fragment() {
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                                 ) {
                                     Column(modifier = Modifier.padding(12.dp)) {
-                                        Text("鬧鐘攔截範圍", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        Text("闹钟拦截范围", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            AlarmTypeButton("全域攔截", selectedAlarmType == "all") {
+                                            AlarmTypeButton("全局拦截", selectedAlarmType == "all") {
                                                 selectedAlarmType = "all"
                                                 sharedPref.edit().putString("alarm_type_select", "all").apply()
                                             }
-                                            AlarmTypeButton("僅內建時鐘", selectedAlarmType == "system") {
+                                            AlarmTypeButton("仅内置时钟", selectedAlarmType == "system") {
                                                 selectedAlarmType = "system"
                                                 sharedPref.edit().putString("alarm_type_select", "system").apply()
                                             }
@@ -160,13 +156,12 @@ class MainFragment : Fragment() {
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // 🎯 相機喚醒按鈕 UI
                             Button(
                                 onClick = { triggerCameraRemoteLaunch(context) },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text("📸 遠端啟動手錶端相機觀景窗", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("📸 远程启动手表端相机观景窗", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -219,6 +214,7 @@ class MainFragment : Fragment() {
     private fun triggerCameraRemoteLaunch(context: Context) {
         Thread {
             try {
+                // 🎯 统一底层的全能 JSON 通讯包协议
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "camera_control")
@@ -229,7 +225,16 @@ class MainFragment : Fragment() {
                 for (node in nodes) {
                     Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
                 }
-                activity?.runOnUiThread { Toast.makeText(context, "已向手錶發出相機啟動訊號", Toast.LENGTH_SHORT).show() }
+                
+                // 🎯 手机本地启动指定的 Oplus 相机应用包名
+                val launchIntent = context.packageManager.getLaunchIntentForPackage("com.oplus.camera")
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                } else {
+                    activity?.runOnUiThread {
+                        Toast.makeText(context, "未能在手机上找到 com.oplus.camera 相机应用", Toast.LENGTH_SHORT).show()
+                    }
+                }
             } catch (e: Exception) {
                 Log.e("WearSync_CameraUI", "Failed to launch camera app", e)
             }
@@ -259,6 +264,7 @@ class MainFragment : Fragment() {
         capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
     }
 
+    // 🎯 完美闭合双参数定义：直接打通底层服务，使界面切换开关能实时把状态推送到手表端！
     private fun triggerLazyUiSync(context: Context, sharedPref: SharedPreferences) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         val currentFilter = manager?.currentInterruptionFilter ?: 1
