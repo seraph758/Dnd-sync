@@ -5,14 +5,10 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.media.AudioManager;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
-import android.view.KeyEvent;
 import androidx.annotation.NonNull;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageClient;
@@ -35,7 +31,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
         super.onListenerConnected();
         running = true;
         Wearable.getMessageClient(this).addListener(this);
-        Log.d(TAG, "🚀 互联发射监听端服务挂载成功");
+        Log.d(TAG, "🚀 手机端接收解析服务挂载就绪");
     }
 
     @Override
@@ -94,7 +90,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
             String titleStr = title != null ? title.toString() : "";
             String textStr = text != null ? text.toString() : "";
             if (titleStr.contains("预告") || textStr.contains("即将到期") || titleStr.contains("Upcoming")) {
-                Log.d(TAG, "🛑 过滤拦截策略生效：成功阻断非标准预告闹钟的透传");
+                Log.d(TAG, "🛑 成功阻断非标准预告闹钟的透传");
                 return; 
             }
         }
@@ -140,44 +136,59 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 String type = json.optString("type", "");
                 
                 if ("alarm_control".equalsIgnoreCase(type)) {
-                    String action = json.optString("action", ""); // 手表传回来的指令："DISMISS" 或 "SNOOZE"
+                    String action = json.optString("action", ""); // "DISMISS" 或 "SNOOZE"
                     Log.d(TAG, "📥 收到手表传回的精准控制要求: " + action);
                     
-                    if (currentAlarmNotification != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    if (currentAlarmNotification != null) {
                         Notification.Action[] actions = currentAlarmNotification.getNotification().actions;
                         if (actions != null && actions.length > 0) {
+                            SharedPreferences prefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+                            
+                            // 读取我们在手机UI里给它们各自独立配置的映射规则
+                            String rule = "关键字智能匹配";
+                            if ("DISMISS".equalsIgnoreCase(action)) {
+                                rule = prefs.getString("custom_dismiss_action_index", "关键字智能匹配");
+                            } else {
+                                rule = prefs.getString("custom_snooze_action_index", "关键字智能匹配");
+                            }
+
                             boolean executed = false;
-                            for (Notification.Action act : actions) {
-                                String title = act.title.toString().toLowerCase();
-                                // 🎯 精准判别：停止、清除、关闭、消警
-                                if ("dismiss".equalsIgnoreCase(action)) {
-                                    if (title.contains("停") || title.contains("关") || title.contains("消") || title.contains("解") || title.contains("dis")) {
-                                        act.actionIntent.send();
-                                        Log.d(TAG, "⚡ 成功定位手机闹钟【停止】按钮并执行点击");
-                                        executed = true;
-                                        break;
-                                    }
-                                }
-                                // 🎯 精准判别：延后、稍后提醒、再响
-                                if ("snooze".equalsIgnoreCase(action)) {
-                                    if (title.contains("延") || title.contains("稍") || title.contains("后") || title.contains("再") || title.contains("snoo")) {
-                                        act.actionIntent.send();
-                                        Log.d(TAG, "⚡ 成功定位手机闹钟【延后】按钮并执行点击");
-                                        executed = true;
-                                        break;
+
+                            // 🎯 规则分支1：按确切的指定索引执行点击
+                            if (rule.contains("第 1 个")) {
+                                if (actions.length >= 1) { actions[0].actionIntent.send(); executed = true; }
+                            } else if (rule.contains("第 2 个")) {
+                                if (actions.length >= 2) { actions[1].actionIntent.send(); executed = true; }
+                            } else if (rule.contains("第 3 个")) {
+                                if (actions.length >= 3) { actions[2].actionIntent.send(); executed = true; }
+                            }
+
+                            // 🎯 规则分支2：兜底或者选择的是“关键字智能匹配”
+                            if (!executed || rule.equals("关键字智能匹配")) {
+                                for (Notification.Action act : actions) {
+                                    String title = act.title.toString().toLowerCase();
+                                    if ("DISMISS".equalsIgnoreCase(action)) {
+                                        if (title.contains("停") || title.contains("关") || title.contains("消") || title.contains("结") || title.contains("dis")) {
+                                            act.actionIntent.send(); executed = true; break;
+                                        }
+                                    } else {
+                                        if (title.contains("延") || title.contains("稍") || title.contains("后") || title.contains("再") || title.contains("snoo")) {
+                                            act.actionIntent.send(); executed = true; break;
+                                        }
                                     }
                                 }
                             }
-                            // 如果以上关键字都没有匹配成功，则执行兜底逻辑（点击第一个按钮）
+
+                            // 如果依然失败，默认发送第一个
                             if (!executed) {
                                 actions[0].actionIntent.send();
-                                Log.d(TAG, "⚠️ 未匹配到特定动作关键字，默认执行第一项清除意图");
+                                Log.d(TAG, "⚠️ 未匹配到有效规则，降级点击第一项");
                             }
                         }
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "处理手表端反向协议包失败", e);
+                Log.e(TAG, "反向执行点击异常", e);
             }
         }
     }
@@ -192,7 +203,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "穿戴无线传输失败", e);
+                Log.e(TAG, "蓝牙发送失败", e);
             }
         }).start();
     }
