@@ -109,8 +109,8 @@ class MainFragment : Fragment() {
                                 }
                             }
 
-                            // 🎯 設定開關面板
-                            Text(text = "同步設定", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp, bottom = 8.md))
+                            // 🎯 設定開關面板 (此處已精確修正為 8.dp)
+                            Text(text = "同步設定", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
 
                             ToggleItem(title = "同步手機勿擾模式", summary = "手機切換勿擾時，手錶自動跟隨", checked = dndSync) { checked ->
                                 dndSync = checked
@@ -259,7 +259,6 @@ class MainFragment : Fragment() {
         capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
     }
 
-    // 🎯 嚴格還原：與調用端完美閉合的雙參數 Lazy UI 同步方法
     private fun triggerLazyUiSync(context: Context, sharedPref: SharedPreferences) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         val currentFilter = manager?.currentInterruptionFilter ?: 1
