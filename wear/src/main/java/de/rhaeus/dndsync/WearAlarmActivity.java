@@ -6,6 +6,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.os.Handler; // 👈 已补齐
+import android.os.Looper;  // 👈 已补齐
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.util.Log;
@@ -56,13 +58,13 @@ public class WearAlarmActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // 🚀 核心：解锁屏幕、点亮屏幕、保持常亮，防止闹钟界面处于后台无法使用
+        // 🚀 解锁屏幕、点亮屏幕、保持常亮
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
                              WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
                              WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
                              WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
 
-        setContentView(R.layout.activity_wear_alarm); // 确保你的 layout 里包含 btn_dismiss 和 btn_snooze
+        setContentView(R.layout.activity_wear_alarm);
         
         activityVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         isVibrating = true;
