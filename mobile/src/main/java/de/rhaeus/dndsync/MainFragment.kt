@@ -198,4 +198,16 @@ class MainFragment : Fragment() {
     }
 
     private fun unregisterConnectivityListener() {}
+        // 🎯 針對性補回：項目原本的高頻狀態同步核心方法（嚴格對齊手機端 DNDNotificationService 接口）
+    private fun triggerLazyUiSync(context: Context) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        val currentFilter = manager?.currentInterruptionFilter ?: 1
+        
+        // 嚴格對齊您手機端 DNDNotificationService 的真實 API
+        if (DNDNotificationService.running) {
+            val service = DNDNotificationService()
+            service.pushDndAndPowerStatusToWear(currentFilter, false)
+        }
+    }
+
 }
