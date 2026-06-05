@@ -6,12 +6,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
-import android.os.Handler; // 👈 已补齐
-import android.os.Looper;  // 👈 已补齐
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.util.Log;
-import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import com.google.android.gms.tasks.Tasks;
@@ -25,13 +24,13 @@ public class WearAlarmActivity extends Activity {
     private static final String TAG = "WearSync_AlarmActivity";
     private Vibrator activityVibrator;
     private boolean isVibrating = false;
-    private Handler vibrationHandler = new Handler(Looper.getMainLooper());
+    private Handler vibrationHandler; // 👈 移出直接初始化，防止线程不安全导致的拉起挂断
 
     private final BroadcastReceiver stopReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if ("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI".equals(intent.getAction())) {
-                Log.d(TAG, "收到强制关闭广播，正在退出 UI");
+                Log.d(TAG, "收到手机端同步发来的强制自毁通知，正在主动关闭手表闹钟UI");
                 cleanUpAndFinish();
             }
         }
@@ -42,14 +41,20 @@ public class WearAlarmActivity extends Activity {
         @Override
         public void run() {
             if (isVibrating && activityVibrator != null) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    long[] timings = new long[]{0, 600, 300, 600};
-                    int[] amplitudes = new int[]{0, 255, 0, 255};
-                    activityVibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1));
-                } else {
-                    activityVibrator.vibrate(1000);
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        long[] timings = new long[]{0, 600, 300, 600};
+                        int[] amplitudes = new int[]{0, 255, 0, 255};
+                        activityVibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1));
+                    } else {
+                        activityVibrator.vibrate(1000);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "闹钟震动节拍捕获异常", e);
                 }
-                vibrationHandler.postDelayed(this, 1800); // 持续循环产生节拍
+                if (vibrationHandler != null) {
+                    vibrationHandler.postDelayed(this, 1800); // 持续循环产生节拍
+                }
             }
         }
     };
@@ -57,22 +62,31 @@ public class WearAlarmActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        // 🚀 解锁屏幕、点亮屏幕、保持常亮
+        Log.d(TAG, "🚀 手表端闹钟 WearAlarmActivity 正式被唤醒执行！");
+
+        // 🌟 核心：解锁屏幕、点亮屏幕、保持屏幕高亮常亮
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
                              WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
                              WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
                              WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
 
         setContentView(R.layout.activity_wear_alarm);
+
+        // 🎯 安全重构：强制在主线程 Looper 中绑定 Handler，防止后台拉起崩溃
+        vibrationHandler = new Handler(Looper.getMainLooper());
         
         activityVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         isVibrating = true;
         vibrationHandler.post(vibrationRunnable); // 唤起持续震动
         
-        registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
+        // 注册同步自毁移除广播
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"), Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
+        }
 
-        // 🎯 停止按钮点击事件（明确标记为 DISMISS）
+        // 🎯 停止按钮点击事件（精准标记为 DISMISS）
         Button btnDismiss = findViewById(R.id.btn_dismiss);
         if (btnDismiss != null) {
             btnDismiss.setOnClickListener(v -> {
@@ -81,7 +95,7 @@ public class WearAlarmActivity extends Activity {
             });
         }
 
-        // 🎯 延后按钮点击事件（明确标记为 SNOOZE）
+        // 🎯 延后按钮点击事件（精准标记为 SNOOZE）
         Button btnSnooze = findViewById(R.id.btn_snooze);
         if (btnSnooze != null) {
             btnSnooze.setOnClickListener(v -> {
@@ -97,7 +111,7 @@ public class WearAlarmActivity extends Activity {
                 JSONObject json = new JSONObject();
                 json.put("sender", "wear");
                 json.put("type", "alarm_control");
-                json.put("action", action); // 精准告诉手机是 DISMISS 还是 SNOOZE
+                json.put("action", action); // 精准告诉手机
                 json.put("timestamp", System.currentTimeMillis());
                 
                 byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
@@ -105,16 +119,18 @@ public class WearAlarmActivity extends Activity {
                 for (Node node : nodes) {
                     Wearable.getMessageClient(this).sendMessage(node.getId(), "/wear-universal-sync", data);
                 }
-                Log.d(TAG, "🚀 精准发送动作到手机端: " + action);
+                Log.d(TAG, "🚀 手表精准反馈动作发送到手机端: " + action);
             } catch (Exception e) {
-                Log.e(TAG, "回传控制数据包出错", e);
+                Log.e(TAG, "反馈反向控制数据包异常", e);
             }
         }).start();
     }
 
     private void cleanUpAndFinish() {
         isVibrating = false;
-        vibrationHandler.removeCallbacks(vibrationRunnable);
+        if (vibrationHandler != null) {
+            vibrationHandler.removeCallbacks(vibrationRunnable);
+        }
         if (activityVibrator != null) {
             activityVibrator.cancel();
         }
