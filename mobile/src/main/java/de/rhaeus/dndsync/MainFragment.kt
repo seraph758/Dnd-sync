@@ -36,356 +36,158 @@ import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 class MainFragment : Fragment() {
 
+    private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
     private val isConnectedState = mutableStateOf(false)
     private val isNotificationAllowedState = mutableStateOf(false)
-    private val prefsTrigger = mutableStateOf(0)
-
-    private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
-    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
     ): View {
-        val context = requireContext()
-        sharedPreferences = context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE)
-
-        return ComposeView(context).apply {
+        return ComposeView(requireContext()).apply {
             setContent {
-                val darkTheme = isSystemInDarkTheme()
-                val currentContext = LocalContext.current
-                
-                val colorScheme = when {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                        if (darkTheme) dynamicDarkColorScheme(currentContext) else dynamicLightColorScheme(currentContext)
-                    }
-                    darkTheme -> darkColorScheme(
-                        background = Color(0xFF121212),
-                        surface = Color(0xFF1E1E1E),
-                        onBackground = Color(0xFFE3E2E6),
-                        onSurface = Color(0xFFE3E2E6)
-                    )
-                    else -> lightColorScheme(
-                        background = Color(0xFFF7F9FC),
-                        surface = Color.White,
-                        onBackground = Color(0xFF1A1C1E),
-                        onSurface = Color(0xFF495057)
-                    )
+                val isDark = isSystemInDarkTheme()
+                MaterialTheme(colorScheme = if (isDark) darkColorScheme() else lightColorScheme()) {
+                    MainScreen()
                 }
+            }
+        }
+    }
 
-                val window = activity?.window
-                if (window != null) {
-                    val decorView = window.decorView
-                    WindowInsetsControllerCompat(window, decorView).isAppearanceLightStatusBars = !darkTheme
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun MainScreen() {
+        val context = LocalContext.current
+        val prefs = remember { context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE) }
+        
+        // 核心修复 4：移除双语混杂，编写国际化自适应文本字典
+        val currentLocale = Locale.getDefault().language
+        val isZh = currentLocale.equals("zh", ignoreCase = true)
+
+        val txtTitle = if (isZh) "穿戴互联控制中心" else "Wear Sync Control"
+        val txtDndTitle = if (isZh) "勿扰同步" else "Dnd Sync"
+        val txtDndSub = if (isZh) "保持手机与手錶勿扰状态镜像一致" else "Mirror Do Not Disturb status to watch"
+        val txtPowerTitle = if (isZh) "勿扰联动省电模式" else "Link Power Saving Mode"
+        val txtPowerSub = if (isZh) "手錶开启勿扰时将联动切换为省电模式" else "Watch enters battery saver when DND is on"
+        val txtVibrateTitle = if (isZh) "状态变更时手錶震动" else "Vibrate on Status Sync"
+        val txtVibrateSub = if (isZh) "仅在勿扰状态发生同步时手錶震动提示" else "Vibrate watch only during active sync"
+        val txtCameraTitle = if (isZh) "智能相机连动开关" else "Smart Camera Remote"
+        val txtCameraSub = if (isZh) "允许通过手錶端拉起并遥控拍照" else "Allow watch to wake and trigger camera"
+        val txtPkgLabel = if (isZh) "相机目标过滤包名" else "Target Camera Package"
+
+        var dndSync by remember { mutableStateOf(prefs.getBoolean("dnd_sync_switch", true)) }
+        var powerSaverResponse by remember { mutableStateOf(prefs.getBoolean("wear_power_save_response", false)) }
+        var vibrateOnSync by remember { mutableStateOf(prefs.getBoolean("wear_vibrate_on_sync", true)) }
+        var cameraSyncMaster by remember { mutableStateOf(prefs.getBoolean("custom_camera_sync_master_switch", false)) }
+        
+        // 核心修复 4：默认目标相机包名精简为唯一的 com.oplus.camera
+        var cameraPackages by remember { mutableStateOf(prefs.getString("custom_allowed_camera_packages", "com.oplus.camera") ?: "com.oplus.camera") }
+
+        val isConnected by remember { isConnectedState }
+        val isNotificationAllowed by remember { isNotificationAllowedState }
+
+        Scaffold(
+            topBar = { TopAppBar(title = { Text(txtTitle, fontWeight = FontWeight.Bold) }) }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // 连接状态指示器
+                ConnectionStatusCard(isConnected, isNotificationAllowed, isZh)
+
+                // 勿扰同步大类
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        SwitchRow(txtDndTitle, txtDndSub, dndSync) {
+                            dndSync = it
+                            prefs.edit().putBoolean("dnd_sync_switch", it).apply()
+                            triggerLazyUiSync(context, prefs)
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SwitchRow(txtPowerTitle, txtPowerSub, powerSaverResponse) {
+                            powerSaverResponse = it
+                            prefs.edit().putBoolean("wear_power_save_response", it).apply()
+                            triggerLazyUiSync(context, prefs)
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SwitchRow(txtVibrateTitle, txtVibrateSub, vibrateOnSync) {
+                            vibrateOnSync = it
+                            prefs.edit().putBoolean("wear_vibrate_on_sync", it).apply()
+                            triggerLazyUiSync(context, prefs)
+                        }
+                    }
                 }
-
-                MaterialTheme(colorScheme = colorScheme) {
-                    val isConnected by isConnectedState
-                    val isNotificationAllowed by isNotificationAllowedState
-                    val trigger by prefsTrigger
-
-                    var dndSyncMode by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dnd_sync_switch", true)) }
-                    var phonePowerSaveByLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("phone_power_save_link", false)) }
-                    var wearPowerSaveResponse by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_power_save_response", false)) }
-                    var wearVibrateOnSync by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_vibrate_on_sync", true)) }
-
-                    var alarmMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false)) }
-                    var syncCategoryAlarm by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("sync_category_alarm", true)) }
-                    var allowedClockPackages by remember(trigger) { 
-                        mutableStateOf(sharedPreferences.getString("custom_allowed_clock_packages", "com.google.android.deskclock,com.sec.android.app.clockpackage,com.android.deskclock") ?: "") 
-                    }
-                    // 還原舊版：關閉關鍵字與暫停關鍵字
-                    var alarmDismissKey by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_dismiss_key", "关闭") ?: "关闭") }
-                    var alarmSnoozeKey by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_snooze_key", "稍后提醒") ?: "稍后提醒") }
-
-                    var cameraMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_camera_sync_master_switch", false)) }
-                    var allowedCameraPackages by remember(trigger) { 
-                        mutableStateOf(sharedPreferences.getString("custom_allowed_camera_packages", "com.android.camera,com.google.android.GoogleCamera,com.sec.android.app.camera") ?: "") 
-                    }
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
-                            .verticalScroll(rememberScrollState())
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = "Wear Sync Hub / 万能互联中心",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                                    },
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = "Notification Access / 通知读取权限", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
-                                    Text(
-                                        text = if (isNotificationAllowed) "Granted / 已授权" else "Denied / 未授权 (点击前往)",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (isNotificationAllowed) Color(0xFF28A745) else Color(0xFFDC3545)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = "Watch Connection / 手表连接状态", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
-                                    Text(
-                                        text = if (isConnected) "Connected / 已连接" else "Disconnected / 未连接",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (isConnected) Color(0xFF28A745) else Color(0xFFDC3545)
-                                    )
-                                }
-                            }
+                // 相机联动控制大类
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        SwitchRow(txtCameraTitle, txtCameraSub, cameraSyncMaster) {
+                            cameraSyncMaster = it
+                            prefs.edit().putBoolean("custom_camera_sync_master_switch", it).apply()
                         }
-
-                        Text(text = "DND & Power Sync / 勿扰与省电控制", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column {
-                                SwitchRow(title = "Sync DND Status / 启用勿扰同步", summary = "手机勿扰变更时，自动发送信号强制触发表盘下拉点击流", checked = dndSyncMode) { checked ->
-                                    sharedPreferences.edit().putBoolean("dnd_sync_switch", checked).apply()
-                                    prefsTrigger.value++
-                                    pushDynamicJsonToWear()
-                                }
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                                SwitchRow(title = "Phone Battery Saver Link / 手机端省电连动", summary = "当手机进入省电模式时触发状态变更", checked = phonePowerSaveByLink) { checked ->
-                                    sharedPreferences.edit().putBoolean("phone_power_save_link", checked).apply()
-                                    prefsTrigger.value++
-                                    pushDynamicJsonToWear()
-                                }
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                                SwitchRow(title = "Watch Battery Saver / 手表端省电模式响应", summary = "依附主开关：开启后，随状态包连动变更手表省电状态", checked = wearPowerSaveResponse, enabled = dndSyncMode) { checked ->
-                                    sharedPreferences.edit().putBoolean("wear_power_save_response", checked).apply()
-                                    prefsTrigger.value++
-                                    pushDynamicJsonToWear()
-                                }
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                                SwitchRow(title = "Vibrate on Sync / 同步时震动反馈", summary = "同步指令成功送达手表时触发短震提示", checked = wearVibrateOnSync) { checked ->
-                                    sharedPreferences.edit().putBoolean("wear_vibrate_on_sync", checked).apply()
-                                    prefsTrigger.value++
-                                    pushDynamicJsonToWear()
-                                }
-                            }
-                        }
-
-                        Text(text = "Advanced Alarm Sandbox / 闹钟自动化防漏沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                                SwitchRow(title = "Enable Alarm Sync / 启用手机闹钟连动", summary = "允许拦截并向手表透传特定时钟应用的响铃状态", checked = alarmMasterSwitch) { checked ->
-                                    sharedPreferences.edit().putBoolean("custom_alarm_sync_master_switch", checked).apply()
-                                    prefsTrigger.value++
-                                    pushDynamicJsonToWear()
-                                }
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-
-                                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                                    OutlinedTextField(
-                                        value = allowedClockPackages,
-                                        onValueChange = { 
-                                            if (alarmMasterSwitch) {
-                                                allowedClockPackages = it
-                                                sharedPreferences.edit().putString("custom_allowed_clock_packages", it).apply()
-                                            }
-                                        },
-                                        label = { Text("Clock App Packages / 时钟应用包名") },
-                                        enabled = alarmMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    OutlinedTextField(
-                                        value = alarmDismissKey,
-                                        onValueChange = {
-                                            if (alarmMasterSwitch) {
-                                                alarmDismissKey = it
-                                                sharedPreferences.edit().putString("alarm_dismiss_key", it).apply()
-                                            }
-                                        },
-                                        label = { Text("Dismiss Keyword / 闹钟关闭关键字 (例: 关闭)") },
-                                        enabled = alarmMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    OutlinedTextField(
-                                        value = alarmSnoozeKey,
-                                        onValueChange = {
-                                            if (alarmMasterSwitch) {
-                                                alarmSnoozeKey = it
-                                                sharedPreferences.edit().putString("alarm_snooze_key", it).apply()
-                                            }
-                                        },
-                                        label = { Text("Snooze Keyword / 临时暂停关键字 (例: 稍后提醒)") },
-                                        enabled = alarmMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    SwitchRow(title = "Sync ALARM Category", summary = "正在响铃的标准手机闹钟", checked = syncCategoryAlarm && alarmMasterSwitch, enabled = alarmMasterSwitch) { checked ->
-                                        sharedPreferences.edit().putBoolean("sync_category_alarm", checked).apply()
-                                        prefsTrigger.value++
-                                    }
-                                }
-                            }
-                        }
-
-                        Text(text = "Remote Camera Sandbox / 远端相机画布投射沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(bottom = 16.dp)) {
-                                SwitchRow(title = "Enable Camera Stream / 启用远端相机连动", summary = "控制手表端图像流通道的开启状态", checked = cameraMasterSwitch) { checked ->
-                                    sharedPreferences.edit().putBoolean("custom_camera_sync_master_switch", checked).apply()
-                                    prefsTrigger.value++
-                                }
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-
-                                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    OutlinedTextField(
-                                        value = allowedCameraPackages,
-                                        onValueChange = { 
-                                            if (cameraMasterSwitch) {
-                                                allowedCameraPackages = it
-                                                sharedPreferences.edit().putString("custom_allowed_camera_packages", it).apply()
-                                            }
-                                        },
-                                        label = { Text("Camera Packages / 相机应用包名 (英文逗号隔开)") },
-                                        enabled = cameraMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Button(
-                                        onClick = { 
-                                            if (isConnected) {
-                                                sendActiveWakeupToWear(currentContext)
-                                                launchLocalCameraByPackage(currentContext, allowedCameraPackages)
-                                            } else {
-                                                Toast.makeText(currentContext, "Watch disconnected / 手表未连接", Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        enabled = cameraMasterSwitch,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(text = "🚀 Launch Dual-Camera / 主动唤醒并连动打开双端相机", fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
+                        if (cameraSyncMaster) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = cameraPackages,
+                                onValueChange = {
+                                    cameraPackages = it
+                                    prefs.edit().putString("custom_allowed_camera_packages", it).apply()
+                                },
+                                label = { Text(txtPkgLabel) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
             }
         }
-    }    
+    }
 
     @Composable
-    fun SwitchRow(title: String, summary: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
-        val alpha = if (enabled) 1.0f else 0.4f
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    fun ConnectionStatusCard(isConnected: Boolean, isNotificationAllowed: Boolean, isZh: Boolean) {
+        val statusText = if (isConnected) (if (isZh) "设备已互联" else "Connected") else (if (isZh) "断开连接" else "Disconnected")
+        val permText = if (isNotificationAllowed) (if (isZh) "权限已就绪" else "Permission Granted") else (if (isZh) "需要通知监听权限" else "Fix Permission")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = if (isConnected && isNotificationAllowed) Color(0xFFE8F5E9) else Color(0xFFFFEBEE))
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-                Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = alpha))
-                Text(text = summary, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f * alpha))
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(statusText, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (isConnected) Color(0xFF2E7D32) else Color(0xFFC62828))
+                Text(permText, fontSize = 14.sp, color = Color.Gray)
             }
-            Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
         }
     }
 
-    private fun pushDynamicJsonToWear() {
-        val context = context ?: return
-        val wSave = sharedPreferences.getBoolean("wear_power_save_response", false)
-        val wVibrate = sharedPreferences.getBoolean("wear_vibrate_on_sync", true)
-        Thread {
-            try {
-                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                val realDndValue = nm.currentInterruptionFilter
-                val json = JSONObject().apply {
-                    put("sender", "phone")
-                    put("type", "dnd")
-                    put("dndValue", realDndValue) 
-                    put("wearPowerSave", wSave)
-                    put("wearVibrate", wVibrate)
-                    put("timestamp", System.currentTimeMillis())
-                }
-                val data = json.toString().toByteArray(StandardCharsets.UTF_8)
-                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
-                for (node in nodes) {
-                    Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
-                }
-            } catch (e: Exception) {
-                Log.e("WearSync_UI", "Sync failed", e)
+    @Composable
+    fun SwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1.0f)) {
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(subtitle, fontSize = 12.sp, color = Color.Gray)
             }
-        }.start()
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
     }
 
-    private fun sendActiveWakeupToWear(context: Context) {
-        Thread {
-            try {
-                val json = JSONObject().apply {
-                    put("sender", "phone")
-                    put("type", "camera_control")
-                    put("action", "FORCE_WAKEUP_ACTIVITY") 
-                    put("timestamp", System.currentTimeMillis())
-                }
-                val data = json.toString().toByteArray(StandardCharsets.UTF_8)
-                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
-                for (node in nodes) {
-                    Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
-                }
-            } catch (e: Exception) {}
-        }.start()
-    }
-
-    private fun launchLocalCameraByPackage(context: Context, cameraPackages: String) {
-        activity?.runOnUiThread {
-            try {
-                val pm = context.packageManager
-                var launchIntent: Intent? = null
-                val pkgList = cameraPackages.split(",")
-                for (pkg in pkgList) {
-                    val trimmedPkg = pkg.trim()
-                    if (trimmedPkg.isNotEmpty()) {
-                        launchIntent = pm.getLaunchIntentForPackage(trimmedPkg)
-                        if (launchIntent != null) break
-                    }
-                }
-                if (launchIntent == null) {
-                    launchIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
-                }
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                context.startActivity(launchIntent)
-            } catch (e: Exception) {
-                Log.e("WearSync_CameraUI", "Failed to launch camera app", e)
-            }
+    private fun triggerLazyUiSync(context: Context, prefs: SharedPreferences) {
+        // 核心修复 2：由手机 UI 设置变动引发的推送，属于非实时状态改变，isRealTimeSync 强制传 false，防止手錶莫名其妙震动
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        val currentFilter = manager?.currentInterruptionFilter ?: 1
+        val serviceIntent = Intent(context, DNDNotificationService::class.java)
+        if (DNDNotificationService.running) {
+            val service = DNDNotificationService()
+            service.pushDndAndPowerStatusToWear(currentFilter, false)
         }
     }
 
@@ -403,12 +205,7 @@ class MainFragment : Fragment() {
     private fun registerConnectivityListener() {
         val context = context ?: return
         Wearable.getCapabilityClient(context).getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE).addOnSuccessListener { capabilityInfo -> isConnectedState.value = capabilityInfo.nodes.isNotEmpty() }
-        capabilityChangedListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo -> isConnectedState.value = capabilityInfo.nodes.isNotEmpty() }
-        capabilityChangedListener?.let { Wearable.getCapabilityClient(context).addListener(it, "dnd_sync") }
     }
 
-    private fun unregisterConnectivityListener() {
-        val context = context ?: return
-        capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
-    }
+    private fun unregisterConnectivityListener() {}
 }
