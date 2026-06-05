@@ -199,15 +199,15 @@ class MainFragment : Fragment() {
 
     private fun unregisterConnectivityListener() {}
         // 🎯 針對性補回：項目原本的高頻狀態同步核心方法（嚴格對齊手機端 DNDNotificationService 接口）
-    // 🎯 嚴格對齊原版呼叫：支援雙參數 (Context, Boolean) 刷新
-    private fun triggerLazyUiSync(context: Context, isRealTimeSync: Boolean) {
+    // 🎯 精準對齊原版呼叫：接收 (Context, SharedPreferences)
+    private fun triggerLazyUiSync(context: Context, sharedPref: SharedPreferences) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         val currentFilter = manager?.currentInterruptionFilter ?: 1
         
-        // 當手機端勿擾同步發射服務執行時，將勿擾值與是否即時同步的標記完整傳遞
+        // 調用手機端服務，將勿擾值與是否為實時同步（通常 preference 切換觸發視為實時同步，傳入 true）傳遞過去
         if (DNDNotificationService.running) {
             val service = DNDNotificationService()
-            service.pushDndAndPowerStatusToWear(currentFilter, isRealTimeSync)
+            service.pushDndAndPowerStatusToWear(currentFilter, true)
         }
     }
 
