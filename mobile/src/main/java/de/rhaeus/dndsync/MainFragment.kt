@@ -36,13 +36,12 @@ import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 
 class MainFragment : Fragment() {
 
-    private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
-    private val isConnectedState = mutableStateOf(false)
     private val isNotificationAllowedState = mutableStateOf(false)
+    private val isConnectedState = mutableStateOf(false)
+    private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -51,99 +50,124 @@ class MainFragment : Fragment() {
         return ComposeView(requireContext()).apply {
             setContent {
                 val isDark = isSystemInDarkTheme()
-                MaterialTheme(colorScheme = if (isDark) darkColorScheme() else lightColorScheme()) {
-                    MainScreen()
-                }
-            }
-        }
-    }
-
-    @OptIn(ExperimentalMaterial3Api::class)
-    @Composable
-    fun MainScreen() {
-        val context = LocalContext.current
-        val prefs = remember { context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE) }
-        
-        // 核心修复 4：移除双语混杂，编写国际化自适应文本字典
-        val currentLocale = Locale.getDefault().language
-        val isZh = currentLocale.equals("zh", ignoreCase = true)
-
-        val txtTitle = if (isZh) "穿戴互联控制中心" else "Wear Sync Control"
-        val txtDndTitle = if (isZh) "勿扰同步" else "Dnd Sync"
-        val txtDndSub = if (isZh) "保持手机与手錶勿扰状态镜像一致" else "Mirror Do Not Disturb status to watch"
-        val txtPowerTitle = if (isZh) "勿扰联动省电模式" else "Link Power Saving Mode"
-        val txtPowerSub = if (isZh) "手錶开启勿扰时将联动切换为省电模式" else "Watch enters battery saver when DND is on"
-        val txtVibrateTitle = if (isZh) "状态变更时手錶震动" else "Vibrate on Status Sync"
-        val txtVibrateSub = if (isZh) "仅在勿扰状态发生同步时手錶震动提示" else "Vibrate watch only during active sync"
-        val txtCameraTitle = if (isZh) "智能相机连动开关" else "Smart Camera Remote"
-        val txtCameraSub = if (isZh) "允许通过手錶端拉起并遥控拍照" else "Allow watch to wake and trigger camera"
-        val txtPkgLabel = if (isZh) "相机目标过滤包名" else "Target Camera Package"
-
-        var dndSync by remember { mutableStateOf(prefs.getBoolean("dnd_sync_switch", true)) }
-        var powerSaverResponse by remember { mutableStateOf(prefs.getBoolean("wear_power_save_response", false)) }
-        var vibrateOnSync by remember { mutableStateOf(prefs.getBoolean("wear_vibrate_on_sync", true)) }
-        var cameraSyncMaster by remember { mutableStateOf(prefs.getBoolean("custom_camera_sync_master_switch", false)) }
-        
-        // 核心修复 4：默认目标相机包名精简为唯一的 com.oplus.camera
-        var cameraPackages by remember { mutableStateOf(prefs.getString("custom_allowed_camera_packages", "com.oplus.camera") ?: "com.oplus.camera") }
-
-        val isConnected by remember { isConnectedState }
-        val isNotificationAllowed by remember { isNotificationAllowedState }
-
-        Scaffold(
-            topBar = { TopAppBar(title = { Text(txtTitle, fontWeight = FontWeight.Bold) }) }
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 连接状态指示器
-                ConnectionStatusCard(isConnected, isNotificationAllowed, isZh)
-
-                // 勿扰同步大类
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        SwitchRow(txtDndTitle, txtDndSub, dndSync) {
-                            dndSync = it
-                            prefs.edit().putBoolean("dnd_sync_switch", it).apply()
-                            triggerLazyUiSync(context, prefs)
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        SwitchRow(txtPowerTitle, txtPowerSub, powerSaverResponse) {
-                            powerSaverResponse = it
-                            prefs.edit().putBoolean("wear_power_save_response", it).apply()
-                            triggerLazyUiSync(context, prefs)
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        SwitchRow(txtVibrateTitle, txtVibrateSub, vibrateOnSync) {
-                            vibrateOnSync = it
-                            prefs.edit().putBoolean("wear_vibrate_on_sync", it).apply()
-                            triggerLazyUiSync(context, prefs)
-                        }
+                MaterialTheme(
+                    colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
+                ) {
+                    // 控制狀態列顏色
+                    val activity = activity
+                    if (activity != null) {
+                        val window = activity.window
+                        val decorView = window.decorView
+                        val wic = WindowInsetsControllerCompat(window, decorView)
+                        wic.isAppearanceLightStatusBars = !isDark
                     }
-                }
-                // 相机联动控制大类
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        SwitchRow(txtCameraTitle, txtCameraSub, cameraSyncMaster) {
-                            cameraSyncMaster = it
-                            prefs.edit().putBoolean("custom_camera_sync_master_switch", it).apply()
-                        }
-                        if (cameraSyncMaster) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = cameraPackages,
-                                onValueChange = {
-                                    cameraPackages = it
-                                    prefs.edit().putString("custom_allowed_camera_packages", it).apply()
-                                },
-                                label = { Text(txtPkgLabel) },
-                                modifier = Modifier.fillMaxWidth()
+
+                    val context = LocalContext.current
+                    val sharedPref = remember { context.getSharedPreferences(context.packageName + "_preferences", Context.MODE_PRIVATE) }
+
+                    // UI 交互狀態持久化
+                    var dndSync by remember { mutableStateOf(sharedPref.getBoolean("dnd_sync_switch", true)) }
+                    var sleepModeSync by remember { mutableStateOf(sharedPref.getBoolean("sleep_mode_sync_switch", true)) }
+                    var vibrateOnSync by remember { mutableStateOf(sharedPref.getBoolean("vibrate_on_sync_switch", true)) }
+                    var alarmSync by remember { mutableStateOf(sharedPref.getBoolean("alarm_sync_switch", true)) }
+                    var selectedAlarmType by remember { mutableStateOf(sharedPref.getString("alarm_type_select", "all") ?: "all") }
+
+                    val isAllowed by remember { isNotificationAllowedState }
+                    val isConnected by remember { isConnectedState }
+
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                text = "Wear Sync 穿戴互聯",
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 24.dp)
                             )
+
+                            // 🎯 權限與連接狀態區（核心監控 UI）
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    StatusRow(title = "手錶連線狀態", isOk = isConnected, okText = "已連接手錶", errText = "未偵測到手錶")
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    StatusRow(title = "通知項目權限", isOk = isAllowed, okText = "已授權", errText = "未授權（點擊前往）", 
+                                        onClick = {
+                                            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                        }
+                                    )
+                                }
+                            }
+
+                            // 🎯 設定開關面板
+                            Text(text = "同步設定", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(start = 4.dp, bottom = 8.md))
+
+                            ToggleItem(title = "同步手機勿擾模式", summary = "手機切換勿擾時，手錶自動跟隨", checked = dndSync) { checked ->
+                                dndSync = checked
+                                sharedPref.edit().putBoolean("dnd_sync_switch", checked).apply()
+                                triggerLazyUiSync(context, sharedPref)
+                            }
+
+                            ToggleItem(title = "自動聯動睡眠模式", summary = "勿擾開啟時，手錶跟隨進入睡眠/床頭模式", checked = sleepModeSync) { checked ->
+                                sleepModeSync = checked
+                                sharedPref.edit().putBoolean("sleep_mode_sync_switch", checked).apply()
+                                triggerLazyUiSync(context, sharedPref)
+                            }
+
+                            ToggleItem(title = "同步成功時手錶震動", summary = "接受到發射封包同步成功後，手錶震動一下", checked = vibrateOnSync) { checked ->
+                                vibrateOnSync = checked
+                                sharedPref.edit().putBoolean("vibrate_on_sync_switch", checked).apply()
+                                triggerLazyUiSync(context, sharedPref)
+                            }
+
+                            // 🎯 鬧鐘同步設定 UI
+                            ToggleItem(title = "手機鬧鐘同步到手錶", summary = "手機鬧鐘響鈴時，手錶同步顯示全螢幕並震動", checked = alarmSync) { checked ->
+                                alarmSync = checked
+                                sharedPref.edit().putBoolean("alarm_sync_switch", checked).apply()
+                            }
+
+                            if (alarmSync) {
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text("鬧鐘攔截範圍", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            AlarmTypeButton("全域攔截", selectedAlarmType == "all") {
+                                                selectedAlarmType = "all"
+                                                sharedPref.edit().putString("alarm_type_select", "all").apply()
+                                            }
+                                            AlarmTypeButton("僅內建時鐘", selectedAlarmType == "system") {
+                                                selectedAlarmType = "system"
+                                                sharedPref.edit().putString("alarm_type_select", "system").apply()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // 🎯 相機喚醒按鈕 UI
+                            Button(
+                                onClick = { triggerCameraRemoteLaunch(context) },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("📸 遠端啟動手錶端相機觀景窗", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -152,34 +176,65 @@ class MainFragment : Fragment() {
     }
 
     @Composable
-    fun ConnectionStatusCard(isConnected: Boolean, isNotificationAllowed: Boolean, isZh: Boolean) {
-        val statusText = if (isConnected) (if (isZh) "设备已互联" else "Connected") else (if (isZh) "断开连接" else "Disconnected")
-        val permText = if (isNotificationAllowed) (if (isZh) "权限已就绪" else "Permission Granted") else (if (isZh) "需要通知监听权限" else "Fix Permission")
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = if (isConnected && isNotificationAllowed) Color(0xFFE8F5E9) else Color(0xFFFFEBEE))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(statusText, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = if (isConnected) Color(0xFF2E7D32) else Color(0xFFC62828))
-                Text(permText, fontSize = 14.sp, color = Color.Gray)
-            }
-        }
-    }
-
-    @Composable
-    fun SwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    fun StatusRow(title: String, isOk: Boolean, okText: String, errText: String, onClick: (() -> Unit)? = null) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().run { if (onClick != null) clickable { onClick() } else this },
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1.0f)) {
-                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, fontSize = 12.sp, color = Color.Gray)
+            Column {
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(text = if (isOk) okText else errText, fontSize = 13.sp, color = if (isOk) Color(0xFF4CAF50) else Color(0xFFF44336))
+            }
+            Box(modifier = Modifier.size(12.dp).background(color = if (isOk) Color(0xFF4CAF50) else Color(0xFFF44336), shape = RoundedCornerShape(6.dp)))
+        }
+    }
+
+    @Composable
+    fun ToggleItem(title: String, summary: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = summary, fontSize = 13.sp, color = Color.Gray)
             }
             Switch(checked = checked, onCheckedChange = onCheckedChange)
         }
     }
 
+    @Composable
+    fun AlarmTypeButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
+        Button(
+            onClick = onClick,
+            colors = ButtonDefaults.buttonColors(containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text(text = text, color = if (isSelected) Color.White else Color.Gray)
+        }
+    }
+
+    private fun triggerCameraRemoteLaunch(context: Context) {
+        Thread {
+            try {
+                val json = JSONObject().apply {
+                    put("sender", "phone")
+                    put("type", "camera_control")
+                    put("action", "LAUNCH_WEAR_CAMERA")
+                }
+                val data = json.toString().toByteArray(StandardCharsets.UTF_8)
+                val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+                for (node in nodes) {
+                    Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
+                }
+                activity?.runOnUiThread { Toast.makeText(context, "已向手錶發出相機啟動訊號", Toast.LENGTH_SHORT).show() }
+            } catch (e: Exception) {
+                Log.e("WearSync_CameraUI", "Failed to launch camera app", e)
+            }
+        }.start()
+    }
 
     override fun onResume() { super.onResume(); checkNotificationPermission(); registerConnectivityListener() }
     override fun onPause() { super.onPause(); unregisterConnectivityListener() }
@@ -195,21 +250,22 @@ class MainFragment : Fragment() {
     private fun registerConnectivityListener() {
         val context = context ?: return
         Wearable.getCapabilityClient(context).getCapability("dnd_sync", CapabilityClient.FILTER_REACHABLE).addOnSuccessListener { capabilityInfo -> isConnectedState.value = capabilityInfo.nodes.isNotEmpty() }
+        capabilityChangedListener = CapabilityClient.OnCapabilityChangedListener { capabilityInfo -> isConnectedState.value = capabilityInfo.nodes.isNotEmpty() }
+        capabilityChangedListener?.let { Wearable.getCapabilityClient(context).addListener(it, "dnd_sync") }
     }
 
-    private fun unregisterConnectivityListener() {}
-        // 🎯 針對性補回：項目原本的高頻狀態同步核心方法（嚴格對齊手機端 DNDNotificationService 接口）
-    // 🎯 精準對齊原版呼叫：接收 (Context, SharedPreferences)
+    private fun unregisterConnectivityListener() {
+        val context = context ?: return
+        capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
+    }
+
+    // 🎯 嚴格還原：與調用端完美閉合的雙參數 Lazy UI 同步方法
     private fun triggerLazyUiSync(context: Context, sharedPref: SharedPreferences) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         val currentFilter = manager?.currentInterruptionFilter ?: 1
-        
-        // 調用手機端服務，將勿擾值與是否為實時同步（通常 preference 切換觸發視為實時同步，傳入 true）傳遞過去
         if (DNDNotificationService.running) {
             val service = DNDNotificationService()
             service.pushDndAndPowerStatusToWear(currentFilter, true)
         }
     }
-
-
 }
