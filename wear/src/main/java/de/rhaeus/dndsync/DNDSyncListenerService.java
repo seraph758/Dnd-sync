@@ -4,11 +4,14 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.provider.Settings;
 import android.util.Log;
+import android.widget.Toast;
 import androidx.annotation.NonNull;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageEvent;
@@ -33,154 +36,139 @@ public class DNDSyncListenerService extends WearableListenerService {
         }
     }
 
-    // 提供给 Activity 调用的静态停止震动方法
     public static void stopLoopVibration() {
         try {
             if (globalVibrator != null) {
                 globalVibrator.cancel();
-                Log.d(TAG, "🛑 收到停止持续震动指令，已成功拦截关断");
+                Log.d(TAG, "🛑 收到停止持续震动指令");
             }
         } catch (Exception e) {
-            Log.e(TAG, "停止震动发生异常", e);
+            Log.e(TAG, "停止震动异常", e);
         }
     }
 
     @Override
     public void onMessageReceived(@NonNull MessageEvent messageEvent) {
-        // 确保只处理匹配我们万能互联协议路径的数据
         if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
             try {
                 String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
                 Log.d(TAG, "📥 手表端收到高优先级互联数据包: " + jsonStr);
 
-                // 1. 尝试使用全新的标准 JSON 数据包模式进行高阶沙盒解析
                 try {
                     JSONObject json = new JSONObject(jsonStr);
                     String sender = json.optString("sender", "");
-                    if ("wear".equalsIgnoreCase(sender)) return; // 过滤自身回环
+                    if ("wear".equalsIgnoreCase(sender)) return;
 
                     String type = json.optString("type", "");
 
-                    // 🎯 A. 闹钟防漏沙盒逻辑响应区
+                    // 🎯 A. 闹钟处理
                     if ("alarm".equalsIgnoreCase(type)) {
                         String alarmAction = json.optString("alarmAction", "");
-                        Log.d(TAG, "⏰ 捕获到手机端传来的闹钟硬联动信号: " + alarmAction);
-                        
                         if ("LAUNCH_WEAR_ALARM_ACTIVITY".equalsIgnoreCase(alarmAction)) {
-                            // 核心硬拉起：直接唤醒手表的 WearAlarmActivity
                             Intent alarmIntent = new Intent();
                             alarmIntent.setClassName(getPackageName(), "de.rhaeus.dndsync.WearAlarmActivity");
                             alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                            alarmIntent.putExtra("dismissActionConfig", json.optString("dismissActionConfig", "停止和延后"));
                             startActivity(alarmIntent);
-                            Log.d(TAG, "🚀 成功硬拉起手表端 WearAlarmActivity.java");
                         } else if ("FORCE_STOP_WEAR_ALARM".equalsIgnoreCase(alarmAction)) {
-                            // 手机端闹钟挂断或被划掉，发送本地广播通知 WearAlarmActivity 自毁销毁
                             Intent stopBroadcast = new Intent("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI");
                             sendBroadcast(stopBroadcast);
                             stopLoopVibration();
                         }
-                        return; // 消费完毕，直接截断返回
+                        return;
                     }
 
-                    // 🎯 B. 相机取景投射沙盒逻辑响应区
+                    // 🎯 B. 相机处理
                     if ("camera_control".equalsIgnoreCase(type)) {
                         String action = json.optString("action", "");
-                        Log.d(TAG, "📸 捕获到手机端传来的相机投射信号: " + action);
-                        
                         if ("LAUNCH_WEAR_CAMERA_ACTIVITY".equalsIgnoreCase(action)) {
-                            // 核心硬拉起：直接唤醒手表的 WearCameraActivity
                             Intent cameraIntent = new Intent();
                             cameraIntent.setClassName(getPackageName(), "de.rhaeus.dndsync.WearCameraActivity");
                             cameraIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                             startActivity(cameraIntent);
-                            Log.d(TAG, "🚀 成功硬拉起手表端 WearCameraActivity.java");
                         }
-                        return; // 消费完毕，直接截断返回
+                        return;
                     }
 
-                    // 🎯 C. 勿扰与核心模式深度联动响应区（睡眠模式/省电模式都在这里处理）
+                    // 🎯 C. 勿扰和强依赖树（包含物理触感震动与智能下拉触控）
                     if ("dnd".equalsIgnoreCase(type)) {
                         int dndState = json.optInt("dndValue", NotificationManager.INTERRUPTION_FILTER_ALL);
                         boolean dndMaster = json.optBoolean("dndSyncMaster", true);
                         boolean wearSleepLink = json.optBoolean("wearSleepModeLink", true);
                         boolean wearPowerLink = json.optBoolean("wearPowerSave", false);
+                        boolean vibrateTipsEnable = json.optBoolean("vibrateTipsEnable", true);
 
-                        if (!dndMaster) {
-                            Log.d(TAG, "⚠️ 勿扰总开关未开启，放弃本次勿扰相关联动");
-                            return;
+                        if (!dndMaster) return;
+
+                        // 执行手表同步勿扰
+                        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                        if (nm != null) {
+                            isInternalUpdate = true;
+                            nm.setInterruptionFilter(dndState);
                         }
 
-                        // 执行手表端勿扰设置
-                        setWearDndState(dndState);
+                        // 🎯 物理瞬时触觉反馈触发：如果开启了震动开关，震动 50 毫秒
+                        if (vibrateTipsEnable && globalVibrator != null) {
+                            globalVibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
+                        }
 
-                        // ⚡ 完美解密并强制同步【智能睡眠模式】
+                        // 🎯 睡眠模式同步：如果需要联动，则执行核心无障碍宏点击操作
                         if (wearSleepLink) {
                             boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
-                            setWearBedtimeMode(isDndActive);
+                            // 由于直接写注册表被安全拦截，必须利用无障碍模拟行为切换
+                            executeBedtimeToggleUiMacro(isDndActive);
                         }
 
-                        // ⚡ 完美解密并强制同步【系统省电模式】
                         if (wearPowerLink) {
                             boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
-                            setLowPowerMode(isDndActive);
+                            try {
+                                Settings.Global.putInt(getContentResolver(), "low_power", isDndActive ? 1 : 0);
+                                sendBroadcast(new Intent("android.os.action.POWER_SAVE_MODE_CHANGED"));
+                            } catch (Exception e) {}
                         }
                         return;
                     }
 
                 } catch (Exception jsonEx) {
-                    // 2. 备用降级逻辑：如果传过来的是旧版框架的纯文本/纯数字，走降级兼容处理
-                    Log.d(TAG, "ℹ️ 降级为旧版本数据流解析...");
+                    // 降级兼容
                     String valStr = jsonStr.trim();
                     int dndVal = Integer.parseInt(valStr);
-                    setWearDndState(dndVal);
+                    NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm != null) { nm.setInterruptionFilter(dndVal); }
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "穿戴端核心消息消费流彻底崩溃：", e);
+                Log.e(TAG, "穿戴消息处理崩溃：", e);
             }
         }
     }
 
-    // 内部抽象出的高阶原子操作：更改手表勿扰状态
-    private void setWearDndState(int dndState) {
-        try {
-            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (notificationManager != null) {
-                isInternalUpdate = true;
-                notificationManager.setInterruptionFilter(dndState);
-                Log.d(TAG, "🎯 手表系统原生勿扰状态已成功强制解算同步为: " + dndState);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "手表写入勿扰通道失败", e);
+    // 🎯 核心移植：执行屏幕唤醒并使用无障碍自动切换睡眠模式
+    private void executeBedtimeToggleUiMacro(boolean targetActive) {
+        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
+        if (serv == null) {
+            Log.d(TAG, "无障碍服务未连接，放弃自动切换");
+            return;
         }
-    }
 
-    // 内部抽象出的高阶原子操作：强制修改手表系统注册表实现【睡眠模式同步】
-    private void setWearBedtimeMode(boolean active) {
         new Thread(() -> {
             try {
-                // 写入 WearOS 核心骨架注册表中的智能睡眠模式键值
-                Settings.Global.putInt(getContentResolver(), "bedtime_mode_is_active", active ? 1 : 0);
+                // 点亮屏幕
+                PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
+                PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:WakeLock");
+                wakeLock.acquire(10 * 1000L);
+
+                Thread.sleep(1000);
+                serv.swipeDown();      // 下拉快捷栏
+                Thread.sleep(1000);
+                serv.clickIcon1_2();    // 自动定位并模拟点击睡眠图标
+                Thread.sleep(1000);
+                serv.goBack();          // 收起状态栏
                 
-                // 向系统内核群发床头/睡眠状态变更的系统级广播，强迫 WearOS 状态栏和系统重绘
-                Intent modeIntent = new Intent("com.google.android.clockwork.actions.BEDTIME_MODE_CHANGED");
-                sendBroadcast(modeIntent);
-                Log.d(TAG, "🌙 睡眠模式(Bedtime Mode)深度联动同步成功 -> " + (active ? "激活" : "关闭"));
+                if (wakeLock.isHeld()) { wakeLock.release(); }
+                Log.d(TAG, "✨ 已通过旧版无障碍架构成功完成睡眠模式翻转动作");
             } catch (Exception e) {
-                Log.e(TAG, "深度联动睡眠模式失败", e);
+                Log.e(TAG, "无障碍宏流程异常中断", e);
             }
         }).start();
-    }
-
-    // 内部抽象出的高阶原子操作：强制修改手表系统注册表实现【省电模式同步】
-    private void setLowPowerMode(boolean enable) {
-        try {
-            Settings.Global.putInt(getContentResolver(), "low_power", enable ? 1 : 0);
-            sendBroadcast(new Intent("android.os.action.POWER_SAVE_MODE_CHANGED"));
-            Log.d(TAG, "🔋 系统省电模式深度状态联动同步成功 -> " + (enable ? "开启" : "关闭"));
-        } catch (Exception e) {
-            Log.e(TAG, "改变手表省电状态失败", e);
-        }
     }
 }
