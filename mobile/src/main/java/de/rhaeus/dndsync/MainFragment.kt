@@ -180,16 +180,6 @@ class MainFragment : Fragment() {
         }
     }
 
-    private fun triggerLazyUiSync(context: Context, prefs: SharedPreferences) {
-        // 核心修复 2：由手机 UI 设置变动引发的推送，属于非实时状态改变，isRealTimeSync 强制传 false，防止手錶莫名其妙震动
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        val currentFilter = manager?.currentInterruptionFilter ?: 1
-        val serviceIntent = Intent(context, DNDNotificationService::class.java)
-        if (DNDNotificationService.running) {
-            val service = DNDNotificationService()
-            service.pushDndAndPowerStatusToWear(currentFilter, false)
-        }
-    }
 
     override fun onResume() { super.onResume(); checkNotificationPermission(); registerConnectivityListener() }
     override fun onPause() { super.onPause(); unregisterConnectivityListener() }

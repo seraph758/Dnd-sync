@@ -39,7 +39,9 @@ public class DNDSyncListenerService extends WearableListenerService {
                     String action = json.optString("action", "");
                     Log.d(TAG, "📥 [遠端指揮中心] 收到手錶端全螢幕介面發送的鬧鐘控制動作: " + action);
                     
-                    StatusBarNotification sbn = DNDNotificationService.currentAlarmNotification;
+                    //  修改為絕對路徑：
+                StatusBarNotification sbn = de.rhaeus.dndsync.DNDNotificationService.currentAlarmNotification;
+
                     if (sbn != null && sbn.getNotification() != null) {
                         Notification notification = sbn.getNotification();
                         if (notification.actions != null) {
