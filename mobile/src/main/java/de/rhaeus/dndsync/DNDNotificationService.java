@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioManager;
+import android.os.Build; // 🎯 补上了之前漏掉的核心引用
 import android.os.Handler;
 import android.os.Looper;
 import android.service.notification.NotificationListenerService;
@@ -26,7 +27,8 @@ public class DNDNotificationService extends NotificationListenerService implemen
     private static final String TAG = "WearSync_PhoneService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     
-    public static StatusBarNotification currentActiveAlarmSbn = null;
+    // 🎯 关键修改：名字必须对齐手表端 DNDSyncListenerService 调用的句柄，彻底解开 Build 编译死锁
+    public static StatusBarNotification currentAlarmNotification = null;
     public static boolean running = false;
 
     @Override
@@ -73,7 +75,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
         String pkg = sbn.getPackageName();
         String allowedConfig = prefs.getString("custom_allowed_clock_packages", "com.coloros.alarmclock,com.oplus.camera,com.google.android.deskclock,com.android.deskclock");
         
-        // 1. 包名沙盒安全过滤
         boolean isPackageAllowed = false;
         String[] allowedPkgs = allowedConfig.split(",");
         for (String item : allowedPkgs) {
@@ -84,11 +85,9 @@ public class DNDNotificationService extends NotificationListenerService implemen
         }
         if (!isPackageAllowed) return;
 
-        // 2. 过滤预告闹钟流
         String eventType = prefs.getString("alarm_event_type_select", "ringing");
         Notification notification = sbn.getNotification();
         
-        // 如果设置为“仅响应标准响铃”，则进行特征过滤，防预告闹钟骚扰
         if ("ringing".equalsIgnoreCase(eventType)) {
             CharSequence title = notification.extras.getCharSequence(Notification.EXTRA_TITLE);
             CharSequence text = notification.extras.getCharSequence(Notification.EXTRA_TEXT);
@@ -100,14 +99,13 @@ public class DNDNotificationService extends NotificationListenerService implemen
             }
         }
 
-        // 3. 拦截确定为活动响铃的闹钟
         if (Notification.CATEGORY_ALARM.equals(notification.category) || (notification.flags & Notification.FLAG_INSISTENT) != 0) {
-            currentActiveAlarmSbn = sbn;
+            currentAlarmNotification = sbn; // 🎯 同步对齐变量赋值
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "phone");
                 json.put("type", "alarm");
-                json.put("alarmAction", "LAUNCH_WEAR_ALARM_ACTIVITY"); // 🚀 直接拉起手表的 WearAlarmActivity.java
+                json.put("alarmAction", "LAUNCH_WEAR_ALARM_ACTIVITY");
                 json.put("dismissActionConfig", prefs.getString("alarm_dismiss_action_config", "停止和延后"));
                 sendJsonMessage(json.toString());
                 Log.d(TAG, "🔥 触发闹钟流硬联锁：向手表发出同步拉起 WearAlarmActivity 广播");
@@ -120,8 +118,8 @@ public class DNDNotificationService extends NotificationListenerService implemen
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
         if (sbn == null) return;
-        if (currentActiveAlarmSbn != null && sbn.getKey().equals(currentActiveAlarmSbn.getKey())) {
-            currentActiveAlarmSbn = null;
+        if (currentAlarmNotification != null && sbn.getKey().equals(currentAlarmNotification.getKey())) {
+            currentAlarmNotification = null;
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "phone");
@@ -142,17 +140,14 @@ public class DNDNotificationService extends NotificationListenerService implemen
 
                 String type = json.optString("type", "");
                 
-                // 🎯 接收并响应来自手表端 WearAlarmActivity.java 触发的操作
                 if ("alarm_control".equalsIgnoreCase(type)) {
-                    String action = json.optString("action", ""); // "DISMISS" 或 "SNOOZE"
+                    String action = json.optString("action", "");
                     Log.d(TAG, "📥 收到手表 WearAlarmActivity 传回的闹钟关闭/暂停行为指令: " + action);
                     
-                    if (currentActiveAlarmSbn != null) {
-                        // 利用系统权限，直接模拟向下拉通知栏的关闭/暂停意图进行消费清除
+                    if (currentAlarmNotification != null) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                            if (currentActiveAlarmSbn.getNotification().actions != null && currentActiveAlarmSbn.getNotification().actions.length > 0) {
-                                // 默认触发第一个行为（通常是时钟的“停止”或“延后”）
-                                currentActiveAlarmSbn.getNotification().actions[0].actionIntent.send();
+                            if (currentAlarmNotification.getNotification().actions != null && currentAlarmNotification.getNotification().actions.length > 0) {
+                                currentAlarmNotification.getNotification().actions[0].actionIntent.send();
                                 Log.d(TAG, "⚡ 成功代替本地手机执行闹钟拦截框架消费动作");
                             }
                         }

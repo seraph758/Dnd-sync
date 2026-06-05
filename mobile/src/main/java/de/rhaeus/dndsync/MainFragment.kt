@@ -86,12 +86,10 @@ class MainFragment : Fragment() {
                     val isNotificationAllowed by isNotificationAllowedState
                     val trigger by prefsTrigger
 
-                    // 1. 勿扰控制持久化状态
                     var dndSyncMaster by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("dnd_sync_switch", true)) }
                     var wearSleepModeLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_sleep_mode_link", true)) }
                     var wearPowerSaveLink by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("wear_power_save_link", false)) }
 
-                    // 2. 闹钟同步沙盒持久化状态
                     var alarmMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false)) }
                     var allowedClockPackages by remember(trigger) { 
                         mutableStateOf(sharedPreferences.getString("custom_allowed_clock_packages", "com.coloros.alarmclock,com.oplus.camera,com.google.android.deskclock,com.android.deskclock") ?: "") 
@@ -99,7 +97,6 @@ class MainFragment : Fragment() {
                     var alarmEventType by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_event_type_select", "ringing") ?: "ringing") }
                     var alarmDismissAction by remember(trigger) { mutableStateOf(sharedPreferences.getString("alarm_dismiss_action_config", "停止和延后") ?: "停止和延后") }
 
-                    // 3. 相机控制沙盒持久化状态
                     var cameraMasterSwitch by remember(trigger) { mutableStateOf(sharedPreferences.getBoolean("custom_camera_sync_master_switch", false)) }
                     var allowedCameraPackages by remember(trigger) { 
                         mutableStateOf(sharedPreferences.getString("custom_allowed_camera_packages", "com.oplus.camera") ?: "com.oplus.camera") 
@@ -120,7 +117,6 @@ class MainFragment : Fragment() {
                             color = MaterialTheme.colorScheme.onBackground
                         )
 
-                        // 🎯 系统基础状态卡片
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -147,7 +143,7 @@ class MainFragment : Fragment() {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(text = "手錶双端连接状态", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                    Text(text = "手表双端连接状态", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                     Text(
                                         text = if (isConnected) "已连接" else "未连接",
                                         fontSize = 13.sp,
@@ -157,7 +153,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 🎯 1. 同步勿扰板块（完美层级依赖结构）
                         Text(text = "勿扰与核心模式同步", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -171,7 +166,6 @@ class MainFragment : Fragment() {
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                                 
-                                // 依附于勿扰总开关的下级子开关 1
                                 SwitchRow(
                                     title = "  └─ 勿扰开启时联动智能睡眠模式", 
                                     summary = "跟随手机勿扰自动激活手表内置的床头与睡眠深度休眠", 
@@ -184,7 +178,6 @@ class MainFragment : Fragment() {
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                                 
-                                // 依附于勿扰总开关的下级子开关 2
                                 SwitchRow(
                                     title = "  └─ 勿扰开启时联动系统省电模式", 
                                     summary = "跟随手机勿扰开启后自动降低手表系统功耗", 
@@ -198,7 +191,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 🎯 2. 同步闹钟板块（防漏防误报沙盒）
                         Text(text = "闹钟自动化防骚扰沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -253,7 +245,6 @@ class MainFragment : Fragment() {
                             }
                         }
 
-                        // 🎯 3. 同步相机板块（默认 com.oplus.camera 联动流）
                         Text(text = "远端相机取景投射沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(
                             shape = RoundedCornerShape(12.dp),
@@ -365,7 +356,7 @@ class MainFragment : Fragment() {
                 val json = JSONObject().apply {
                     put("sender", "phone")
                     put("type", "camera_control")
-                    put("action", "LAUNCH_WEAR_CAMERA_ACTIVITY") // 指令契合手表端接收，拉起 WearCameraActivity
+                    put("action", "LAUNCH_WEAR_CAMERA_ACTIVITY")
                     put("timestamp", System.currentTimeMillis())
                 }
                 sendMessageToAllConnectedNodes(context, json.toString())
@@ -432,8 +423,8 @@ class MainFragment : Fragment() {
         capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
     }
 
-    // 🎯 彻底闭合原项目老架构残留的 triggerLazyUiSync 方法，完美解决编译报错
-    private fun triggerLazyUiSync(context: Context, sharedPref: SharedPreferences) {
+    // 🎯 精简掉了未使用的变量，保留无参或兼容性映射，完美消除 w: Parameter is never used 警告
+    private fun triggerLazyUiSync() {
         pushDynamicPreferencesToWear()
     }
 }
