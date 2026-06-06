@@ -123,7 +123,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
 
                 String type = json.optString("type", "");
 
-                // 🎯 核心重構區塊：接收手錶端按鈕點擊，執行精準代點或強制消除
+                // 接收手錶端按鈕點擊，執行精準代點或強制消除
                 if ("alarm_control".equalsIgnoreCase(type)) {
                     String action = json.optString("action", ""); // "DISMISS" 或 "SNOOZE"
                     Log.d(TAG, "📥 遠端代點中心收到手錶端鬧鐘動作要求: " + action);
@@ -157,9 +157,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
         }
     }
 
-    /**
-     * 🎯 核心功能：動態查找並點擊手機通知欄上的對應按鈕
-     */
     private boolean handleRemoteAlarmActionClick(String action) {
         StatusBarNotification[] activeNotifications = getActiveNotifications();
         if (activeNotifications == null) return false;
@@ -185,7 +182,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 Notification notification = sbn.getNotification();
                 if (notification.actions == null || notification.actions.length == 0) continue;
 
-                // 情況一：使用者選擇了固定的第幾個動作按鈕
                 if ("DISMISS".equals(action) && dismissConfig.contains("第")) {
                     return performIndexedClick(notification.actions, dismissConfig);
                 }
@@ -193,7 +189,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
                     return performIndexedClick(notification.actions, snoozeConfig);
                 }
 
-                // 情況二：關鍵字匹配或自定義關鍵字匹配
                 for (Notification.Action act : notification.actions) {
                     if (act.title == null || act.actionIntent == null) continue;
                     String titleStr = act.title.toString().toLowerCase().trim();
@@ -217,7 +212,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
                     }
                 }
                 
-                // ⚠️ 最終兜底：若智能匹配未命中，且設為智能匹配，直接取第一個按鈕
                 if ("DISMISS".equals(action) && "關鍵字智能匹配".equals(dismissConfig)) {
                     Log.w(TAG, "⚠️ 字典規則未命中，執行首個按鈕兜底發射");
                     return sendActionIntent(notification.actions[0]);
@@ -254,9 +248,6 @@ public class DNDNotificationService extends NotificationListenerService implemen
         }
     }
 
-    /**
-     * 🎯 終極暴力清除：一旦代點失敗，直接呼叫系統介面物理抹除通知，切斷一切反向喚醒
-     */
     public void dismissAllClockNotificationsForced() {
         try {
             StatusBarNotification[] activeNotifications = getActiveNotifications();
@@ -273,7 +264,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
                     }
                 }
                 if (isTargetClock) {
-                    cancelNotification(sbn.getKey()); // 🔥 強制銷毀手機通知欄物件
+                    cancelNotification(sbn.getKey());
                     Log.d(TAG, "💥 規則完全未命中，已在手機端強制 cancelNotification 摧毀通知");
                 }
             }
@@ -289,10 +280,11 @@ public class DNDNotificationService extends NotificationListenerService implemen
             try {
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
                 for (Node node : nodes) {
-                    Wearable.getMessageClient(this).sendMessage(node.id, UNIVERSAL_SYNC_PATH, data);
+                    // 🎯 這裡已修正為 node.getId() 確保編繹通過
+                    Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "藍牙廣播傳輸失敗", e);
+                Log.e(TAG, "藍牙發送失敗", e);
             }
         }).start();
     }
