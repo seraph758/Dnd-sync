@@ -508,17 +508,24 @@ class MainFragment : Fragment() {
         }
     }
 
-    private fun sendMessageToAllConnectedNodes(context: Context, message: String) {
+// 请在 MainFragment.kt 中找到 sendMessage 方法并替换为以下版本，确保路径和协议的一致性
+private fun sendMessage(path: String, json: JSONObject) {
+    val data = json.toString().toByteArray(StandardCharsets.UTF_8)
+    // 强制使用统一的路径：/wear-universal-sync
+    val targetPath = "/wear-universal-sync" 
+    
+    Thread {
         try {
-            val data = message.toByteArray(StandardCharsets.UTF_8)
-            val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
+            val nodes = Tasks.await(Wearable.getNodeClient(requireContext()).connectedNodes)
             for (node in nodes) {
-                Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
+                Wearable.getMessageClient(requireContext()).sendMessage(node.id, targetPath, data)
             }
+            Log.d("WearSync_Main", "📤 界面层成功发送指令: $json")
         } catch (e: Exception) {
-            Log.e("WearSync_Msg", "穿戴數據封包廣播異常", e)
+            Log.e("WearSync_Main", "发送数据到手表失败", e)
         }
-    }
+    }.start()
+}
 
     override fun onResume() { super.onResume(); checkNotificationPermission(); registerConnectivityListener() }
     override fun onPause() { super.onPause(); unregisterConnectivityListener() }
