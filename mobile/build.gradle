@@ -101,14 +101,12 @@ dependencies {
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 
     // =================================================================
-    // 📸 新增：CameraX 核心與遠端註冊沙盒依賴（與手錶端 1.4.0-rc01 版本嚴格對齊）
+    // 📸 修正：CameraX 遠端沙盒組件（同步對齊 1.4.0-alpha05 確保留在庫件庫存在）
     // =================================================================
-    def camerax_version = "1.4.0-rc01"
+    def camerax_version = "1.4.0-alpha05"
     implementation "androidx.camera:camera-core:${camerax_version}"
     implementation "androidx.camera:camera-camera2:${camerax_version}"
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
-    
-    // 👈 手機端需要負責將本地相機註冊進遠端代理中，因此也必須引入該依賴
     implementation "androidx.camera:camera-remote:${camerax_version}"
 
     testImplementation 'junit:junit:4.13.2'
