@@ -1,89 +1,122 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
 }
 
-def signingProps = new Properties()
-def signingFile = rootProject.file("signing.properties")
+import java.util.Properties
 
-if (signingFile.exists()) {
-    signingProps.load(new FileInputStream(signingFile))
+def signingPropsFile = rootProject.file('signing.properties')
+def signingProps = new Properties()
+def usePropertiesSigning = false
+if (signingPropsFile.exists()) {
+    signingPropsFile.withInputStream { stream ->
+        signingProps.load(stream)
+    }
+    usePropertiesSigning = true
 }
 
 def githubRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
 
 android {
-    // 解決 AGP 8.0 核心報錯：指定手錶端的命名空間
     namespace "de.rhaeus.dndsync"
-
-    // 統一推進到 34，與根目錄和手機端完全對齊
     compileSdk 34
 
     defaultConfig {
         applicationId "de.rhaeus.dndsync"
-        minSdk 30
-        targetSdk 34 
-
+        minSdk 26
+        targetSdk 34
         versionCode githubRunNumber.toInteger()
         versionName "1.0.${githubRunNumber}"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         release {
-            if (signingProps['STORE_FILE'] != null) {
+            if (usePropertiesSigning) {
                 storeFile file(signingProps['STORE_FILE'])
                 storePassword signingProps['STORE_PASSWORD']
                 keyAlias signingProps['KEY_ALIAS']
                 keyPassword signingProps['KEY_PASSWORD']
             }
         }
+        debugging {
+            storeFile file('../debug.keystore')
+            keyAlias 'androiddebugkey'
+            storePassword 'android'
+            keyPassword 'android'
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debugging
+        }
         release {
-            if (signingProps['STORE_FILE'] != null) {
+            if (usePropertiesSigning) {
                 signingConfig signingConfigs.release
             } else {
-                println "CRITICAL WARNING: signing.properties is missing or STORE_FILE is null!"
+                signingConfig signingConfigs.debugging
             }
-
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
-    buildFeatures {
-        viewBinding true
-    }
-
-    // 關鍵： compileSdk 34 環境必須要求 Java 17
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+        viewBinding true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
 }
 
 dependencies {
-    // 徹底移除 1.4.0 等不支援 M3 的舊庫，全部更新為對齊手機端的現代穩定版
+    // 核心 UI / Wear 特有
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.preference:preference:1.2.1'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.recyclerview:recyclerview:1.3.2'
-
-    // 手錶端核心通訊組件（升級到 19.0.0 以配合雙端檢測）
-    implementation 'com.google.android.gms:play-services-wearable:19.0.0'
-
-    // 保留原本手錶特有的佈局庫
+    implementation 'androidx.preference:preference-ktx:1.2.1'
     implementation 'androidx.wear:wear:1.3.0'
     implementation 'androidx.percentlayout:percentlayout:1.0.0'
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
+    implementation 'androidx.core:core-ktx:1.12.0'
 
-    // =================================================================
-    // 📸 修正：CameraX 遠端沙盒組件（同步對齊 1.4.0-alpha05 確保留在庫件庫存在）
-    // =================================================================
-    def camerax_version = "1.4.0-alpha05"
+    // 通讯
+    implementation 'com.google.android.gms:play-services-wearable:19.0.0'
+
+    // CameraX 稳定版
+    def camerax_version = "1.4.2"
     implementation "androidx.camera:camera-core:${camerax_version}"
     implementation "androidx.camera:camera-camera2:${camerax_version}"
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
-    implementation "androidx.camera:camera-remote:${camerax_version}"
+    // implementation "androidx.camera:camera-remote:${camerax_version}" // 可选
+
+    // Compose
+    implementation platform('androidx.compose:compose-bom:2024.04.00')
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+
+    // Kotlin & 测试
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
