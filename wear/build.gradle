@@ -81,11 +81,6 @@ android {
     }
 }
 
-repositories {
-    google()
-    mavenCentral()
-}
-
 dependencies {
     // 核心 UI / Wear 特有
     implementation 'androidx.appcompat:appcompat:1.6.1'
