@@ -1,5 +1,6 @@
 package de.rhaeus.dndsync;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -29,33 +30,29 @@ import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import com.google.common.util.concurrent.ListenableFuture;
+import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class CameraService extends Service implements LifecycleOwner {
     private static final String TAG = "WearSync_CameraService";
-    private static final String CAMERA_STREAM_PATH = "/camera-stream";
+    private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     private static final String CHANNEL_ID = "wear_sync_camera_service_channel";
 
-    private LifecycleRegistry lifecycleRegistry;
+    private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
+    private ProcessCameraProvider cameraProvider;
     private ImageCapture imageCapture;
-    private boolean isCameraInitialized = false;
     private ExecutorService cameraExecutor;
-
-    @NonNull
-    @Override
-    public Lifecycle getLifecycle() {
-        return lifecycleRegistry;
-    }
+    private boolean isCameraInitialized = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        lifecycleRegistry = new LifecycleRegistry(this);
         lifecycleRegistry.setCurrentState(Lifecycle.State.CREATED);
         cameraExecutor = Executors.newSingleThreadExecutor();
         createNotificationChannel();
@@ -64,87 +61,66 @@ public class CameraService extends Service implements LifecycleOwner {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Wear Sync 協同相機")
-                .setContentText("正在隱蔽與手錶進行跨端影像串流...")
+                .setContentTitle("Wear Camera Sync")
+                .setContentText("后台相机预载抓取中...")
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
-        startForeground(1005, notification);
+        startForeground(2026, notification);
 
         lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
 
-        if (!isCameraInitialized) {
-            setupCameraXBackgroundPipeline();
-        }
-
         if (intent != null) {
             String action = intent.getStringExtra("action");
-            if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
-                executeCapturePhoto();
+            if ("START_CAMERA".equalsIgnoreCase(action)) {
+                if (!isCameraInitialized) initCamera();
+            } else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
+                executeSilentCapture();
             } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-                Log.d(TAG, "📥 收到手錶關閉相機指令 -> 自我銷毀釋放硬體");
                 stopSelf();
             }
         }
-
         return START_NOT_STICKY;
     }
 
-    private void setupCameraXBackgroundPipeline() {
+    private void initCamera() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(() -> {
             try {
-                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+                cameraProvider = cameraProviderFuture.get();
+                cameraProvider.unbindAll();
 
-                // 🎯 核心修正：優化解析度為正方形適合手錶（320x320），策略設為只留最新幀防止畫面堆積黑屏
+                CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
+
+                // 🎯 极致流控：锁定 160x160 配合最新帧抛弃策略，确保蓝牙极速传输，长久绝不黑屏！
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                        .setTargetResolution(new Size(320, 320))
+                        .setTargetResolution(new Size(160, 160))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
-                imageAnalysis.setAnalyzer(cameraExecutor, new ImageAnalysis.Analyzer() {
-                    private long lastFrameTime = 0;
-                    @Override
-                    public void analyze(@NonNull ImageProxy image) {
-                        long currentTime = System.currentTimeMillis();
-                        if (currentTime - lastFrameTime < 250) { // 限流控制：每秒約 4 幀，降低藍牙頻寬載荷
-                            image.close();
-                            return;
-                        }
-                        lastFrameTime = currentTime;
-                        
-                        // 🎯 核心修正：將原RGBA轉Bitmap改為高效率的內存直接轉JPEG位元組
-                        if (image.getFormat() == ImageFormat.YUV_420_888) {
-                            byte[] jpegData = yuv420ToJpeg(image);
-                            if (jpegData != null) {
-                                sendFrameToWearDirectly(jpegData);
-                            }
-                        }
-                        image.close();
-                    }
-                });
+                imageAnalysis.setAnalyzer(cameraExecutor, this::processYuvFramePacked);
 
                 imageCapture = new ImageCapture.Builder()
                         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                         .build();
 
-                CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
-                cameraProvider.unbindAll();
                 cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis, imageCapture);
-
                 isCameraInitialized = true;
-                Log.d(TAG, "📸 CameraX 背景取景與快門管線綁定成功！手機端不發光執行中");
-
+                Log.d(TAG, "✅ CameraX 硬件后置图像绑定就绪");
             } catch (Exception e) {
-                Log.e(TAG, "初始化 CameraX 失敗", e);
+                Log.e(TAG, "挂载本地相机流底座异常", e);
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    /**
-     * 🎯 高效率 YUV_420_888 內存幀直接壓縮為 JPEG 避免 OOM 與黑屏
-     */
-    private byte[] yuv420ToJpeg(ImageProxy image) {
+    @SuppressLint("UnsafeOptInUsageError")
+    private void processYuvFramePacked(@NonNull ImageProxy image) {
         try {
+            if (image.getFormat() != ImageFormat.YUV_420_888) {
+                return;
+            }
+
+            // 🎯 高性能轻量 YUV 提取
             ImageProxy.PlaneProxy[] planes = image.getPlanes();
             ByteBuffer yBuffer = planes[0].getBuffer();
             ByteBuffer uBuffer = planes[1].getBuffer();
@@ -155,73 +131,79 @@ public class CameraService extends Service implements LifecycleOwner {
             int vSize = vBuffer.remaining();
 
             byte[] nv21 = new byte[ySize + uSize + vSize];
-
             yBuffer.get(nv21, 0, ySize);
             vBuffer.get(nv21, ySize, vSize);
             uBuffer.get(nv21, ySize + vSize, uSize);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
-            // 壓縮率設為 55%，極大減小體積，保證單包不超限，不需要進行不穩定的分包拆包
-            yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 55, out);
-            return out.toByteArray();
+            // 极致画质 30% 压缩
+            yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 30, out);
+            byte[] rawBytes = out.toByteArray();
+
+            JSONObject json = new JSONObject();
+            json.put("sender", "phone");
+            json.put("type", "camera_stream");
+            json.put("base64Frame", android.util.Base64.encodeToString(rawBytes, android.util.Base64.DEFAULT));
+
+            sendUniversalBytes(json.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            Log.e(TAG, "YUV 轉 JPEG 異常", e);
-            return null;
+            Log.e(TAG, "数据帧高度压缩编码失败", e);
+        } finally {
+            // 💥 铁律：必须无条件最快速度执行 image.close()，否则硬件底层一帧阻塞就会引发系统级黑屏！
+            image.close();
         }
     }
 
-    private void sendFrameToWearDirectly(byte[] rawBytes) {
-        try {
-            List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-            for (Node node : nodes) {
-                // 直接透過主信道或子路徑安全發射單個高壓縮率幀
-                Wearable.getMessageClient(this).sendMessage(node.getId(), CAMERA_STREAM_PATH, rawBytes);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "傳輸影像幀失敗", e);
-        }
-    }
+    private void executeSilentCapture() {
+        if (imageCapture == null) return;
+        File outputDir = getExternalFilesDir(null);
+        if (outputDir == null) outputDir = getFilesDir();
+        File photoFile = new File(outputDir, "WearSync_" + System.currentTimeMillis() + ".jpg");
 
-    private void executeCapturePhoto() {
-        if (imageCapture == null) {
-            Log.e(TAG, "❌ 快門元件尚未就緒，無法拍照");
-            return;
-        }
-        File file = new File(getExternalFilesDir(null), "WearSync_" + System.currentTimeMillis() + ".jpg");
-        ImageCapture.OutputFileOptions options = new ImageCapture.OutputFileOptions.Builder(file).build();
-
-        Log.d(TAG, "📸 正在觸發實體相機快門...");
-        imageCapture.takePicture(options, ContextCompat.getMainExecutor(this), new ImageCapture.OnImageSavedCallback() {
+        ImageCapture.OutputFileOptions outputOptions = new ImageCapture.OutputFileOptions.Builder(photoFile).build();
+        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this), new ImageCapture.OnImageSavedCallback() {
             @Override
             public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
-                Log.d(TAG, "✅ 協同拍照成功！照片已無損儲存至: " + file.getAbsolutePath());
+                Log.d(TAG, "📸 远程静默拍摄图片成功，已安全存储在手机端: " + photoFile.getAbsolutePath());
             }
-
             @Override
             public void onError(@NonNull ImageCaptureException exception) {
-                Log.e(TAG, "❌ 跨端快門拍攝失敗", exception);
+                Log.e(TAG, "远程捕获实体快门失败", exception);
             }
         });
     }
 
+    private void sendUniversalBytes(byte[] data) {
+        new Thread(() -> {
+            try {
+                List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
+                for (Node node : nodes) {
+                    Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
+                }
+            } catch (Exception e) {}
+        }).start();
+    }
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, "Wear Sync Camera Service", NotificationManager.IMPORTANCE_LOW);
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Wear Sync Camera", NotificationManager.IMPORTANCE_LOW);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(channel);
         }
     }
 
+    @NonNull
+    @Override
+    public Lifecycle getLifecycle() { return lifecycleRegistry; }
+
     @Override
     public void onDestroy() {
         lifecycleRegistry.setCurrentState(Lifecycle.State.DESTROYED);
+        if (cameraProvider != null) cameraProvider.unbindAll();
+        if (cameraExecutor != null) cameraExecutor.shutdown();
         isCameraInitialized = false;
-        if (cameraExecutor != null) {
-            cameraExecutor.shutdown();
-        }
-        Log.d(TAG, "📸 CameraService 服務關閉，相機實體硬體已安全釋放");
+        Log.d(TAG, "📸 CameraService 彻底释放完毕");
         super.onDestroy();
     }
 

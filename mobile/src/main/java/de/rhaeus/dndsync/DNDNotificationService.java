@@ -1,7 +1,6 @@
 package de.rhaeus.dndsync;
 
 import android.app.Notification;
-import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -37,7 +36,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
         super.onListenerConnected();
         running = true;
         Wearable.getMessageClient(this).addListener(this);
-        Log.d(TAG, "🚀 手機端接收解析服務掛載就緒");
+        Log.d(TAG, "🚀 手机端通知监听中转中心就绪");
     }
 
     @Override
@@ -55,7 +54,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
         boolean alarmMaster = sharedPreferences.getBoolean("custom_alarm_sync_master_switch", false);
         if (!alarmMaster) return;
 
-        String allowedPkgs = sharedPreferences.getString("custom_allowed_clock_packages", "com.coloros.alarmclock,com.oplus.camera,com.google.android.deskclock,com.android.deskclock");
+        String allowedPkgs = sharedPreferences.getString("custom_allowed_clock_packages", "com.google.android.deskclock");
         boolean isTargetClock = false;
         for (String p : allowedPkgs.split(",")) {
             if (!p.trim().isEmpty() && pkg.contains(p.trim())) {
@@ -65,22 +64,15 @@ public class DNDNotificationService extends NotificationListenerService implemen
         }
 
         if (isTargetClock) {
-            String eventType = sharedPreferences.getString("alarm_event_type_select", "ringing");
             Notification notification = sbn.getNotification();
-            
-            boolean shouldTrigger = false;
-            if ("all_events".equalsIgnoreCase(eventType)) {
-                shouldTrigger = true;
-            } else {
-                if ((notification.flags & Notification.FLAG_INSISTENT) != 0 || 
-                    (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0) {
-                    shouldTrigger = true;
-                }
-            }
+            if (notification == null) return;
 
-            if (shouldTrigger) {
+            // 🎯 核心过滤：剔除闹钟通知上的预告性质（只有无法右滑清除的正在响铃状态才拉起Active）
+            if ((notification.flags & Notification.FLAG_INSISTENT) != 0 || 
+                (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0) {
+                
                 currentAlarmNotification = sbn;
-                Log.d(TAG, "🔥 觸發鬧鐘流硬聯鎖：向手錶發出同步拉起 WearAlarmActivity 廣播");
+                Log.d(TAG, "🔔 拦截到目标闹钟【真正爆发响铃】 -> 唤醒手表全屏 Active 震动框");
                 
                 try {
                     JSONObject json = new JSONObject();
@@ -99,7 +91,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
         if (sbn == null) return;
         if (currentAlarmNotification != null && sbn.getKey().equals(currentAlarmNotification.getKey())) {
             currentAlarmNotification = null;
-            Log.d(TAG, "🔔 手機端鬧鐘通知已消失 -> 向手錶發送強制關閉介面訊號");
+            Log.d(TAG, "🔔 手机端闹钟通知已被清除/消退 -> 同步通知关闭手表端 UI");
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "phone");
@@ -119,40 +111,36 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 JSONObject json = new JSONObject(jsonStr);
                 
                 String sender = json.optString("sender", "");
-                if ("phone".equalsIgnoreCase(sender)) return;
+                if ("phone".equalsIgnoreCase(sender)) return; 
 
                 String type = json.optString("type", "");
 
-                // 接收手錶端按鈕點擊，執行精準代點或強制消除
+                // 🎯 远端闹钟指令代理执行
                 if ("alarm_control".equalsIgnoreCase(type)) {
-                    String action = json.optString("action", ""); // "DISMISS" 或 "SNOOZE"
-                    Log.d(TAG, "📥 遠端代點中心收到手錶端鬧鐘動作要求: " + action);
-
-                    boolean clickSuccess = handleRemoteAlarmActionClick(action);
-                    
-                    if (clickSuccess) {
-                        Log.d(TAG, "✅ 成功透過通知欄按鈕執行代點動作");
-                    } else {
-                        Log.w(TAG, "⚠️ 字典規則未命中或代點失敗，啟用終極物理抹除防止死循環");
+                    String action = json.optString("action", ""); 
+                    Log.d(TAG, "📥 收到手表反馈代点按键動作: " + action);
+                    boolean clicked = handleRemoteAlarmActionClick(action);
+                    if (!clicked) {
+                        Log.w(TAG, "⚠️ 智能匹配未完美命中动作，执行强制取消兜底");
                         dismissAllClockNotificationsForced();
                     }
                     return;
                 }
 
-                // 轉發相機指令
-                if ("camera_action".equalsIgnoreCase(type) || "camera_control".equalsIgnoreCase(type)) {
+                // 🎯 远端相机控制中转
+                if ("camera_control".equalsIgnoreCase(type)) {
                     String action = json.optString("action", "");
-                    Intent forwardIntent = new Intent(this, CameraService.class);
-                    forwardIntent.putExtra("action", action);
+                    Log.d(TAG, "📥 手表向手机申请相机控制动作: " + action);
+                    Intent serviceIntent = new Intent(this, CameraService.class);
+                    serviceIntent.putExtra("action", action);
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        startForegroundService(forwardIntent);
+                        startForegroundService(serviceIntent);
                     } else {
-                        startService(forwardIntent);
+                        startService(serviceIntent);
                     }
-                    return;
                 }
             } catch (Exception e) {
-                Log.e(TAG, "通告監聽中轉相機指令異常", e);
+                Log.e(TAG, "手机接收层分流崩溃", e);
             }
         }
     }
@@ -161,12 +149,9 @@ public class DNDNotificationService extends NotificationListenerService implemen
         StatusBarNotification[] activeNotifications = getActiveNotifications();
         if (activeNotifications == null) return false;
 
-        String dismissConfig = sharedPreferences.getString("custom_dismiss_action_index", "關鍵字智能匹配");
-        String snoozeConfig = sharedPreferences.getString("custom_snooze_action_index", "關鍵字智能匹配");
-        String customDismissKeyword = sharedPreferences.getString("custom_dismiss_keyword_input", "").toLowerCase().trim();
-        String customSnoozeKeyword = sharedPreferences.getString("custom_snooze_keyword_input", "").toLowerCase().trim();
-
-        String allowedPkgs = sharedPreferences.getString("custom_allowed_clock_packages", "com.coloros.alarmclock,com.oplus.camera,com.google.android.deskclock,com.android.deskclock");
+        String dismissConfig = sharedPreferences.getString("custom_dismiss_action_index", "智能匹配");
+        String snoozeConfig = sharedPreferences.getString("custom_snooze_action_index", "智能匹配");
+        String allowedPkgs = sharedPreferences.getString("custom_allowed_clock_packages", "com.google.android.deskclock");
 
         for (StatusBarNotification sbn : activeNotifications) {
             String pkg = sbn.getPackageName();
@@ -182,40 +167,33 @@ public class DNDNotificationService extends NotificationListenerService implemen
                 Notification notification = sbn.getNotification();
                 if (notification.actions == null || notification.actions.length == 0) continue;
 
-                if ("DISMISS".equals(action) && dismissConfig.contains("第")) {
+                // 1. 优先执行数字索引定位点击
+                if ("DISMISS".equals(action) && !dismissConfig.contains("智能")) {
                     return performIndexedClick(notification.actions, dismissConfig);
                 }
-                if ("SNOOZE".equals(action) && snoozeConfig.contains("第")) {
+                if ("SNOOZE".equals(action) && !snoozeConfig.contains("智能")) {
                     return performIndexedClick(notification.actions, snoozeConfig);
                 }
 
+                // 2. 智能文字关键字匹配
                 for (Notification.Action act : notification.actions) {
                     if (act.title == null || act.actionIntent == null) continue;
                     String titleStr = act.title.toString().toLowerCase().trim();
 
                     if ("DISMISS".equals(action)) {
-                        if ("自定義輸入關鍵字".equals(dismissConfig) && !customDismissKeyword.isEmpty() && titleStr.contains(customDismissKeyword)) {
-                            return sendActionIntent(act);
-                        }
-                        if ("關鍵字智能匹配".equals(dismissConfig) && (titleStr.contains("停") || titleStr.contains("關") || titleStr.contains("关") || titleStr.contains("dismiss") || titleStr.contains("跳过"))) {
+                        if (titleStr.contains("停") || titleStr.contains("关") || titleStr.contains("dismiss") || titleStr.contains("跳过") || titleStr.contains("关闭")) {
                             return sendActionIntent(act);
                         }
                     }
-
                     if ("SNOOZE".equals(action)) {
-                        if ("自定義輸入關鍵字".equals(snoozeConfig) && !customSnoozeKeyword.isEmpty() && titleStr.contains(customSnoozeKeyword)) {
-                            return sendActionIntent(act);
-                        }
-                        if ("關鍵字智能匹配".equals(snoozeConfig) && (titleStr.contains("稍") || titleStr.contains("延") || titleStr.contains("snooze") || titleStr.contains("再响"))) {
+                        if (titleStr.contains("稍") || titleStr.contains("延") || titleStr.contains("snooze") || titleStr.contains("再响") || titleStr.contains("稍后")) {
                             return sendActionIntent(act);
                         }
                     }
                 }
                 
-                if ("DISMISS".equals(action) && "關鍵字智能匹配".equals(dismissConfig)) {
-                    Log.w(TAG, "⚠️ 字典規則未命中，執行首個按鈕兜底發射");
-                    return sendActionIntent(notification.actions[0]);
-                }
+                // 3. 终极大保底
+                return sendActionIntent(notification.actions[0]);
             }
         }
         return false;
@@ -223,27 +201,20 @@ public class DNDNotificationService extends NotificationListenerService implemen
 
     private boolean performIndexedClick(Notification.Action[] actions, String configStr) {
         try {
-            int index = 0;
-            if (configStr.contains("1")) index = 0;
-            else if (configStr.contains("2")) index = 1;
-            else if (configStr.contains("3")) index = 2;
-
-            if (actions.length > index && actions[index].actionIntent != null) {
-                return sendActionIntent(actions[index]);
+            int index = Integer.parseInt(configStr.replaceAll("[^0-9]", "")) - 1;
+            if (index >= 0 && index < actions.length && actions[index].actionIntent != null) {
+                actions[index].actionIntent.send();
+                return true;
             }
-        } catch (Exception e) {
-            Log.e(TAG, "索引點擊異常", e);
-        }
+        } catch (Exception e) {}
         return false;
     }
 
     private boolean sendActionIntent(Notification.Action action) {
         try {
             action.actionIntent.send();
-            Log.d(TAG, "🎯 成功觸發手機通知按鈕點擊: " + action.title);
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "發射 ActionIntent 失敗", e);
             return false;
         }
     }
@@ -252,25 +223,12 @@ public class DNDNotificationService extends NotificationListenerService implemen
         try {
             StatusBarNotification[] activeNotifications = getActiveNotifications();
             if (activeNotifications == null) return;
-            String allowedPkgs = sharedPreferences.getString("custom_allowed_clock_packages", "com.coloros.alarmclock,com.oplus.camera,com.google.android.deskclock,com.android.deskclock");
-
             for (StatusBarNotification sbn : activeNotifications) {
-                String pkg = sbn.getPackageName();
-                boolean isTargetClock = false;
-                for (String p : allowedPkgs.split(",")) {
-                    if (!p.trim().isEmpty() && pkg.contains(p.trim())) {
-                        isTargetClock = true;
-                        break;
-                    }
-                }
-                if (isTargetClock) {
+                if (sbn.getPackageName().contains("clock") || sbn.getPackageName().contains("alarm")) {
                     cancelNotification(sbn.getKey());
-                    Log.d(TAG, "💥 規則完全未命中，已在手機端強制 cancelNotification 摧毀通知");
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "暴力清除鬧鐘通知異常", e);
-        }
+        } catch (Exception e) {}
     }
 
     private void sendJsonMessage(String jsonStr) {
@@ -280,11 +238,10 @@ public class DNDNotificationService extends NotificationListenerService implemen
             try {
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
                 for (Node node : nodes) {
-                    // 🎯 這裡已修正為 node.getId() 確保編繹通過
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "藍牙發送失敗", e);
+                Log.e(TAG, "蓝牙发送异常", e);
             }
         }).start();
     }
