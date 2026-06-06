@@ -1,103 +1,68 @@
-package de.rhaeus.dndsync;
+package de.rhaeus.dndsync
 
-import android.app.Activity;
-import android.content.Context;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.PowerManager;
-import android.util.Log;
-import android.view.WindowManager;
-import android.widget.ImageButton;
-import android.widget.ImageView;
-import com.google.android.gms.tasks.Tasks;
-import com.google.android.gms.wearable.MessageClient;
-import com.google.android.gms.wearable.MessageEvent;
-import com.google.android.gms.wearable.Node;
-import com.google.android.gms.wearable.Wearable;
-import org.json.JSONObject;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
+import android.os.Bundle
+import android.widget.Button
+import androidx.activity.ComponentActivity
+import androidx.camera.remote.RemoteCameraClient
+import androidx.camera.remote.RemoteCameraControl
+import androidx.camera.remote.RemoteView
+import androidx.wear.widget.BoxInsetLayout
 
-public class WearCameraActivity extends Activity {
-    private static final String TAG = "WearCameraActivity";
-    private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
-    
-    private ImageView previewImage;
-    private ImageButton btnCapture;
-    private PowerManager.WakeLock wakeLock = null;
+class WearCameraActivity : ComponentActivity() {
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    private lateinit var remoteCameraClient: RemoteCameraClient
+    private var remoteCameraControl: RemoteCameraControl? = null
+    private lateinit var remoteView: RemoteView
 
-        // 核心修复 3（解决黑屏）：在 setContentView 之前向系统强制注入全高亮、解锁、置顶视窗标志位
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true);
-            setTurnScreenOn(true);
-        } else {
-            getWindow().addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            );
-        }
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
 
-        setContentView(R.layout.activity_wear_camera);
+        // 建立穿戴端標準滿版沙盒佈局
+        val layout = BoxInsetLayout(this)
+        setContentView(layout)
 
-        previewImage = findViewById(R.id.preview_image);
-        btnCapture = findViewById(R.id.btn_capture);
+        // 1. 初始化遠端即時取景器元件 (渲染手機相機流)
+        remoteView = RemoteView(this)
+        layout.addView(remoteView)
 
-        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        if (pm != null) {
-            wakeLock = pm.newWakeLock(
-                PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
-                "WearSync:ForceCameraInteractive"
-            );
+        // 2. 初始化穿戴跨端聯動客戶端
+        remoteCameraClient = RemoteCameraClient(this)
+
+        // 3. 綁定手機端相機流到手錶取景器，並獲取反向控制權
+        remoteCameraClient.bindPreview(remoteView) { control ->
+            remoteCameraControl = control
         }
 
-        // 核心修复 3（解决点击失效）：强制让整个按钮视图链条取得硬件物理焦点
-        btnCapture.setFocusable(true);
-        btnCapture.setFocusableInTouchMode(true);
-        btnCapture.setOnClickListener(v -> {
-            Log.d(TAG, "手錶端拍照按钮响应成功，正在向手机回传物理快门信号！");
-            sendActionToPhone("TAKE_PICTURE");
-        });
-    }
-
-    private void sendActionToPhone(String actionName) {
-        new Thread(() -> {
-            try {
-                JSONObject json = new JSONObject();
-                json.put("sender", "wear");
-                json.put("type", "camera_control");
-                json.put("action", actionName);
-                byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
-
-                List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-                for (Node node : nodes) {
-                    Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
+        // 4. 原生藍牙快門按鈕
+        val button = Button(this).apply {
+            text = "拍照"
+            setOnClickListener {
+                remoteCameraControl?.takePicture { success ->
+                    if (success) {
+                        // 📸 拍照成功後，精準連帶退出手錶端 App 介面，絕不留殘留
+                        cleanUpAndFinish()
+                    }
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "反向发送控制指令失败", e);
             }
-        }).start();
+        }
+        layout.addView(button)
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (wakeLock != null && !wakeLock.isHeld()) {
-            wakeLock.acquire(10000); 
-        }
-        // 二次强刷视图焦点，彻底消灭 viewVisibility=8 的系统级黑底降维现象
-        getWindow().getDecorView().requestFocus();
+    private fun cleanUpAndFinish() {
+        try {
+            // 解除取景器流綁定
+            remoteCameraClient.close()
+        } catch (e: Exception) {}
+        finishAndRemoveTask() // 👈 乾淨利落銷毀任務樹，徹底回退
     }
 
-    @Override
-    protected void onPause() {
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
-        }
-        super.onPause();
+    override fun onBackPressed() {
+        cleanUpAndFinish()
+        super.onBackPressed()
+    }
+
+    override fun onDestroy() {
+        cleanUpAndFinish()
+        super.onDestroy()
     }
 }
