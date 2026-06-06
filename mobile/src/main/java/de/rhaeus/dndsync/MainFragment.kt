@@ -1,9 +1,11 @@
 package de.rhaeus.dndsync
 
+import android.Manifest
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -12,6 +14,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -29,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import com.google.android.gms.tasks.Tasks
@@ -45,6 +49,17 @@ class MainFragment : Fragment() {
 
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
     private lateinit var sharedPreferences: SharedPreferences
+
+    // 🎯 安全注入：相機硬體權限動態回調（當用戶允許後，可以即時刷新狀態並點擊開啟相機）
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Log.d("WearSync_Main", "✅ 協同相機所需權限已成功獲得用戶授權")
+        } else {
+            Toast.makeText(context, "未獲得相機權限，穿戴雙端遠端鏡頭功能將無法正常工作", Toast.LENGTH_LONG).show()
+        }
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreateView(
@@ -116,7 +131,6 @@ class MainFragment : Fragment() {
                     var allowedCameraPackages by remember(trigger) { 
                         mutableStateOf(sharedPreferences.getString("custom_allowed_camera_packages", "com.oplus.camera") ?: "com.oplus.camera") 
                     }
-
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -236,7 +250,7 @@ class MainFragment : Fragment() {
 
                                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                                     
-                                     // 停止按鈕映射設置
+                                    // 停止按鈕映射設置
                                     Text("⌚ 手錶端點擊【停止】對應手機通知的哪個按鈕：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                     Box(modifier = Modifier.fillMaxWidth()) {
                                         OutlinedButton(
@@ -316,7 +330,6 @@ class MainFragment : Fragment() {
                                 }
                             }
                         }
-
                         // 3. 同步相機板塊
                         Text(text = "遠端相機取景投射沙盒", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                         Card(shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -347,10 +360,25 @@ class MainFragment : Fragment() {
                                     Button(
                                         onClick = { 
                                             if (isConnected) {
+                                                // 🎯 權限安全檢查：如果手機端還未被授予物理相機權限，直接阻斷並發起動態彈窗
+                                                if (ContextCompat.checkSelfPermission(currentContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                                    return@Button
+                                                }
+
                                                 // 1. 告訴手錶拉起手錶端取景 Activity
                                                 sendWakeupSignalToWearCamera(currentContext)
                                                 
-                                                // 2. 向手機本地服務發送廣播指令，在後台隱蔽開啟相機
+                                                // 2. 🎯 回歸新架構核心：在手機本機背景隱蔽啟動 CameraX 影像分析數據流服務
+                                                try {
+                                                    val serviceIntent = Intent(currentContext, CameraService::class.java)
+                                                    currentContext.startService(serviceIntent)
+                                                    Log.d("WearSync_Main", "📸 已成功拉起本機 CameraService 背景影像串流")
+                                                } catch (e: Exception) {
+                                                    Log.e("WearSync_Main", "啟動本機 CameraService 失敗", e)
+                                                }
+
+                                                // 3. 向穿戴節點發送相機開啟連動通知
                                                 Thread {
                                                     try {
                                                         val json = JSONObject().apply {
@@ -515,4 +543,3 @@ class MainFragment : Fragment() {
         capabilityChangedListener?.let { Wearable.getCapabilityClient(context).removeListener(it) }
     }
 }
-                                   
