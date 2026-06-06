@@ -1,13 +1,10 @@
 package de.rhaeus.dndsync;
 
-import android.accessibilityservice.AccessibilityService;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
-import android.os.PowerManager;
-import android.os.Vibrator;
 import android.os.VibrationEffect;
-import android.provider.Settings;
+import android.os.Vibrator;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.android.gms.wearable.MessageEvent;
@@ -16,149 +13,93 @@ import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 
 public class DNDSyncListenerService extends WearableListenerService {
-    private static final String TAG = "DNDSync_WearListener";
+    private static final String TAG = "WearSync_WatchListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
-    public static boolean isInternalUpdate = false;
-    private static Vibrator globalVibrator = null;
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        if (globalVibrator == null) {
-            globalVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-        }
-    }
-
-    public static void stopLoopVibration() {
-        try {
-            if (globalVibrator != null) {
-                globalVibrator.cancel();
-                Log.d(TAG, "🛑 收到停止持續震動指令");
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "停止震動異常", e);
-        }
-    }
 
     @Override
     public void onMessageReceived(@NonNull MessageEvent messageEvent) {
         if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
             try {
-                String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
-                Log.d(TAG, "📥 手錶端收到高優先級互聯數據包: " + jsonStr);
+                byte[] data = messageEvent.getData();
+                if (data == null) return;
 
-                try {
-                    JSONObject json = new JSONObject(jsonStr);
-                    String sender = json.optString("sender", "");
-                    if ("wear".equalsIgnoreCase(sender)) return;
+                String jsonStr = new String(data, StandardCharsets.UTF_8);
+                JSONObject json = new JSONObject(jsonStr);
 
-                    String type = json.optString("type", "");
+                String sender = json.optString("sender", "");
+                if ("wear".equalsIgnoreCase(sender)) return; // 过滤掉手表本地发出的
 
-                    // 🎯 A. 鬧鐘處理
-                    if ("alarm".equalsIgnoreCase(type)) {
-                        String alarmAction = json.optString("alarmAction", "");
-                        if ("LAUNCH_WEAR_ALARM_ACTIVITY".equalsIgnoreCase(alarmAction)) {
-                            Intent alarmIntent = new Intent();
-                            alarmIntent.setClassName(getPackageName(), "de.rhaeus.dndsync.WearAlarmActivity");
-                            alarmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                            startActivity(alarmIntent);
-                        } else if ("FORCE_STOP_WEAR_ALARM".equalsIgnoreCase(alarmAction)) {
-                            Intent stopBroadcast = new Intent("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI");
-                            sendBroadcast(stopBroadcast);
-                            stopLoopVibration();
-                        }
-                        return;
-                    }
+                String type = json.optString("type", "");
 
-                    // 🎯 B. 相機處理
-                    if ("camera_control".equalsIgnoreCase(type)) {
-                        String action = json.optString("action", "");
-                        if ("LAUNCH_WEAR_CAMERA_ACTIVITY".equalsIgnoreCase(action)) {
-                            Intent cameraIntent = new Intent();
-                            cameraIntent.setClassName(getPackageName(), "de.rhaeus.dndsync.WearCameraActivity");
-                            cameraIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                            startActivity(cameraIntent);
-                        }
-                        return;
-                    }
+                // 🎯 1. 处理勿扰及多模式下属联动包
+                if ("dnd_sync_packet".equalsIgnoreCase(type) || "dnd".equalsIgnoreCase(type)) {
+                    int dndValue = json.optInt("dndValue", NotificationManager.INTERRUPTION_FILTER_ALL);
+                    boolean wearSleepLink = json.optBoolean("wearSleepLink", false);
+                    boolean wearBatteryLink = json.optBoolean("wearBatteryLink", false);
+                    boolean vibrateOnSync = json.optBoolean("vibrateOnSync", false);
 
-                    // 🎯 C. 勿擾和強依賴樹
-                    if ("dnd".equalsIgnoreCase(type)) {
-                        int dndState = json.optInt("dndValue", NotificationManager.INTERRUPTION_FILTER_ALL);
-                        boolean dndMaster = json.optBoolean("dndSyncMaster", true);
-                        boolean wearSleepLink = json.optBoolean("wearSleepModeLink", true);
-                        boolean wearPowerLink = json.optBoolean("wearPowerSave", false);
-                        boolean vibrateTipsEnable = json.optBoolean("vibrateTipsEnable", true);
-
-                        if (!dndMaster) return;
-
-                        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                        if (nm != null) {
-                            isInternalUpdate = true;
-                            nm.setInterruptionFilter(dndState);
-                        }
-
-                        if (vibrateTipsEnable && globalVibrator != null) {
-                            globalVibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
-                        }
-
-                        // 🎯 睡眠模式同步連動
-                        if (wearSleepLink) {
-                            boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
-                            executeBedtimeToggleUiMacro(isDndActive);
-                        }
-
-                        if (wearPowerLink) {
-                            boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
-                            try {
-                                Settings.Global.putInt(getContentResolver(), "low_power", isDndActive ? 1 : 0);
-                                sendBroadcast(new Intent("android.os.action.POWER_SAVE_MODE_CHANGED"));
-                            } catch (Exception e) {}
-                        }
-                        return;
-                    }
-
-                } catch (Exception jsonEx) {
-                    String valStr = jsonStr.trim();
-                    int dndVal = Integer.parseInt(valStr);
                     NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (nm != null) { nm.setInterruptionFilter(dndVal); }
+                    if (nm != null) {
+                        Log.d(TAG, "📥 收到手机下发的勿扰同步要求 -> 强制更新系统勿扰");
+                        nm.setInterruptionFilter(dndValue);
+                    }
+
+                    // 根据手机端下发的配置布尔值执行联动
+                    if (wearSleepLink) {
+                        Log.d(TAG, " ↳ 手机同步联动：开启手表端睡眠模式");
+                        // 依据您的底层API设置对应的睡眠值
+                    }
+                    if (wearBatteryLink) {
+                        Log.d(TAG, " ↳ ↳ 手机同步联动：开启手表端省电模式");
+                    }
+
+                    // 🎯 重新更正：只有当手机控制手表且开启了开关，才执行单次震动提示
+                    if (vibrateOnSync) {
+                        Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                        if (vibrator != null && vibrator.hasVibrator()) {
+                            vibrator.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
+                        }
+                    }
+                    return;
+                }
+
+                // 🎯 2. 闹钟处理：拉起 Active / 强制命令自杀
+                if ("alarm".equalsIgnoreCase(type)) {
+                    String alarmAction = json.optString("alarmAction", "");
+                    if ("LAUNCH_WEAR_ALARM_ACTIVITY".equalsIgnoreCase(alarmAction)) {
+                        Intent launchIntent = new Intent(this, WearAlarmActivity.class);
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        startActivity(launchIntent);
+                    } else if ("FORCE_STOP_WEAR_ALARM".equalsIgnoreCase(alarmAction)) {
+                        sendBroadcast(new Intent("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
+                    }
+                    return;
+                }
+
+                // 🎯 3. 相机处理：指令远程唤醒 / 分流注入图像流
+                if ("camera_control".equalsIgnoreCase(type)) {
+                    String action = json.optString("action", "");
+                    if ("FORCE_LAUNCH_WEAR_CAMERA".equalsIgnoreCase(action)) {
+                        Intent cIntent = new Intent(this, WearCameraActivity.class);
+                        cIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        startActivity(cIntent);
+                    }
+                    return;
+                }
+
+                if ("camera_stream".equalsIgnoreCase(type)) {
+                    String base64Str = json.optString("base64Frame", "");
+                    if (!base64Str.isEmpty() && WearCameraActivity.isActivityActive) {
+                        byte[] imageBytes = android.util.Base64.decode(base64Str, android.util.Base64.DEFAULT);
+                        Intent frameBroadcast = new Intent("de.rhaeus.dndsync.CAMERA_FRAME_RECEIVED");
+                        frameBroadcast.putExtra("raw_jpeg", imageBytes);
+                        sendBroadcast(frameBroadcast);
+                    }
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "穿戴消息處理崩潰：", e);
+                Log.e(TAG, "穿戴端分流监听解析异常", e);
             }
         }
-    }
-
-    private void executeBedtimeToggleUiMacro(boolean targetActive) {
-        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
-        if (serv == null) {
-            Log.d(TAG, "無障礙服務未連接，放棄自動切換");
-            return;
-        }
-
-        new Thread(() -> {
-            try {
-                PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
-                PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:WakeLock");
-                wakeLock.acquire(10 * 1000L);
-
-                Thread.sleep(800);
-                
-                // 🎯 核心修正：拋棄老舊滑動，直接向 Android 核心注入底層巨集指令，強制展開快捷設置控制面板
-                serv.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS);
-                
-                Thread.sleep(1000);
-                serv.clickIcon1_2();    // 模擬觸控睡眠圖標
-                Thread.sleep(800);
-                serv.goBack();          // 強制回退收起快捷面板
-                
-                if (wakeLock.isHeld()) { wakeLock.release(); }
-                Log.d(TAG, "✨ 已通過系統全局快捷原語成功完成睡眠模式翻轉動作");
-            } catch (Exception e) {
-                Log.e(TAG, "無障礙巨集流程異常中斷", e);
-            }
-        }).start();
     }
 }

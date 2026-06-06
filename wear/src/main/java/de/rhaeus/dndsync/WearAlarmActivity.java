@@ -30,8 +30,8 @@ public class WearAlarmActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             if ("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI".equals(intent.getAction())) {
-                Log.d(TAG, "收到自毀信號，強制連帶退出手錶App介面");
-                cleanUpAndFinishWithHardKill();
+                Log.d(TAG, "收到外界通知层解除信号 -> 连带退出App界面");
+                cleanUpAndFinish();
             }
         }
     };
@@ -40,18 +40,8 @@ public class WearAlarmActivity extends Activity {
         @Override
         public void run() {
             if (isVibrating && activityVibrator != null) {
-                try {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        long[] timings = new long[]{0, 600, 300, 600};
-                        int[] amplitudes = new int[]{0, 255, 0, 255};
-                        activityVibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1));
-                    } else {
-                        activityVibrator.vibrate(1000);
-                    }
-                } catch (Exception e) {}
-                if (vibrationHandler != null) {
-                    vibrationHandler.postDelayed(this, 1800);
-                }
+                activityVibrator.vibrate(VibrationEffect.createOneShot(400, VibrationEffect.DEFAULT_AMPLITUDE));
+                vibrationHandler.postDelayed(this, 800);
             }
         }
     };
@@ -60,37 +50,33 @@ public class WearAlarmActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
+        // 强行锁屏亮屏弹起
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-                             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
-                             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                             WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
 
-        setContentView(R.layout.activity_wear_alarm);
+        setContentView(R.layout.activity_wear_alarm); // 确保手表端具备该布局
 
-        vibrationHandler = new Handler(Looper.getMainLooper());
+        Button btnDismiss = findViewById(R.id.btn_wear_dismiss);
+        Button btnSnooze = findViewById(R.id.btn_wear_snooze);
+
         activityVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        vibrationHandler = new Handler(Looper.getMainLooper());
         isVibrating = true;
         vibrationHandler.post(vibrationRunnable);
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"), Context.RECEIVER_EXPORTED);
-        } else {
-            registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
-        }
 
-        Button btnDismiss = findViewById(R.id.btn_dismiss);
+        registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
+
         if (btnDismiss != null) {
             btnDismiss.setOnClickListener(v -> {
                 sendControlActionToPhone("DISMISS");
-                cleanUpAndFinishWithHardKill(); // 🎯 核心修正：連帶徹底自殺式退出
+                cleanUpAndFinish(); // 👈 点击后立即自我彻底销毁任务树
             });
         }
-
-        Button btnSnooze = findViewById(R.id.btn_snooze);
         if (btnSnooze != null) {
             btnSnooze.setOnClickListener(v -> {
                 sendControlActionToPhone("SNOOZE");
-                cleanUpAndFinishWithHardKill(); // 🎯 核心修正：連帶徹底自殺式退出
+                cleanUpAndFinish(); // 👈 点击后立即自我彻底销毁任务树
             });
         }
     }
@@ -113,32 +99,17 @@ public class WearAlarmActivity extends Activity {
         }).start();
     }
 
-    /**
-     * 🎯 核心修正：乾淨清除震動硬體、取消廣播，並強制終止進程防止殘留
-     */
-    private void cleanUpAndFinishWithHardKill() {
+    private void cleanUpAndFinish() {
         isVibrating = false;
-        if (vibrationHandler != null) {
-            vibrationHandler.removeCallbacks(vibrationRunnable);
-        }
-        if (activityVibrator != null) {
-            activityVibrator.cancel();
-        }
-        try {
-            unregisterReceiver(stopReceiver);
-        } catch (Exception e) {}
-        
-        // 銷毀任務棧
-        finishAndRemoveTask();
-        
-        // 核心強殺：直接從作業系統內核抹除當前進程，杜絕界面殘留
-        android.os.Process.killProcess(android.os.Process.myPid());
-        System.exit(0);
+        if (vibrationHandler != null) vibrationHandler.removeCallbacks(vibrationRunnable);
+        if (activityVibrator != null) activityVibrator.cancel();
+        try { unregisterReceiver(stopReceiver); } catch (Exception e) {}
+        finishAndRemoveTask(); // 干净撤离，绝不驻留任何影子进程
     }
 
     @Override
     protected void onDestroy() {
-        cleanUpAndFinishWithHardKill();
+        cleanUpAndFinish();
         super.onDestroy();
     }
 }
