@@ -9,88 +9,38 @@ import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
 import androidx.annotation.NonNull;
-import androidx.camera.lifecycle.ProcessCameraProvider;
-import androidx.camera.core.CameraSelector;
-import androidx.camera.core.ImageCapture;
-import androidx.camera.core.ImageCaptureException;
-import androidx.camera.remote.RemoteCameraRegistry;
-import androidx.lifecycle.Lifecycle;
-import androidx.lifecycle.LifecycleOwner;
-import androidx.lifecycle.LifecycleRegistry;
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageClient;
 import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import org.json.JSONObject;
-import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-// 讓 Service 實現 LifecycleOwner，這樣 CameraX 就能在無 UI 的後台順利綁定生命週期
-public class DNDNotificationService extends NotificationListenerService implements MessageClient.OnMessageReceivedListener, LifecycleOwner {
+public class DNDNotificationService extends NotificationListenerService implements MessageClient.OnMessageReceivedListener {
     private static final String TAG = "WearSync_PhoneService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     
     public static StatusBarNotification currentAlarmNotification = null;
     public static boolean running = false;
-    
-    private ImageCapture imageCapture;
-    private LifecycleRegistry lifecycleRegistry;
-
-    @NonNull
-    @Override
-    public Lifecycle getLifecycle() {
-        return lifecycleRegistry;
-    }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        lifecycleRegistry = new LifecycleRegistry(this);
-        lifecycleRegistry.setCurrentState(Lifecycle.State.CREATED);
     }
 
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
         running = true;
-        lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
         Wearable.getMessageClient(this).addListener(this);
         Log.d(TAG, "🚀 手機端接收解析服務掛載就緒");
-    }
-
-    // 當手錶要求開啟相機時，手機端默默在後台初始化相機硬體，不顯示任何手機畫面
-    private void setupBackgroundCamera() {
-        try {
-            ProcessCameraProvider.getInstance(this).addListener(() -> {
-                try {
-                    ProcessCameraProvider cameraProvider = ProcessCameraProvider.getInstance(this).get();
-                    
-                    // 僅配置拍照組件，完全不配置手機端 Preview，確保手機端沒有畫面，也不會產生硬體獨佔衝突
-                    imageCapture = new ImageCapture.Builder().build();
-                    CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
-
-                    // 綁定到服務生命週期
-                    cameraProvider.unbindAll();
-                    cameraProvider.bindToLifecycle(this, cameraSelector, imageCapture);
-
-                    // 向穿戴端核心註冊，此時底層流會自動對接到手錶端的 RemoteView
-                    RemoteCameraRegistry.getInstance(this).registerCamera(cameraProvider, cameraSelector);
-                    Log.d(TAG, "📸 CameraX 後台取景數據流已就緒，手機端無畫面隱蔽執行中");
-                } catch (Exception e) {
-                    Log.e(TAG, "後台相機綁定失敗", e);
-                }
-            }, getMainExecutor());
-        } catch (Exception e) {
-            Log.e(TAG, "獲取 CameraProvider 失敗", e);
-        }
     }
 
     @Override
     public void onListenerDisconnected() {
         Wearable.getMessageClient(this).removeListener(this);
-        lifecycleRegistry.setCurrentState(Lifecycle.State.DESTROYED);
         running = false;
         super.onListenerDisconnected();
     }
@@ -189,34 +139,40 @@ public class DNDNotificationService extends NotificationListenerService implemen
 
                 String type = json.optString("type", "");
                 
-                // 当收到手表的拉起请求时，初始化后台不发光相机数据流
+                // 🎯 完美流轉新相機架構：當在通告監聽內收到手錶拉起相機請求，直接安全拉起專門負責鏡頭流的 CameraService
                 if ("camera_control".equalsIgnoreCase(type) && "REQUEST_LAUNCH_CAMERA".equalsIgnoreCase(json.optString("action"))) {
-                    setupBackgroundCamera();
-                    return;
-                }
-
-                // 響應手錶端的快門拍照要求
-                if ("camera_action".equalsIgnoreCase(type) && "TAKE_PICTURE".equalsIgnoreCase(json.optString("action"))) {
-                    if (imageCapture != null) {
-                        File file = new File(getExternalFilesDir(null), "WearSync_" + System.currentTimeMillis() + ".jpg");
-                        ImageCapture.OutputFileOptions options = new ImageCapture.OutputFileOptions.Builder(file).build();
-                        imageCapture.takePicture(options, getMainExecutor(), new ImageCapture.OnImageSavedCallback() {
-                            @Override 
-                            public void onImageSaved(@NonNull ImageCapture.OutputFileResults res) { 
-                                Log.d(TAG, "📸 協同拍照成功！照片儲存至: " + file.getAbsolutePath()); 
-                            }
-                            @Override 
-                            public void onError(@NonNull ImageCaptureException e) {
-                                Log.e(TAG, "拍照失敗", e);
-                            }
-                        });
+                    Log.d(TAG, "📥 通告監聽接收到開啟相機信號 -> 拉起本機獨立 CameraService");
+                    try {
+                        Intent serviceIntent = new Intent(this, CameraService.class);
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            startForegroundService(serviceIntent);
+                        } else {
+                            startService(serviceIntent);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "拉起獨立 CameraService 失敗", e);
                     }
                     return;
                 }
 
+                // 🎯 完美流轉新相機架構：收到拍照或關閉訊號時，一律轉交給正在運行的 CameraService 執行拍照
+                if ("camera_action".equalsIgnoreCase(type) || "camera_control".equalsIgnoreCase(type)) {
+                    String action = json.optString("action", "");
+                    Log.d(TAG, "📥 通告監聽收到相機動作要求 -> 轉發至 CameraService: " + action);
+                    try {
+                        Intent forwardIntent = new Intent(this, CameraService.class);
+                        forwardIntent.putExtra("action", action);
+                        startService(forwardIntent);
+                    } catch (Exception e) {
+                        Log.e(TAG, "轉發動作到 CameraService 失敗", e);
+                    }
+                    return;
+                }
+
+                // 處理手錶回傳的鬧鐘交互代點控制
                 if ("alarm_control".equalsIgnoreCase(type)) {
                     String action = json.optString("action", "");
-                    Log.d(TAG, "📥 收到手錶傳回的精準控制要求: " + action);
+                    Log.d(TAG, "📥 通告監聽收到手錶傳回的精準鬧鐘要求: " + action);
                     
                     if (currentAlarmNotification != null) {
                         Notification.Action[] actions = currentAlarmNotification.getNotification().actions;
@@ -227,7 +183,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
                             if ("DISMISS".equalsIgnoreCase(action)) {
                                 rule = prefs.getString("custom_dismiss_action_index", "關鍵字智能匹配");
                             } else {
-                                rule = prefs.getString("custom_snooze_action_index", "關鍵字智能匹配");
+                                rule = prefs.getString("custom_snooze_action_index", "關鍵年智能匹配");
                             }
 
                             boolean executed = false;
@@ -277,6 +233,7 @@ public class DNDNotificationService extends NotificationListenerService implemen
                         exitJson.put("sender", "phone");
                         exitJson.put("type", "alarm");
                         exitJson.put("alarmAction", "FORCE_STOP_WEAR_ALARM");
+                        exitJson.put("timestamp", System.currentTimeMillis());
                         sendJsonMessage(exitJson.toString());
                     } catch (Exception e) {}
                 }
