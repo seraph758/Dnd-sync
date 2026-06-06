@@ -16,13 +16,15 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import com.google.android.gms.tasks.Tasks;
+import com.google.android.gms.wearable.MessageClient;
+import com.google.android.gms.wearable.MessageEvent;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-public class WearCameraActivity extends Activity {
+public class WearCameraActivity extends Activity implements MessageClient.OnMessageReceivedListener {
     private static final String TAG = "WearSync_CameraActivity";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     
@@ -34,26 +36,10 @@ public class WearCameraActivity extends Activity {
     private int countdownSeconds = 3;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    private final BroadcastReceiver frameReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if ("de.rhaeus.dndsync.CAMERA_FRAME_RECEIVED".equals(intent.getAction())) {
-                byte[] rawJpeg = intent.getByteArrayExtra("raw_jpeg");
-                if (rawJpeg != null && frameImageView != null) {
-                    Bitmap bitmap = BitmapFactory.decodeByteArray(rawJpeg, 0, rawJpeg.length);
-                    if (bitmap != null) {
-                        frameImageView.setImageBitmap(bitmap);
-                    }
-                }
-            }
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // 动态选择布局：优先查找全功能相机布局，若没有则回退到系统简易视图
         int layoutId = getResources().getIdentifier("activity_wear_camera", "layout", getPackageName());
         if (layoutId != 0) {
             setContentView(layoutId);
@@ -61,7 +47,7 @@ public class WearCameraActivity extends Activity {
             setContentView(android.R.layout.activity_list_item);
         }
 
-        // 🎯 动态获取组件 ID，如果找不到（返回0），则给予安全容错，防止编译与运行崩溃
+        // 🎯 动态获取组件 ID，即使 XML 内命名稍有差异也绝不报错崩溃
         int imgViewId = getResources().getIdentifier("camera_frame_view", "id", getPackageName());
         int countId = getResources().getIdentifier("tv_wear_countdown", "id", getPackageName());
         int capBtnId = getResources().getIdentifier("btn_wear_capture", "id", getPackageName());
@@ -69,22 +55,33 @@ public class WearCameraActivity extends Activity {
 
         if (imgViewId != 0) frameImageView = findViewById(imgViewId);
         if (countId != 0) tvCountdown = findViewById(countId);
-        
         if (capBtnId != 0) {
             btnCapture = findViewById(capBtnId);
-            btnCapture.setOnClickListener(v -> triggerThreeSecondShootMacro());
+            if (btnCapture != null) btnCapture.setOnClickListener(v -> triggerThreeSecondShootMacro());
         }
-        
         if (closeBtnId != 0) {
             Button btnClose = findViewById(closeBtnId);
             if (btnClose != null) btnClose.setOnClickListener(v -> finish());
         }
 
         isActivityActive = true;
-        registerReceiver(frameReceiver, new IntentFilter("de.rhaeus.dndsync.CAMERA_FRAME_RECEIVED"));
-
-        // 启动远程相机静默服务
+        // 🎯 通过 MessageClient 注册接收图像流和信令
+        Wearable.getMessageClient(this).addListener(this);
         sendActionToPhone("START_CAMERA");
+    }
+
+    @Override
+    public void onMessageReceived(MessageEvent messageEvent) {
+        // 接收手机端 CameraService 丢过来的相机压缩帧
+        if (messageEvent.getPath().startsWith("/camera-stream") && frameImageView != null) {
+            byte[] rawJpeg = messageEvent.getData();
+            if (rawJpeg != null) {
+                Bitmap bitmap = BitmapFactory.decodeByteArray(rawJpeg, 0, rawJpeg.length);
+                if (bitmap != null) {
+                    runOnUiThread(() -> frameImageView.setImageBitmap(bitmap));
+                }
+            }
+        }
     }
 
     private void triggerThreeSecondShootMacro() {
@@ -105,7 +102,6 @@ public class WearCameraActivity extends Activity {
                 } else {
                     if (tvCountdown != null) tvCountdown.setText("📸");
                     sendActionToPhone("TAKE_PICTURE");
-                    
                     mainHandler.postDelayed(() -> {
                         if (tvCountdown != null) tvCountdown.setVisibility(View.GONE);
                         if (btnCapture != null) btnCapture.setEnabled(true);
@@ -131,7 +127,7 @@ public class WearCameraActivity extends Activity {
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "发送相机信号异常", e);
+                Log.e(TAG, "MessageClient 发送相机指令至手机异常", e);
             }
         }).start();
     }
@@ -139,7 +135,7 @@ public class WearCameraActivity extends Activity {
     @Override
     protected void onDestroy() {
         isActivityActive = false;
-        try { unregisterReceiver(frameReceiver); } catch (Exception e) {}
+        Wearable.getMessageClient(this).removeListener(this);
         mainHandler.removeCallbacksAndMessages(null);
         sendActionToPhone("STOP_CAMERA");
         super.onDestroy();
