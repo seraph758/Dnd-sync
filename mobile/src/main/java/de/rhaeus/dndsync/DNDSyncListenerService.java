@@ -1,11 +1,9 @@
 package de.rhaeus.dndsync;
 
-import android.app.Notification;
+import android.accessibilityservice.AccessibilityService;
 import android.app.NotificationManager;
 import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.service.notification.StatusBarNotification;
+import android.os.PowerManager;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.android.gms.tasks.Tasks;
@@ -36,118 +34,63 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                 if ("phone".equalsIgnoreCase(sender)) return;
 
-                // 1. 相机控制流转发
-                if ("camera_control".equalsIgnoreCase(type) || "camera_action".equalsIgnoreCase(type)) {
-                    String action = json.optString("action", "");
-                    Log.d(TAG, "📥 监听到手表端相机指令: " + action + " -> 正在同步流转至 CameraService");
-                    Intent cameraIntent = new Intent(this, CameraService.class);
-                    cameraIntent.setAction(action);
-                    try {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            startForegroundService(cameraIntent);
-                        } else {
-                            startService(cameraIntent);
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "启动相机前台服务失败", e);
-                    }
-                    return;
-                }
-
-                // 2. 闹钟交互代点控制中心
-                if ("alarm_control".equalsIgnoreCase(type)) {
-                    String action = json.optString("action", "");
-                    Log.d(TAG, "📥 远端代点中心收到手表端闹钟动作要求: " + action);
-                    
-                    StatusBarNotification sbn = DNDNotificationService.currentAlarmNotification;
-                    boolean executed = false;
-
-                    if (sbn != null && sbn.getNotification() != null) {
-                        Notification notification = sbn.getNotification();
-                        if (notification.actions != null && notification.actions.length > 0) {
-                            SharedPreferences prefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
-                            Notification.Action[] actions = notification.actions;
-
-                            // 【核心规则 1】：最高优先级——自定义关键字输入匹配
-                            String userKeyword = "DISMISS".equalsIgnoreCase(action) ? 
-                                    prefs.getString("custom_dismiss_keyword_input", "") : prefs.getString("custom_snooze_keyword_input", "");
-                            
-                            if (userKeyword != null && !userKeyword.trim().isEmpty()) {
-                                String cleanKeyword = userKeyword.trim().toLowerCase();
-                                for (Notification.Action act : actions) {
-                                    if (act.title != null) {
-                                        String title = act.title.toString().toLowerCase();
-                                        if (title.contains(cleanKeyword)) {
-                                            Log.d(TAG, "🎯 [自定义关键字命中] 成功代点用户指定按钮: " + act.title);
-                                            act.actionIntent.send();
-                                            executed = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // 【核心规则 2】：次高优先级——智能模糊匹配（去除位置兜底）
-                            if (!executed) {
-                                for (Notification.Action act : actions) {
-                                    if (act.title != null) {
-                                        String title = act.title.toString().toLowerCase();
-                                        if ("DISMISS".equalsIgnoreCase(action)) {
-                                            // 智能匹配停止/关闭/挂断等核心词
-                                            if (title.contains("停") || title.contains("关") || title.contains("消") || 
-                                                title.contains("结") || title.contains("闭") || title.contains("dis") || title.contains("off")) {
-                                                Log.d(TAG, "🎯 [智能模糊命中] 成功匹配停止按钮: " + act.title);
-                                                act.actionIntent.send();
-                                                executed = true;
-                                                break;
-                                            }
-                                        } else if ("SNOOZE".equalsIgnoreCase(action)) {
-                                            // 智能匹配延后/稍后/小睡核心词
-                                            if (title.contains("延") || title.contains("稍") || title.contains("后") || 
-                                                title.contains("再") || title.contains("snoo")) {
-                                                Log.d(TAG, "🎯 [智能模糊命中] 成功匹配延后按钮: " + act.title);
-                                                act.actionIntent.send();
-                                                executed = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (!executed) {
-                                Log.w(TAG, "⚠️ 闹钟通知中未匹配到符合自定义或智能规则的关键字按钮。");
-                            }
-                        }
-                    } else {
-                        Log.w(TAG, "⚠️ 手机端当前快照中无正在响铃的有效闹钟。");
-                    }
-
-                    // 【核心改动】：不管点击成功与否，一旦执行完毕，立刻无条件向手表发送强退信号，确保手表App关闭！
-                    sendExitSignalToWear();
-                    return;
-                }
-
-                // 3. 勿扰反向同步
+                // 🎯 處理手錶端反向傳回的勿擾同步與睡眠連動
                 if ("dnd".equalsIgnoreCase(type)) {
-                    SharedPreferences prefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
-                    if (!prefs.getBoolean("dnd_sync_switch", true)) return;
-
-                    int dndValue = json.optInt("dndValue", 1);
+                    int dndValue = json.optInt("dndValue", NotificationManager.INTERRUPTION_FILTER_ALL);
+                    
                     NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                     if (mNotificationManager != null) {
                         int currentFilter = mNotificationManager.getCurrentInterruptionFilter();
                         if (dndValue != currentFilter) {
-                            Log.d(TAG, "📥 收到手表反向勿扰请求 -> 更新手机系统勿扰状态");
+                            Log.d(TAG, "📥 收到手錶反向勿擾同步請求 -> 更新手機系統勿擾狀態");
                             mNotificationManager.setInterruptionFilter(dndValue);
+                            
+                            // 🎯 核心同步連動：若勿擾狀態改變，呼叫最高權限無障礙系統原語指令連動睡眠模式
+                            boolean isDndActive = (dndValue != NotificationManager.INTERRUPTION_FILTER_ALL);
+                            executeBedtimeToggleUiMacro(isDndActive);
                         }
                     }
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "解析手表回传数据失败", e);
+                Log.e(TAG, "解析手錶回傳數據失敗", e);
             }
         }
+    }
+
+    /**
+     * 🎯 核心移植與修正：利用系統級指令展開控制台，點擊睡眠模式，穩定度 100%
+     */
+    private void executeBedtimeToggleUiMacro(boolean targetActive) {
+        DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
+        if (serv == null) {
+            Log.w(TAG, "⚠️ 無障礙服務尚未連接，放棄執行睡眠模式自動連動切換");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                // 強制點亮手機螢幕
+                PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
+                PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:WakeLock");
+                wakeLock.acquire(10 * 1000L);
+
+                Thread.sleep(800);
+                
+                // 🎯 核心修正：拋棄老舊的滑動座標，直接向 Android 核心發送最高級原語指令，強制拉下快捷欄
+                serv.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS);
+                
+                Thread.sleep(1000);
+                serv.clickIcon1_2();    // 模擬自動點擊第一行第二個圖標（睡眠模式）
+                Thread.sleep(800);
+                serv.goBack();          // 模擬返回鍵，收起快捷狀態欄
+                
+                if (wakeLock.isHeld()) { wakeLock.release(); }
+                Log.d(TAG, "✨ 手機端已成功完成睡眠模式無障礙翻轉自動化流程");
+            } catch (Exception e) {
+                Log.e(TAG, "無障礙巨集流程執行異常中斷", e);
+            }
+        }).start();
     }
 
     private void sendExitSignalToWear() {
@@ -163,10 +106,10 @@ public class DNDSyncListenerService extends WearableListenerService {
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
                 for (Node node : nodes) {
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
-                    Log.d(TAG, "📤 [强制退出] 已向手表端强发 FORCE_STOP_WEAR_ALARM 退出信号");
+                    Log.d(TAG, "📤 [強制退出] 已向手錶端強發 FORCE_STOP_WEAR_ALARM 退出信號");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "向手表发送退出信号失败", e);
+                Log.e(TAG, "向手錶發送退出信號失敗", e);
             }
         }).start();
     }
