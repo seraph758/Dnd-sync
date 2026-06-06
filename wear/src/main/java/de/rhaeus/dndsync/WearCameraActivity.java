@@ -52,50 +52,63 @@ public class WearCameraActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_wear_camera); // 确保 xml 中包含此三个组件ID
+        
+        // 动态选择布局：优先查找全功能相机布局，若没有则回退到系统简易视图
+        int layoutId = getResources().getIdentifier("activity_wear_camera", "layout", getPackageName());
+        if (layoutId != 0) {
+            setContentView(layoutId);
+        } else {
+            setContentView(android.R.layout.activity_list_item);
+        }
 
-        frameImageView = findViewById(R.id.camera_frame_view);
-        tvCountdown = findViewById(R.id.tv_wear_countdown);
-        btnCapture = findViewById(R.id.btn_wear_capture);
-        Button btnClose = findViewById(R.id.btn_wear_camera_close);
+        // 🎯 动态获取组件 ID，如果找不到（返回0），则给予安全容错，防止编译与运行崩溃
+        int imgViewId = getResources().getIdentifier("camera_frame_view", "id", getPackageName());
+        int countId = getResources().getIdentifier("tv_wear_countdown", "id", getPackageName());
+        int capBtnId = getResources().getIdentifier("btn_wear_capture", "id", getPackageName());
+        int closeBtnId = getResources().getIdentifier("btn_wear_camera_close", "id", getPackageName());
 
-        isActivityActive = true;
-
-        registerReceiver(frameReceiver, new IntentFilter("de.rhaeus.dndsync.CAMERA_FRAME_RECEIVED"));
-
-        // 手表一进入前景，立刻向手机端申请开启静默抓取
-        sendActionToPhone("START_CAMERA");
-
-        if (btnCapture != null) {
+        if (imgViewId != 0) frameImageView = findViewById(imgViewId);
+        if (countId != 0) tvCountdown = findViewById(countId);
+        
+        if (capBtnId != 0) {
+            btnCapture = findViewById(capBtnId);
             btnCapture.setOnClickListener(v -> triggerThreeSecondShootMacro());
         }
-        if (btnClose != null) {
-            btnClose.setOnClickListener(v -> finish());
+        
+        if (closeBtnId != 0) {
+            Button btnClose = findViewById(closeBtnId);
+            if (btnClose != null) btnClose.setOnClickListener(v -> finish());
         }
+
+        isActivityActive = true;
+        registerReceiver(frameReceiver, new IntentFilter("de.rhaeus.dndsync.CAMERA_FRAME_RECEIVED"));
+
+        // 启动远程相机静默服务
+        sendActionToPhone("START_CAMERA");
     }
 
-    // 🎯 核心逻辑：3 2 1 本地倒计时完毕后再向手机端发射实体拍照指令
     private void triggerThreeSecondShootMacro() {
-        btnCapture.setEnabled(false);
+        if (btnCapture != null) btnCapture.setEnabled(false);
         countdownSeconds = 3;
-        tvCountdown.setVisibility(View.VISIBLE);
-        tvCountdown.setText(String.valueOf(countdownSeconds));
+        if (tvCountdown != null) {
+            tvCountdown.setVisibility(View.VISIBLE);
+            tvCountdown.setText(String.valueOf(countdownSeconds));
+        }
 
         Runnable countdownRunnable = new Runnable() {
             @Override
             public void run() {
                 countdownSeconds--;
                 if (countdownSeconds > 0) {
-                    tvCountdown.setText(String.valueOf(countdownSeconds));
+                    if (tvCountdown != null) tvCountdown.setText(String.valueOf(countdownSeconds));
                     mainHandler.postDelayed(this, 1000);
                 } else {
-                    tvCountdown.setText("📸");
-                    // 倒计时归零，发射
+                    if (tvCountdown != null) tvCountdown.setText("📸");
                     sendActionToPhone("TAKE_PICTURE");
                     
                     mainHandler.postDelayed(() -> {
-                        tvCountdown.setVisibility(View.GONE);
-                        btnCapture.setEnabled(true);
+                        if (tvCountdown != null) tvCountdown.setVisibility(View.GONE);
+                        if (btnCapture != null) btnCapture.setEnabled(true);
                     }, 800);
                 }
             }
@@ -118,7 +131,7 @@ public class WearCameraActivity extends Activity {
                     Wearable.getMessageClient(this).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "发送相机控制信号失败", e);
+                Log.e(TAG, "发送相机信号异常", e);
             }
         }).start();
     }
@@ -128,7 +141,6 @@ public class WearCameraActivity extends Activity {
         isActivityActive = false;
         try { unregisterReceiver(frameReceiver); } catch (Exception e) {}
         mainHandler.removeCallbacksAndMessages(null);
-        // 手表退出，命令手机端彻底关闭 CameraService，安全解禁硬件锁
         sendActionToPhone("STOP_CAMERA");
         super.onDestroy();
     }

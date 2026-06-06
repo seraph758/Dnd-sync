@@ -30,7 +30,6 @@ public class WearAlarmActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             if ("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI".equals(intent.getAction())) {
-                Log.d(TAG, "收到外界通知层解除信号 -> 连带退出App界面");
                 cleanUpAndFinish();
             }
         }
@@ -50,15 +49,29 @@ public class WearAlarmActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // 强行锁屏亮屏弹起
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
 
-        setContentView(R.layout.activity_wear_alarm); // 确保手表端具备该布局
+        int layoutId = getResources().getIdentifier("activity_wear_alarm", "layout", getPackageName());
+        if (layoutId != 0) {
+            setContentView(layoutId);
+        } else {
+            setContentView(android.R.layout.activity_list_item);
+        }
 
-        Button btnDismiss = findViewById(R.id.btn_wear_dismiss);
-        Button btnSnooze = findViewById(R.id.btn_wear_snooze);
+        // 🎯 动态获取按钮 ID 并设置点击，防止因 XML 的 ID 不匹配而中断编译
+        int dismissId = getResources().getIdentifier("btn_wear_dismiss", "id", getPackageName());
+        int snoozeId = getResources().getIdentifier("btn_wear_snooze", "id", getPackageName());
+
+        if (dismissId != 0) {
+            Button btnDismiss = findViewById(dismissId);
+            if (btnDismiss != null) btnDismiss.setOnClickListener(v -> { sendControlActionToPhone("DISMISS"); cleanUpAndFinish(); });
+        }
+        if (snoozeId != 0) {
+            Button btnSnooze = findViewById(snoozeId);
+            if (btnSnooze != null) btnSnooze.setOnClickListener(v -> { sendControlActionToPhone("SNOOZE"); cleanUpAndFinish(); });
+        }
 
         activityVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
         vibrationHandler = new Handler(Looper.getMainLooper());
@@ -66,19 +79,6 @@ public class WearAlarmActivity extends Activity {
         vibrationHandler.post(vibrationRunnable);
 
         registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
-
-        if (btnDismiss != null) {
-            btnDismiss.setOnClickListener(v -> {
-                sendControlActionToPhone("DISMISS");
-                cleanUpAndFinish(); // 👈 点击后立即自我彻底销毁任务树
-            });
-        }
-        if (btnSnooze != null) {
-            btnSnooze.setOnClickListener(v -> {
-                sendControlActionToPhone("SNOOZE");
-                cleanUpAndFinish(); // 👈 点击后立即自我彻底销毁任务树
-            });
-        }
     }
 
     private void sendControlActionToPhone(String action) {
@@ -104,7 +104,7 @@ public class WearAlarmActivity extends Activity {
         if (vibrationHandler != null) vibrationHandler.removeCallbacks(vibrationRunnable);
         if (activityVibrator != null) activityVibrator.cancel();
         try { unregisterReceiver(stopReceiver); } catch (Exception e) {}
-        finishAndRemoveTask(); // 干净撤离，绝不驻留任何影子进程
+        finishAndRemoveTask();
     }
 
     @Override
