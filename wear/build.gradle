@@ -79,10 +79,9 @@ dependencies {
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
 
     // =================================================================
-    // 📸 修正：CameraX 遠端取景沙盒依賴（調整版本號以解決找不到構件的問題）
+    // 📸 修正：CameraX 遠端沙盒組件（同步對齊 1.4.0-alpha05 確保留在庫件庫存在）
     // =================================================================
-    // 說明：使用 1.4.0-rc01 版本可完美確保全套核心與 camera-remote 分發包對齊存在
-    def camerax_version = "1.4.0-rc01"
+    def camerax_version = "1.4.0-alpha05"
     implementation "androidx.camera:camera-core:${camerax_version}"
     implementation "androidx.camera:camera-camera2:${camerax_version}"
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
