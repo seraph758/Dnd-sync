@@ -53,7 +53,6 @@ class MainFragment : Fragment() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         sharedPrefs = requireContext().getSharedPreferences(requireContext().packageName + "_preferences", Context.MODE_PRIVATE)
         
-        // 检查并请求权限
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             needed.add(Manifest.permission.CAMERA)
@@ -83,19 +82,16 @@ class MainFragment : Fragment() {
         val isConnected by remember { isConnectedState }
         val isNotifAllowed by remember { isNotificationAllowedState }
 
-        // 板块一：勿扰模式变量
         var dndMaster by remember { mutableStateOf(sharedPrefs.getBoolean("custom_dnd_sync_master_switch", false)) }
         var wearSleepLink by remember { mutableStateOf(sharedPrefs.getBoolean("custom_wear_sleep_mode_link", false)) }
         var wearBatteryLink by remember { mutableStateOf(sharedPrefs.getBoolean("custom_wear_battery_save_link", false)) }
         var vibrateOnSync by remember { mutableStateOf(sharedPrefs.getBoolean("custom_vibrate_on_sync_only", false)) }
 
-        // 板块二：闹钟同步变量
         var alarmMaster by remember { mutableStateOf(sharedPrefs.getBoolean("custom_alarm_sync_master_switch", false)) }
         var alarmPkg by remember { mutableStateOf(sharedPrefs.getString("custom_allowed_clock_packages", "com.google.android.deskclock") ?: "com.google.android.deskclock") }
         var dismissOption by remember { mutableStateOf(sharedPrefs.getString("custom_dismiss_action_index", "智能匹配") ?: "智能匹配") }
         var snoozeOption by remember { mutableStateOf(sharedPrefs.getString("custom_snooze_action_index", "智能匹配") ?: "智能匹配") }
 
-        // 板块三：相机同步变量
         var cameraPkg by remember { mutableStateOf(sharedPrefs.getString("custom_camera_package_name", "com.oplus.camera") ?: "com.oplus.camera") }
 
         Scaffold(
@@ -109,7 +105,6 @@ class MainFragment : Fragment() {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 连接状态卡片
                 Card(colors = CardDefaults.cardColors(containerColor = if (isConnected) Color(0xFF1E351E) else Color(0xFF351E1E))) {
                     Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("手表连接状态", fontWeight = FontWeight.Medium)
@@ -117,7 +112,6 @@ class MainFragment : Fragment() {
                     }
                 }
 
-                // 权限检查卡片
                 if (!isNotifAllowed) {
                     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2A00)), modifier = Modifier.clickable {
                         try {
@@ -130,11 +124,11 @@ class MainFragment : Fragment() {
                     }
                 }
 
-                // ==================== 1️⃣ 板块一：勿扰模式双向同步 ====================
                 Text("1️⃣ 勿扰与模式同步板块", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBB86FC))
                 Card {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, alignment = Alignment.CenterVertically) {
+                        // 🛠️ 这里的 alignment 修正为 verticalAlignment
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("勿扰模式同步总开关", fontWeight = FontWeight.SemiBold)
                             Switch(checked = dndMaster, onCheckedChange = {
                                 dndMaster = it
@@ -152,27 +146,27 @@ class MainFragment : Fragment() {
                         
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                        // 依赖项 1：手表睡眠模式
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, alignment = Alignment.CenterVertically) {
-                            Text(" ↳ 联动手表睡眠模式", color = if (dndMaster) Color.Unspecified else Color.Gray)
+                        // 🛠️ 这里的 alignment 修正为 verticalAlignment
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(" ↳ ↳ 联动手表睡眠模式", color = if (dndMaster) Color.Unspecified else Color.Gray)
                             Switch(checked = wearSleepLink, enabled = dndMaster, onCheckedChange = {
                                 wearSleepLink = it
                                 sharedPrefs.edit().putBoolean("custom_wear_sleep_mode_link", it).apply()
                             })
                         }
 
-                        // 依赖项 2：手表省电模式
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, alignment = Alignment.CenterVertically) {
-                            Text(" ↳ ↳ 联动手表省电模式", color = if (dndMaster) Color.Unspecified else Color.Gray)
+                        // 🛠️ 这里的 alignment 修正为 verticalAlignment
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(" ↳ ↳ ↳ 联动手表省电模式", color = if (dndMaster) Color.Unspecified else Color.Gray)
                             Switch(checked = wearBatteryLink, enabled = dndMaster, onCheckedChange = {
                                 wearBatteryLink = it
                                 sharedPrefs.edit().putBoolean("custom_wear_battery_save_link", it).apply()
                             })
                         }
 
-                        // 依赖项 3：专属单向同步震动
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, alignment = Alignment.CenterVertically) {
-                            Text(" ↳ ↳ ↳ 仅在手机向手表同步勿扰时震动", color = if (dndMaster) Color.Unspecified else Color.Gray)
+                        // 🛠️ 这里的 alignment 修正为 verticalAlignment
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(" ↳ ↳ ↳ ↳ 仅在手机向手表发送勿扰数据时震动", color = if (dndMaster) Color.Unspecified else Color.Gray)
                             Switch(checked = vibrateOnSync, enabled = dndMaster, onCheckedChange = {
                                 vibrateOnSync = it
                                 sharedPrefs.edit().putBoolean("custom_vibrate_on_sync_only", it).apply()
@@ -181,11 +175,11 @@ class MainFragment : Fragment() {
                     }
                 }
 
-                // ==================== 2️⃣ 板块二：远端闹钟硬联锁 ====================
                 Text("2️⃣ 远端闹钟硬联锁板块", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBB86FC))
                 Card {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, alignment = Alignment.CenterVertically) {
+                        // 🛠️ 这里的 alignment 修正为 verticalAlignment
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("闹钟同步总开关", fontWeight = FontWeight.SemiBold)
                             Switch(checked = alarmMaster, onCheckedChange = {
                                 alarmMaster = it
@@ -219,7 +213,6 @@ class MainFragment : Fragment() {
                     }
                 }
 
-                // ==================== 3️⃣ 板块三：远端相机预预览 ====================
                 Text("3️⃣ 远端相机低延迟预览", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBB86FC))
                 Card {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
