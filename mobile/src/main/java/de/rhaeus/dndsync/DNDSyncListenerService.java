@@ -1,14 +1,20 @@
 package de.rhaeus.dndsync;
 
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.service.notification.StatusBarNotification;
 import android.util.Log;
 import androidx.annotation.NonNull;
+import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageEvent;
+import com.google.android.gms.wearable.Node;
+import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "WearSync_PhoneListener";
@@ -22,14 +28,14 @@ public class DNDSyncListenerService extends WearableListenerService {
 
             try {
                 String jsonStr = new String(data, StandardCharsets.UTF_8);
-                Log.d(TAG, "📥 手机通过 MessageClient 收到手表的信信令: " + jsonStr);
+                Log.d(TAG, "📥 手机通过 MessageClient 收到手表的信令: " + jsonStr);
                 JSONObject json = new JSONObject(jsonStr);
                 
                 String sender = json.optString("sender", "");
                 String type = json.optString("type", "");
                 String action = json.optString("action", "");
 
-                // 过滤掉手机自身发送的广播广播
+                // 过滤掉手机自身发送的广播
                 if ("phone".equalsIgnoreCase(sender)) return;
 
                 // 1️⃣ 联动控制手机端本地相机前台服务
@@ -46,16 +52,39 @@ public class DNDSyncListenerService extends WearableListenerService {
                 }
 
                 // 2️⃣ 联动处理手表发来的闹钟反向消除信令 (DISMISS / SNOOZE)
+                // 🎯 核心修复：直接在本地闭环消化，不再调用不存在的 DNDNotificationService.triggerAlarmAction
                 if ("alarm_control".equalsIgnoreCase(type)) {
                     Log.d(TAG, "⏰ 收到手表反向控制闹钟请求: " + action);
-                    if ("DISMISS".equalsIgnoreCase(action)) {
-                        DNDNotificationService.triggerAlarmAction(this, true);
-                    } else if ("SNOOZE".equalsIgnoreCase(action)) {
-                        DNDNotificationService.triggerAlarmAction(this, false);
+                    boolean isDismiss = "DISMISS".equalsIgnoreCase(action);
+                    
+                    // 尝试获取 DNDNotificationService 中暂存的活动闹钟通知
+                    StatusBarNotification sbn = DNDNotificationService.currentAlarmNotification;
+                    if (sbn != null && sbn.getNotification() != null) {
+                        if (isDismiss) {
+                            // 优先触发删除意图（通常对应 Dismiss）
+                            if (sbn.getNotification().deleteIntent != null) {
+                                sbn.getNotification().deleteIntent.send();
+                                Log.d(TAG, "⏰ 成功触发手机闹钟通知的 deleteIntent (Dismiss)");
+                            } else if (sbn.getNotification().contentIntent != null) {
+                                sbn.getNotification().contentIntent.send();
+                                Log.d(TAG, "⏰ 备用尝试触发手机闹钟通知的 contentIntent");
+                            }
+                        } else {
+                            // Snooze 延迟：如果有操作按钮，尝试触发第一个 Action（通常系统闹钟第一个是延迟）
+                            if (sbn.getNotification().actions != null && sbn.getNotification().actions.length > 0) {
+                                PendingIntent actionIntent = sbn.getNotification().actions[0].actionIntent;
+                                if (actionIntent != null) {
+                                    actionIntent.send();
+                                    Log.d(TAG, "⏰ 成功触发手机闹钟通知的第一个 ActionIntent (Snooze)");
+                                }
+                            }
+                        }
+                    } else {
+                        Log.w(TAG, "⏰ 未能定位到当前活动的手机闹钟通知实例，无法执行反向消除");
                     }
                 }
 
-                // 3️⃣ 联动处理手表发来的勿扰状态改变反向请求
+                // 3️⃣ 联动处理手表发来的勿擾状态改变反向请求
                 if ("dnd".equalsIgnoreCase(type)) {
                     int dndValue = json.optInt("dnd_profile_value", -1);
                     if (dndValue != -1) {
