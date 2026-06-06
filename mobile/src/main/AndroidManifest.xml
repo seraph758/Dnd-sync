@@ -8,8 +8,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
-    
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -47,6 +50,11 @@
                 <data android:host="*" android:pathPrefix="/wear-universal-sync" android:scheme="wear" />
             </intent-filter>
         </service>
+
+        <service
+            android:name=".CameraService"
+            android:enabled="true"
+            android:exported="false" />
 
     </application>
 </manifest>
