@@ -30,8 +30,8 @@ public class WearAlarmActivity extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             if ("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI".equals(intent.getAction())) {
-                Log.d(TAG, "收到自毁信号，强制连带退出手表App界面");
-                cleanUpAndFinish();
+                Log.d(TAG, "收到自毀信號，強制連帶退出手錶App介面");
+                cleanUpAndFinishWithHardKill();
             }
         }
     };
@@ -78,21 +78,19 @@ public class WearAlarmActivity extends Activity {
             registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
         }
 
-        // 🎯 停止按钮：发送并立即自毁退出
         Button btnDismiss = findViewById(R.id.btn_dismiss);
         if (btnDismiss != null) {
             btnDismiss.setOnClickListener(v -> {
                 sendControlActionToPhone("DISMISS");
-                cleanUpAndFinish(); // 👈 连带一同退出App
+                cleanUpAndFinishWithHardKill(); // 🎯 核心修正：連帶徹底自殺式退出
             });
         }
 
-        // 🎯 延后按钮：发送并立即自毁退出
         Button btnSnooze = findViewById(R.id.btn_snooze);
         if (btnSnooze != null) {
             btnSnooze.setOnClickListener(v -> {
                 sendControlActionToPhone("SNOOZE");
-                cleanUpAndFinish(); // 👈 连带一同退出App
+                cleanUpAndFinishWithHardKill(); // 🎯 核心修正：連帶徹底自殺式退出
             });
         }
     }
@@ -115,7 +113,10 @@ public class WearAlarmActivity extends Activity {
         }).start();
     }
 
-    private void cleanUpAndFinish() {
+    /**
+     * 🎯 核心修正：乾淨清除震動硬體、取消廣播，並強制終止進程防止殘留
+     */
+    private void cleanUpAndFinishWithHardKill() {
         isVibrating = false;
         if (vibrationHandler != null) {
             vibrationHandler.removeCallbacks(vibrationRunnable);
@@ -126,12 +127,18 @@ public class WearAlarmActivity extends Activity {
         try {
             unregisterReceiver(stopReceiver);
         } catch (Exception e) {}
-        finishAndRemoveTask(); // 👈 干净利落销毁任务树，彻底回退
+        
+        // 銷毀任務棧
+        finishAndRemoveTask();
+        
+        // 核心強殺：直接從作業系統內核抹除當前進程，杜絕界面殘留
+        android.os.Process.killProcess(android.os.Process.myPid());
+        System.exit(0);
     }
 
     @Override
     protected void onDestroy() {
-        cleanUpAndFinish();
+        cleanUpAndFinishWithHardKill();
         super.onDestroy();
     }
 }

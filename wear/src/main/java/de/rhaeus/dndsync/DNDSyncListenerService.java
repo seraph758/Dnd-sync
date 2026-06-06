@@ -1,26 +1,19 @@
 package de.rhaeus.dndsync;
 
+import android.accessibilityservice.AccessibilityService;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.PowerManager;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.provider.Settings;
 import android.util.Log;
-import android.widget.Toast;
 import androidx.annotation.NonNull;
-import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.MessageEvent;
-import com.google.android.gms.wearable.Node;
-import com.google.android.gms.wearable.Wearable;
 import com.google.android.gms.wearable.WearableListenerService;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 public class DNDSyncListenerService extends WearableListenerService {
     private static final String TAG = "DNDSync_WearListener";
@@ -40,10 +33,10 @@ public class DNDSyncListenerService extends WearableListenerService {
         try {
             if (globalVibrator != null) {
                 globalVibrator.cancel();
-                Log.d(TAG, "🛑 收到停止持续震动指令");
+                Log.d(TAG, "🛑 收到停止持續震動指令");
             }
         } catch (Exception e) {
-            Log.e(TAG, "停止震动异常", e);
+            Log.e(TAG, "停止震動異常", e);
         }
     }
 
@@ -52,7 +45,7 @@ public class DNDSyncListenerService extends WearableListenerService {
         if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
             try {
                 String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
-                Log.d(TAG, "📥 手表端收到高优先级互联数据包: " + jsonStr);
+                Log.d(TAG, "📥 手錶端收到高優先級互聯數據包: " + jsonStr);
 
                 try {
                     JSONObject json = new JSONObject(jsonStr);
@@ -61,7 +54,7 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                     String type = json.optString("type", "");
 
-                    // 🎯 A. 闹钟处理
+                    // 🎯 A. 鬧鐘處理
                     if ("alarm".equalsIgnoreCase(type)) {
                         String alarmAction = json.optString("alarmAction", "");
                         if ("LAUNCH_WEAR_ALARM_ACTIVITY".equalsIgnoreCase(alarmAction)) {
@@ -77,7 +70,7 @@ public class DNDSyncListenerService extends WearableListenerService {
                         return;
                     }
 
-                    // 🎯 B. 相机处理
+                    // 🎯 B. 相機處理
                     if ("camera_control".equalsIgnoreCase(type)) {
                         String action = json.optString("action", "");
                         if ("LAUNCH_WEAR_CAMERA_ACTIVITY".equalsIgnoreCase(action)) {
@@ -89,7 +82,7 @@ public class DNDSyncListenerService extends WearableListenerService {
                         return;
                     }
 
-                    // 🎯 C. 勿扰和强依赖树（包含物理触感震动与智能下拉触控）
+                    // 🎯 C. 勿擾和強依賴樹
                     if ("dnd".equalsIgnoreCase(type)) {
                         int dndState = json.optInt("dndValue", NotificationManager.INTERRUPTION_FILTER_ALL);
                         boolean dndMaster = json.optBoolean("dndSyncMaster", true);
@@ -99,22 +92,19 @@ public class DNDSyncListenerService extends WearableListenerService {
 
                         if (!dndMaster) return;
 
-                        // 执行手表同步勿扰
                         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                         if (nm != null) {
                             isInternalUpdate = true;
                             nm.setInterruptionFilter(dndState);
                         }
 
-                        // 🎯 物理瞬时触觉反馈触发：如果开启了震动开关，震动 50 毫秒
                         if (vibrateTipsEnable && globalVibrator != null) {
                             globalVibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
                         }
 
-                        // 🎯 睡眠模式同步：如果需要联动，则执行核心无障碍宏点击操作
+                        // 🎯 睡眠模式同步連動
                         if (wearSleepLink) {
                             boolean isDndActive = (dndState != NotificationManager.INTERRUPTION_FILTER_ALL);
-                            // 由于直接写注册表被安全拦截，必须利用无障碍模拟行为切换
                             executeBedtimeToggleUiMacro(isDndActive);
                         }
 
@@ -129,7 +119,6 @@ public class DNDSyncListenerService extends WearableListenerService {
                     }
 
                 } catch (Exception jsonEx) {
-                    // 降级兼容
                     String valStr = jsonStr.trim();
                     int dndVal = Integer.parseInt(valStr);
                     NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -137,37 +126,38 @@ public class DNDSyncListenerService extends WearableListenerService {
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "穿戴消息处理崩溃：", e);
+                Log.e(TAG, "穿戴消息處理崩潰：", e);
             }
         }
     }
 
-    // 🎯 核心移植：执行屏幕唤醒并使用无障碍自动切换睡眠模式
     private void executeBedtimeToggleUiMacro(boolean targetActive) {
         DNDSyncAccessService serv = DNDSyncAccessService.getSharedInstance();
         if (serv == null) {
-            Log.d(TAG, "无障碍服务未连接，放弃自动切换");
+            Log.d(TAG, "無障礙服務未連接，放棄自動切換");
             return;
         }
 
         new Thread(() -> {
             try {
-                // 点亮屏幕
                 PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
                 PowerManager.WakeLock wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP , "dndsync:WakeLock");
                 wakeLock.acquire(10 * 1000L);
 
+                Thread.sleep(800);
+                
+                // 🎯 核心修正：拋棄老舊滑動，直接向 Android 核心注入底層巨集指令，強制展開快捷設置控制面板
+                serv.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS);
+                
                 Thread.sleep(1000);
-                serv.swipeDown();      // 下拉快捷栏
-                Thread.sleep(1000);
-                serv.clickIcon1_2();    // 自动定位并模拟点击睡眠图标
-                Thread.sleep(1000);
-                serv.goBack();          // 收起状态栏
+                serv.clickIcon1_2();    // 模擬觸控睡眠圖標
+                Thread.sleep(800);
+                serv.goBack();          // 強制回退收起快捷面板
                 
                 if (wakeLock.isHeld()) { wakeLock.release(); }
-                Log.d(TAG, "✨ 已通过旧版无障碍架构成功完成睡眠模式翻转动作");
+                Log.d(TAG, "✨ 已通過系統全局快捷原語成功完成睡眠模式翻轉動作");
             } catch (Exception e) {
-                Log.e(TAG, "无障碍宏流程异常中断", e);
+                Log.e(TAG, "無障礙巨集流程異常中斷", e);
             }
         }).start();
     }
