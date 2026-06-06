@@ -1,68 +1,73 @@
-package de.rhaeus.dndsync
+package de.rhaeus.dndsync;
 
-import android.os.Bundle
-import android.widget.Button
-import androidx.activity.ComponentActivity
-import androidx.camera.remote.RemoteCameraClient
-import androidx.camera.remote.RemoteCameraControl
-import androidx.camera.remote.RemoteView
-import androidx.wear.widget.BoxInsetLayout
+import android.os.Bundle;
+import android.widget.Button;
+import androidx.activity.ComponentActivity;
+import androidx.camera.remote.RemoteCameraClient;
+import androidx.camera.remote.RemoteCameraControl;
+import androidx.camera.remote.RemoteView;
+import androidx.wear.widget.BoxInsetLayout;
 
-class WearCameraActivity : ComponentActivity() {
+public class WearCameraActivity extends ComponentActivity {
 
-    private lateinit var remoteCameraClient: RemoteCameraClient
-    private var remoteCameraControl: RemoteCameraControl? = null
-    private lateinit var remoteView: RemoteView
+    private RemoteCameraClient remoteCameraClient;
+    private RemoteCameraControl remoteCameraControl = null;
+    private RemoteView remoteView;
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
 
-        // 建立穿戴端標準滿版沙盒佈局
-        val layout = BoxInsetLayout(this)
-        setContentView(layout)
+        BoxInsetLayout layout = new BoxInsetLayout(this);
+        setContentView(layout);
 
-        // 1. 初始化遠端即時取景器元件 (渲染手機相機流)
-        remoteView = RemoteView(this)
-        layout.addView(remoteView)
+        // 遠端預覽
+        remoteView = new RemoteView(this);
+        layout.addView(remoteView);
 
-        // 2. 初始化穿戴跨端聯動客戶端
-        remoteCameraClient = RemoteCameraClient(this)
+        // 獲取 RemoteCameraClient
+        remoteCameraClient = new RemoteCameraClient(this);
 
-        // 3. 綁定手機端相機流到手錶取景器，並獲取反向控制權
-        remoteCameraClient.bindPreview(remoteView) { control ->
-            remoteCameraControl = control
-        }
+        // 綁定 RemoteCamera 流到 RemoteView
+        remoteCameraClient.bindPreview(remoteView, control -> {
+            remoteCameraControl = control;
+        });
 
-        // 4. 原生藍牙快門按鈕
-        val button = Button(this).apply {
-            text = "拍照"
-            setOnClickListener {
-                remoteCameraControl?.takePicture { success ->
+        // 拍照按鈕
+        Button button = new Button(this);
+        button.setText("拍照");
+        button.setOnClickListener(v -> {
+            if (remoteCameraControl != null) {
+                remoteCameraControl.takePicture(success -> {
                     if (success) {
-                        // 📸 拍照成功後，精準連帶退出手錶端 App 介面，絕不留殘留
-                        cleanUpAndFinish()
+                        cleanUpAndFinish();
                     }
-                }
+                });
             }
-        }
-        layout.addView(button)
+        });
+        layout.addView(button);
     }
 
-    private fun cleanUpAndFinish() {
+    private void cleanUpAndFinish() {
         try {
-            // 解除取景器流綁定
-            remoteCameraClient.close()
-        } catch (e: Exception) {}
-        finishAndRemoveTask() // 👈 乾淨利落銷毀任務樹，徹底回退
+            if (remoteCameraClient != null) {
+                remoteCameraClient.close();
+            }
+        } catch (Exception e) {
+            // 忽略關閉異常
+        }
+        finishAndRemoveTask(); // 乾淨利落銷毀任務樹，徹底回退
     }
 
-    override fun onBackPressed() {
-        cleanUpAndFinish()
-        super.onBackPressed()
+    @Override
+    public void onBackPressed() {
+        cleanUpAndFinish();
+        super.onBackPressed();
     }
 
-    override fun onDestroy() {
-        cleanUpAndFinish()
-        super.onDestroy()
+    @Override
+    protected void onDestroy() {
+        cleanUpAndFinish();
+        super.onDestroy();
     }
 }
