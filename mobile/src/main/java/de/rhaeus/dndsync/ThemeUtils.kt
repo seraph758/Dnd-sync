@@ -15,21 +15,22 @@ data class ThemeColors(
 )
 
 object ThemeUtils {
-    // 檢查目前是否為暗色模式
-    fun isDarkTheme(context: Context): Boolean {
-        val currentNightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        return currentNightMode == Configuration.UI_MODE_NIGHT_YES
-    }
+    fun getColors(context: Context, isDark: Boolean): ThemeColors {
+        val prefs = context.getSharedPreferences("dndsync_prefs", Context.MODE_PRIVATE)
+        
+        // 默認顏色
+        val defaultAccent = if (isDark) 0xFFFFB74D.toInt() else 0xFFF57C00.toInt()
+        
+        // 從用戶設置中動態讀取顏色（如果用戶在界面上自定義了顏色的話）
+        val userAccentColor = prefs.getInt("user_accent_color", defaultAccent)
 
-    // 🎯 確保 getColors 方法精準返回 ThemeColors
-    fun getColors(isDark: Boolean): ThemeColors {
         return if (isDark) {
             ThemeColors(
                 background = Color(0xFF121212),
                 surfaceCard = Color(0xFF1E1E1E),
                 textPrimary = Color(0xFFFFFFFF),
                 textSecondary = Color(0xFFAAAAAA),
-                accent = Color(0xFFFFB74D), // 舒適的亮橘色
+                accent = Color(userAccentColor), // 動態自定義強調色
                 btnText = Color(0xFF121212)
             )
         } else {
@@ -38,7 +39,7 @@ object ThemeUtils {
                 surfaceCard = Color(0xFFFFFFFF),
                 textPrimary = Color(0xFF212121),
                 textSecondary = Color(0xFF757575),
-                accent = Color(0xFFF57C00), // 深橘色
+                accent = Color(userAccentColor), // 動態自定義強調色
                 btnText = Color(0xFFFFFFFF)
             )
         }
