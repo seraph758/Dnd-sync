@@ -87,7 +87,36 @@ public class DNDSyncAccessService extends AccessibilityService {
         gestureBuilder.addStroke(new GestureDescription.StrokeDescription(path, 100, 50));
         dispatchGesture(gestureBuilder.build(), null, null);
     }
+        // 🎯 補上手錶監聽服務呼叫的 Bedtime 睡眠模式巨集入口
+    public void triggerBedtimeMacro() {
+        new Thread(() -> {
+            try {
+                swipeDown();      // 下拉快捷欄
+                Thread.sleep(1000);
+                clickIcon1_2();   // 自動定位並模擬點擊睡眠圖標
+                Thread.sleep(1000);
+                goBack();         // 收起狀態欄
+            } catch (Exception e) {
+                android.util.Log.e("AccessService", "執行睡眠巨集失敗", e);
+            }
+        }).start();
+    }
 
+    // 🎯 補上手錶監聽服務呼叫的 PowerSaving 省電模式巨集入口
+    public void triggerPowerSavingMacro() {
+        new Thread(() -> {
+            try {
+                swipeDown();      // 下拉快捷欄
+                Thread.sleep(1000);
+                // 這裡模擬點擊省電模式圖標，先使用預設的圖標1_2點擊（您可以根據手錶排版微調）
+                clickIcon1_2();   
+                Thread.sleep(1000);
+                goBack();         // 收起狀態欄
+            } catch (Exception e) {
+                android.util.Log.e("AccessService", "執行省電巨集失敗", e);
+            }
+        }).start();
+    }
 
     // (x, y) in screen coordinates
     private static GestureDescription createClick(float x, float y) {
