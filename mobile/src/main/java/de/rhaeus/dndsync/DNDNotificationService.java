@@ -24,6 +24,12 @@ public class DNDNotificationService extends NotificationListenerService {
     public void onInterruptionFilterChanged(int interruptionFilter) {
         super.onInterruptionFilterChanged(interruptionFilter);
         
+        // 如果勿擾模式的變化源自於手錶端反向控制鎖，則直接攔截回發，防止死循環
+        if (DNDSyncListenerService.isInternalUpdate) {
+            Log.d(TAG, "🌙 勿擾模式變化源自手錶反向修改，防止乒乓死循環，攔截不再回發。");
+            return;
+        }
+
         SharedPreferences sp = getSharedPreferences("dnd_sync_settings", Context.MODE_PRIVATE);
         if (!sp.getBoolean("dnd_master", true)) return;
 
@@ -33,13 +39,12 @@ public class DNDNotificationService extends NotificationListenerService {
             json.put("type", "dnd");
             json.put("dnd_profile_value", interruptionFilter);
             json.put("wear_sleep_toggle", sp.getBoolean("wear_sleep_toggle", false));
-            json.put("wear_power_toggle", sp.getBoolean("wear_power_toggle", false));
-            json.put("wear_vibrate_toggle", sp.getBoolean("wear_vibrate_toggle", true));
-            
-            Log.d(TAG, "🌙 手机端勿扰触发变化，广播协议包发送至手表: " + json.toString());
+            json.put("wear_power_saving_toggle", sp.getBoolean("wear_power_saving_toggle", false));
+
             sendProtocolMessage(json.toString());
+            Log.d(TAG, "🌙 成功將手機端原生勿擾狀態 [" + interruptionFilter + "] 同步給手錶藍牙端");
         } catch (Exception e) {
-            Log.e(TAG, "构建勿扰同步协议异常", e);
+            Log.e(TAG, "封裝勿擾同步協議報文失敗", e);
         }
     }
 
@@ -49,32 +54,24 @@ public class DNDNotificationService extends NotificationListenerService {
         if (sbn == null) return;
 
         SharedPreferences sp = getSharedPreferences("dnd_sync_settings", Context.MODE_PRIVATE);
-        if (!sp.getBoolean("alarm_master", true)) return;
-
         String targetPkg = sp.getString("alarm_pkg", "com.google.android.deskclock");
-        String currentPkg = sbn.getPackageName();
 
-        Notification notification = sbn.getNotification();
-        
-        // 🎯 核心修复：强力判定闹钟。除了匹配包名外，还要检测通知类别是否为 CATEGORY_ALARM 或者携带全屏意图
-        boolean isAlarmCategory = (notification != null && Notification.CATEGORY_ALARM.equals(notification.category));
-        boolean isTargetAlarm = currentPkg.equalsIgnoreCase(targetPkg) || currentPkg.contains("deskclock") || isAlarmCategory;
+        // 🎯 智慧相容判定：讀取 Android 官方標準鬧鐘分類標籤
+        String category = sbn.getNotification() != null ? sbn.getNotification().category : "";
+        boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
 
-        if (isTargetAlarm) {
-            currentAlarmNotification = sbn;
-            Log.d(TAG, "⏰ 💥 【核心成功拦截】手机端检测到系统闹钟正在响铃! 包名: " + currentPkg);
-            
-            try {
-                JSONObject json = new JSONObject();
-                json.put("sender", "phone");
-                json.put("type", "alarm");
-                json.put("action", "START_ALARM_UI"); // 指令：通知手表直接启动全屏 WearAlarmActivity
-                json.put("timestamp", System.currentTimeMillis());
-                
-                sendProtocolMessage(json.toString());
-                Log.d(TAG, "⏰ 成功向手表总线投递 START_ALARM_UI 响铃指令");
-            } catch (Exception e) {
-                Log.e(TAG, "发送闹钟启动协议异常", e);
+        // 條件滿足：包名完全一致 OR 包名包含時鐘關鍵字 OR 具備官方鬧鐘標籤
+        if (sbn.getPackageName().equalsIgnoreCase(targetPkg) || sbn.getPackageName().contains("deskclock") || isAlarmCategory) {
+            if (currentAlarmNotification == null) {
+                currentAlarmNotification = sbn;
+                Log.d(TAG, "⏰ 偵測到合法的系統鬧鐘響鈴通知，準備同步手錶 UI");
+                try {
+                    JSONObject json = new JSONObject();
+                    json.put("sender", "phone");
+                    json.put("type", "alarm");
+                    json.put("action", "START_ALARM_UI");
+                    sendProtocolMessage(json.toString()); // 精準單次投遞，絕不重複轟炸
+                } catch (Exception ignored) {}
             }
         }
     }
@@ -87,14 +84,17 @@ public class DNDNotificationService extends NotificationListenerService {
         SharedPreferences sp = getSharedPreferences("dnd_sync_settings", Context.MODE_PRIVATE);
         String targetPkg = sp.getString("alarm_pkg", "com.google.android.deskclock");
 
-        if (sbn.getPackageName().equalsIgnoreCase(targetPkg) || sbn.getPackageName().contains("deskclock")) {
+        String category = sbn.getNotification() != null ? sbn.getNotification().category : "";
+        boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
+
+        if (sbn.getPackageName().equalsIgnoreCase(targetPkg) || sbn.getPackageName().contains("deskclock") || isAlarmCategory) {
             currentAlarmNotification = null;
-            Log.d(TAG, "⏰ 手机端闹钟已关闭/延后，通知同步解除");
+            Log.d(TAG, "⏰ 手機端鬧鐘已關閉/延後，通知同步解除手錶 UI");
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "phone");
                 json.put("type", "alarm");
-                json.put("action", "FORCE_STOP_WEAR_ALARM"); // 默认停止和延后都会清空UI
+                json.put("action", "FORCE_STOP_WEAR_ALARM"); // 預期解除手錶端響鈴介面
                 sendProtocolMessage(json.toString());
             } catch (Exception ignored) {}
         }
@@ -109,7 +109,7 @@ public class DNDNotificationService extends NotificationListenerService {
                     Wearable.getMessageClient(this).sendMessage(n.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "MessageClient 协议报文投递失败", e);
+                Log.e(TAG, "MessageClient 協議報文投遞失敗", e);
             }
         }).start();
     }

@@ -37,101 +37,121 @@ import java.util.List;
 public class CameraService extends Service implements LifecycleOwner {
     private static final String TAG = "WearSync_CameraService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
-    private static final String CHANNEL_ID = "wear_sync_camera_channel";
-    private static final int NOTIFICATION_ID = 2048; // 🎯 定義統一的通知 ID
-
-    private LifecycleRegistry lifecycleRegistry;
+    private static final String CHANNEL_ID = "camera_service_channel";
+    
+    private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
     private ProcessCameraProvider cameraProvider;
     private boolean isRunning = false;
 
     @NonNull
     @Override
-    public Lifecycle getLifecycle() { return lifecycleRegistry; }
+    public Lifecycle getLifecycle() {
+        return lifecycleRegistry;
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        lifecycleRegistry = new LifecycleRegistry(this);
         lifecycleRegistry.setCurrentState(Lifecycle.State.CREATED);
-
-        // 1️⃣ 第一步：優先建立通知管道（Android O 及以上必需）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Camera Stream", NotificationManager.IMPORTANCE_LOW);
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null) nm.createNotificationChannel(ch);
-        }
-
-        // 2️⃣ 第二步：構建標準的前台服務通知物件
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_menu_camera)
-                .setContentTitle("远程相机采集器")
-                .setContentText("正在低延迟向手表投递流画面...")
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build();
-
-        // 3️⃣ 第三步：核心修復！僅呼叫一次 startForeground，並在 Android Q 及以上精確註冊 CAMERA 類型
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
-        }
-
-        lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
+        createNotificationChannel();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && "START_CAMERA".equalsIgnoreCase(intent.getAction()) && !isRunning) {
-            initCameraX();
-        } else if (intent != null && "STOP_CAMERA".equalsIgnoreCase(intent.getAction())) {
+        String action = intent != null ? intent.getAction() : null;
+        
+        if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+            Log.d(TAG, "🛑 收到停止命令，正在關閉前台服務與相機元件");
             stopSelf();
+            return START_NOT_STICKY;
         }
-        return START_NOT_STICKY;
+
+        if (isRunning) {
+            Log.d(TAG, "📸 CameraService 已經在運行中，略過重複啟動");
+            return START_STICKY;
+        }
+
+        isRunning = true;
+        lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
+
+        // 綁定前台通知
+        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("雙端相機流同步中")
+                .setContentText("正在背景安全捕捉相機畫面並傳輸至手錶...")
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .build();
+        
+        startForeground(2026, notification);
+        
+        // 啟動 CameraX 影像分析
+        startCameraPipeline();
+
+        return START_STICKY;
     }
 
-    private void initCameraX() {
-        ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(this);
-        future.addListener(() -> {
+    private void startCameraPipeline() {
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+        cameraProviderFuture.addListener(() -> {
             try {
-                cameraProvider = future.get();
-                ImageAnalysis analysis = new ImageAnalysis.Builder()
-                        .setTargetResolution(new Size(160, 160)) // 鎖死超低分辨率
+                cameraProvider = cameraProviderFuture.get();
+                cameraProvider.unbindAll();
+
+                // 使用低解析度加速傳輸與解碼，完美適配手錶小螢幕
+                ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+                        .setTargetResolution(new Size(240, 320))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
-                analysis.setAnalyzer(ContextCompat.getMainExecutor(this), this::analyzeFrame);
-                cameraProvider.unbindAll();
-                cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis);
-                isRunning = true;
+                imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), this::processImageProxy);
+
+                CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
+                cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis);
+                lifecycleRegistry.setCurrentState(Lifecycle.State.RESUMED);
+                Log.d(TAG, "🚀 CameraX 影像分析採集鏈路成功建立！");
+
             } catch (Exception e) {
-                Log.e(TAG, "CameraX 初始化硬件层失败", e);
+                Log.e(TAG, "綁定 CameraX 生命週期發生致命錯誤", e);
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void analyzeFrame(@NonNull ImageProxy image) {
+    private void processImageProxy(@NonNull ImageProxy image) {
         try {
-            if (image.getFormat() != ImageFormat.YUV_420_888) return;
+            if (image.getFormat() != ImageFormat.YUV_420_888) {
+                image.close();
+                return;
+            }
 
-            ImageProxy.PlaneProxy[] planes = image.getPlanes();
-            ByteBuffer yBuf = planes[0].getBuffer();
-            ByteBuffer uBuf = planes[1].getBuffer();
-            ByteBuffer vBuf = planes[2].getBuffer();
+            // 提取 YUV_420_888 位元組資料轉換為通用 NV21
+            ByteBuffer yBuffer = image.getPlanes()[0].getBuffer();
+            ByteBuffer uBuffer = image.getPlanes()[1].getBuffer();
+            ByteBuffer vBuffer = image.getPlanes()[2].getBuffer();
 
-            int ySize = yBuf.remaining();
-            int uSize = uBuf.remaining();
-            int vSize = vBuf.remaining();
+            int ySize = yBuffer.remaining();
+            int uSize = uBuffer.remaining();
+            int vSize = vBuffer.remaining();
 
             byte[] nv21 = new byte[ySize + uSize + vSize];
-            yBuf.get(nv21, 0, ySize);
-            vBuf.get(nv21, ySize, vSize);
-            uBuf.get(nv21, ySize + vSize, uSize);
+            yBuffer.get(nv21, 0, ySize);
+            vBuffer.get(nv21, ySize, vSize);
+            uBuffer.get(nv21, ySize + vSize, uSize);
 
+            // 壓縮為 JPEG (設定 30% 低畫質降低藍牙頻寬壓力)
             YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            yuv.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 30, out); // 30% 极小画质
+            yuv.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 30, out); 
+            byte[] jpegData = out.toByteArray();
 
-            String base64Str = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            // 🎯 【臨時排查通道】將記憶體中的 JPEG 位元組發送給本機 MainActivity 渲染
+            Intent localIntent = new Intent("de.rhaeus.dndsync.LOCAL_CAMERA_STREAM");
+            localIntent.putExtra("JPEG_DATA", jpegData);
+            localIntent.setPackage(getPackageName()); // 限制僅在本應用內部廣播，確保安全
+            sendBroadcast(localIntent);
+
+            // 轉為 Base64 透過 Google 藍牙總線發送至手錶端
+            String base64Str = Base64.encodeToString(jpegData, Base64.NO_WRAP);
             JSONObject json = new JSONObject();
             json.put("sender", "phone");
             json.put("type", "camera_stream");
@@ -148,9 +168,8 @@ public class CameraService extends Service implements LifecycleOwner {
             }).start();
 
         } catch (Exception e) {
-            Log.e(TAG, "画面压缩投递异常", e);
+            Log.e(TAG, "畫面壓縮投遞異常", e);
         } finally {
-            // 命脉：无条件关闭
             image.close();
         }
     }
@@ -164,5 +183,19 @@ public class CameraService extends Service implements LifecycleOwner {
     }
 
     @Override
-    public IBinder onBind(Intent intent) { return null; }
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "相機背景採集通知",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) manager.createNotificationChannel(channel);
+        }
+    }
 }
