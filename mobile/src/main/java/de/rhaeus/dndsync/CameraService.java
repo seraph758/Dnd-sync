@@ -38,6 +38,7 @@ public class CameraService extends Service implements LifecycleOwner {
     private static final String TAG = "WearSync_CameraService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     private static final String CHANNEL_ID = "wear_sync_camera_channel";
+    private static final int NOTIFICATION_ID = 2048; // 🎯 定義統一的通知 ID
 
     private LifecycleRegistry lifecycleRegistry;
     private ProcessCameraProvider cameraProvider;
@@ -53,17 +54,28 @@ public class CameraService extends Service implements LifecycleOwner {
         lifecycleRegistry = new LifecycleRegistry(this);
         lifecycleRegistry.setCurrentState(Lifecycle.State.CREATED);
 
+        // 1️⃣ 第一步：優先建立通知管道（Android O 及以上必需）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Camera Stream", NotificationManager.IMPORTANCE_LOW);
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(ch);
         }
-        Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
+
+        // 2️⃣ 第二步：構建標準的前台服務通知物件
+        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setContentTitle("远程相机采集器")
                 .setContentText("正在低延迟向手表投递流画面...")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
-        startForeground(2048, n);
+
+        // 3️⃣ 第三步：核心修復！僅呼叫一次 startForeground，並在 Android Q 及以上精確註冊 CAMERA 類型
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
+
         lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
     }
 
@@ -83,7 +95,7 @@ public class CameraService extends Service implements LifecycleOwner {
             try {
                 cameraProvider = future.get();
                 ImageAnalysis analysis = new ImageAnalysis.Builder()
-                        .setTargetResolution(new Size(160, 160)) // 锁死超低分辨率
+                        .setTargetResolution(new Size(160, 160)) // 鎖死超低分辨率
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
@@ -137,7 +149,7 @@ public class CameraService extends Service implements LifecycleOwner {
 
         } catch (Exception e) {
             Log.e(TAG, "画面压缩投递异常", e);
-        } finally {
+        } final_ {
             // 命脉：无条件关闭
             image.close();
         }
