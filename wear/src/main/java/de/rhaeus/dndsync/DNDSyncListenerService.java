@@ -3,6 +3,7 @@ package de.rhaeus.dndsync;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.os.PowerManager;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
 import android.util.Log;
@@ -29,16 +30,21 @@ public class DNDSyncListenerService extends WearableListenerService {
             String type = json.optString("type", "");
             String action = json.optString("action", "");
 
-            if ("wear".equalsIgnoreCase(sender)) return; // 杜绝自收
+            if ("wear".equalsIgnoreCase(sender)) return; // 拦截自发自收
 
-            // 1️⃣ 勿扰板块：完全无条件跟随时同步
+            // 🔥 核心逻辑：凡是来自手机的指令，均使用 Thread 异步强制亮屏，防止熄屏状态下Activity和宏失效
+            lightUpScreenAsync();
+
+            // 1️⃣ 勿扰与模式联动板块
             if ("dnd".equalsIgnoreCase(type)) {
                 int dndVal = json.optInt("dnd_profile_value", -1);
                 if (dndVal != -1) {
                     NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (nm != null) nm.setInterruptionFilter(dndVal);
+                    if (nm != null) {
+                        nm.setInterruptionFilter(dndVal);
+                    }
 
-                    // 震动处理逻辑
+                    // 开启震动
                     if (json.optBoolean("wear_vibrate_toggle", true)) {
                         Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                         if (vibrator != null) {
@@ -46,24 +52,26 @@ public class DNDSyncListenerService extends WearableListenerService {
                         }
                     }
 
-                    boolean dndEnabled = (dndVal != NotificationManager.INTERRUPTION_FILTER_ALL);
+                    // 判断手机是开启还是关闭勿扰 (INTERRUPTION_FILTER_ALL 为 1，代表关闭勿扰/恢复正常)
+                    boolean isDndOn = (dndVal != NotificationManager.INTERRUPTION_FILTER_ALL);
                     DNDSyncAccessService accessService = DNDSyncAccessService.getSharedInstance();
-
+                    
                     if (accessService != null) {
-                        // 如果开启了睡眠联动并且当前进入勿扰状态，触发巨集下拉自动化操作
-                        if (json.optBoolean("wear_sleep_toggle", true) && dndEnabled) {
-                            accessService.triggerBedtimeMacro();
-                        }
-                        // 如果开启了省电联动
-                        if (json.optBoolean("wear_power_toggle", false) && dndEnabled) {
-                            accessService.triggerPowerSavingMacro();
+                        if (isDndOn) {
+                            // 手机打开勿扰 -> 手表联动打开睡眠/省电
+                            if (json.optBoolean("wear_sleep_toggle", true)) accessService.triggerBedtimeMacro(true);
+                            if (json.optBoolean("wear_power_toggle", true)) accessService.triggerPowerSavingMacro(true);
+                        } else {
+                            // 手机关闭勿扰 -> 手表无条件联动关闭睡眠/省电！
+                            if (json.optBoolean("wear_sleep_toggle", true)) accessService.triggerBedtimeMacro(false);
+                            if (json.optBoolean("wear_power_toggle", true)) accessService.triggerPowerSavingMacro(false);
                         }
                     }
                 }
                 return;
             }
 
-            // 2️⃣ 闹钟板块：拉起全屏或强制退出
+            // 2️⃣ 闹钟模块响应
             if ("alarm".equalsIgnoreCase(type)) {
                 if ("START_ALARM_UI".equalsIgnoreCase(action)) {
                     Intent uiIntent = new Intent(this, WearAlarmActivity.class);
@@ -75,15 +83,36 @@ public class DNDSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 3️⃣ 相机板块：被动被手机拉起 UI
-            if ("camera_control".equalsIgnoreCase(type) && "START_CAMERA_UI".equalsIgnoreCase(action)) {
-                Intent camIntent = new Intent(this, WearCameraActivity.class);
-                camIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(camIntent);
+            // 3️⃣ 相机唤醒模块响应
+            if ("camera_action".equalsIgnoreCase(type)) {
+                if ("START_CAMERA_UI".equalsIgnoreCase(action)) {
+                    Intent camIntent = new Intent(this, WearCameraActivity.class);
+                    camIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                    startActivity(camIntent);
+                }
+                return;
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "手表接收解析底层信令失败", e);
+            Log.e(TAG, "手表解析数据核心异常", e);
         }
+    }
+
+    private void lightUpScreenAsync() {
+        new Thread(() -> {
+            try {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (pm != null) {
+                    PowerManager.WakeLock wakeLock = pm.newWakeLock(
+                            PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
+                            "WearSync:WakeLockAsync"
+                    );
+                    wakeLock.acquire(3000); // 持续提亮3秒
+                    Log.d(TAG, "⚡ Thread 异步强制唤醒手表屏幕成功");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "强制亮屏发生异常", e);
+            }
+        }).start();
     }
 }

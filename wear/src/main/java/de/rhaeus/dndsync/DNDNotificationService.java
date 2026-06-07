@@ -16,24 +16,30 @@ public class DNDNotificationService extends NotificationListenerService {
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
     public static void sendDndReverseSyncToPhone(Context context, int interruptionFilter) {
-        try {
-            JSONObject json = new JSONObject();
-            json.put("sender", "wear");
-            json.put("type", "dnd");
-            json.put("dnd_profile_value", interruptionFilter); // 回归纯粹系统勿扰修改
+        new Thread(() -> {
+            try {
+                JSONObject json = new JSONObject();
+                json.put("sender", "wear");
+                json.put("type", "dnd");
+                json.put("dnd_profile_value", interruptionFilter);
+                json.put("timestamp", System.currentTimeMillis());
 
-            final byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
-            new Thread(() -> {
-                try {
-                    List<Node> nodes = Tasks.await(Wearable.getNodeClient(context).getConnectedNodes());
-                    for (Node n : nodes) {
-                        Wearable.getMessageClient(context).sendMessage(n.getId(), UNIVERSAL_SYNC_PATH, data);
-                    }
-                    Log.d(TAG, "📤 手表成功反向向手机投递纯系统勿扰信令: " + interruptionFilter);
-                } catch (Exception e) {
-                    Log.e(TAG, "反向勿扰投递失败", e);
+                byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
+                List<Node> nodes = Tasks.await(Wearable.getNodeClient(context).getConnectedNodes());
+                for (Node node : nodes) {
+                    Wearable.getMessageClient(context).sendMessage(node.getId(), UNIVERSAL_SYNC_PATH, data);
+                    Log.d(TAG, "📤 手表反向同步勿扰状态到手机成功: " + interruptionFilter);
                 }
-            }).start();
-        } catch (Exception ignored) {}
+            } catch (Exception e) {
+                Log.e(TAG, "手表投递反向勿扰信令失败", e);
+            }
+        }).start();
+    }
+
+    @Override
+    public void onInterruptionFilterChanged(int interruptionFilter) {
+        super.onInterruptionFilterChanged(interruptionFilter);
+        Log.d(TAG, "⌚ 手表系统勿扰触发变更: " + interruptionFilter);
+        sendDndReverseSyncToPhone(this, interruptionFilter);
     }
 }

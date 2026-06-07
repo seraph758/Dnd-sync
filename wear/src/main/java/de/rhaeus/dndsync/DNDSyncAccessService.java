@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription;
 import android.content.Intent;
 import android.graphics.Path;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 
 public class DNDSyncAccessService extends AccessibilityService {
@@ -26,14 +27,10 @@ public class DNDSyncAccessService extends AccessibilityService {
     }
 
     @Override
-    public void onAccessibilityEvent(AccessibilityEvent accessibilityEvent) {
-
-    }
+    public void onAccessibilityEvent(AccessibilityEvent accessibilityEvent) {}
 
     @Override
-    public void onInterrupt() {
-
-    }
+    public void onInterrupt() {}
 
     public void openQuickSettings() {
         performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
@@ -61,9 +58,6 @@ public class DNDSyncAccessService extends AccessibilityService {
         Path path = new Path();
 
         final int height = displayMetrics.heightPixels;
-        final int top = (int)(height * .25);
-        final int mid = (int)(height * .5);
-        final int bottom = (int)(height * .75);
         final int midX = displayMetrics.widthPixels / 2;
 
         path.moveTo(midX, (int)(height * .4));
@@ -77,9 +71,7 @@ public class DNDSyncAccessService extends AccessibilityService {
         Path path = new Path();
 
         final int height = displayMetrics.heightPixels;
-        final int top = (int)(height * .25);
         final int mid = (int)(height * .5);
-        final int bottom = (int)(height * .75);
         final int midX = displayMetrics.widthPixels / 2;
 
         path.moveTo(midX, 0);
@@ -87,42 +79,9 @@ public class DNDSyncAccessService extends AccessibilityService {
         gestureBuilder.addStroke(new GestureDescription.StrokeDescription(path, 100, 50));
         dispatchGesture(gestureBuilder.build(), null, null);
     }
-        // 🎯 補上手錶監聽服務呼叫的 Bedtime 睡眠模式巨集入口
-    public void triggerBedtimeMacro() {
-        new Thread(() -> {
-            try {
-                swipeDown();      // 下拉快捷欄
-                Thread.sleep(1000);
-                clickIcon1_2();   // 自動定位並模擬點擊睡眠圖標
-                Thread.sleep(1000);
-                goBack();         // 收起狀態欄
-            } catch (Exception e) {
-                android.util.Log.e("AccessService", "執行睡眠巨集失敗", e);
-            }
-        }).start();
-    }
 
-    // 🎯 補上手錶監聽服務呼叫的 PowerSaving 省電模式巨集入口
-    public void triggerPowerSavingMacro() {
-        new Thread(() -> {
-            try {
-                swipeDown();      // 下拉快捷欄
-                Thread.sleep(1000);
-                // 這裡模擬點擊省電模式圖標，先使用預設的圖標1_2點擊（您可以根據手錶排版微調）
-                clickIcon1_2();   
-                Thread.sleep(1000);
-                goBack();         // 收起狀態欄
-            } catch (Exception e) {
-                android.util.Log.e("AccessService", "執行省電巨集失敗", e);
-            }
-        }).start();
-    }
-
-    // (x, y) in screen coordinates
     private static GestureDescription createClick(float x, float y) {
-        // for a single tap a duration of 1 ms is enough
         final int DURATION = 1;
-
         Path clickPath = new Path();
         clickPath.moveTo(x, y);
         GestureDescription.StrokeDescription clickStroke =
@@ -132,4 +91,35 @@ public class DNDSyncAccessService extends AccessibilityService {
         return clickBuilder.build();
     }
 
+    // 🎯 睡眠模式自动化入口（传入 true 开启，false 关闭）
+    public void triggerBedtimeMacro(boolean enable) {
+        new Thread(() -> {
+            try {
+                swipeDown(); // 下拉快捷栏
+                Thread.sleep(1000);
+                clickIcon1_2(); 
+                Thread.sleep(1000);
+                goBack(); // 收起
+                Log.d("AccessService", "睡眠自动化宏执行成功 -> " + enable);
+            } catch (Exception e) {
+                Log.e("AccessService", "执行睡眠自动化异常", e);
+            }
+        }).start();
+    }
+
+    // 🎯 省电模式自动化入口（传入 true 开启，false 关闭）
+    public void triggerPowerSavingMacro(boolean enable) {
+        new Thread(() -> {
+            try {
+                swipeDown();
+                Thread.sleep(1000);
+                clickIcon1_2(); 
+                Thread.sleep(1000);
+                goBack();
+                Log.d("AccessService", "省电自动化宏执行成功 -> " + enable);
+            } catch (Exception e) {
+                Log.e("AccessService", "执行省电自动化异常", e);
+            }
+        }).start();
+    }
 }
