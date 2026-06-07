@@ -149,7 +149,7 @@ public class CameraService extends Service implements LifecycleOwner {
 
         } catch (Exception e) {
             Log.e(TAG, "画面压缩投递异常", e);
-        } final_ {
+        } finally {
             // 命脉：无条件关闭
             image.close();
         }
