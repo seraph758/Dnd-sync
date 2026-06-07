@@ -27,7 +27,6 @@ import com.google.android.gms.wearable.Wearable
 import androidx.compose.ui.graphics.Color
 import org.json.JSONObject
 import com.google.android.gms.tasks.Tasks
-import androidx.compose.material3.Text
 
 class MainFragment : Fragment() {
     private val isNotificationAllowedState = mutableStateOf(false)
@@ -90,7 +89,7 @@ class MainFragment : Fragment() {
                             ) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("手錶連接狀態: ", color = colors.textPrimary, fontWeight = FontWeight.Medium)
+                                        Text(text = "手錶連接狀態: ", color = colors.textPrimary, fontWeight = FontWeight.Medium)
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = if (isConnectedState.value) "已連接" else "未連接",
@@ -99,7 +98,7 @@ class MainFragment : Fragment() {
                                         )
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("通知監聽權限: ", color = colors.textPrimary, fontWeight = FontWeight.Medium)
+                                        Text(text = "通知監聽權限: ", color = colors.textPrimary, fontWeight = FontWeight.Medium)
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = if (isNotificationAllowedState.value) "已授予" else "未授予",
@@ -113,7 +112,7 @@ class MainFragment : Fragment() {
                                             colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
                                             modifier = Modifier.padding(top = 4.dp)
                                         ) {
-                                            Text("去授予權限", color = colors.btnText)
+                                            Text(text = "去授予權限", color = colors.btnText)
                                         }
                                     }
                                 }
@@ -146,7 +145,7 @@ class MainFragment : Fragment() {
                                     colors = ButtonDefaults.buttonColors(containerColor = colors.accent),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("主動拉起手錶端相機介面", color = colors.btnText)
+                                    Text(text = "主動拉起手錶端相機介面", color = colors.btnText)
                                 }
                             }
                         }
@@ -175,7 +174,7 @@ class MainFragment : Fragment() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4. Bond.dp),
+                .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
