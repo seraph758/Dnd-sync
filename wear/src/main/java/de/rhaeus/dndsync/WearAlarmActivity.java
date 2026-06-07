@@ -10,7 +10,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
 import android.os.VibrationEffect;
-import android.util.Log;
 import android.view.WindowManager;
 import android.widget.Button;
 import com.google.android.gms.tasks.Tasks;
@@ -21,26 +20,25 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class WearAlarmActivity extends Activity {
-    private static final String TAG = "WearSync_AlarmActivity";
-    private Vibrator activityVibrator;
+    private Vibrator vibrator;
     private boolean isVibrating = false;
-    private Handler vibrationHandler;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     private final BroadcastReceiver stopReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             if ("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI".equals(intent.getAction())) {
-                cleanUpAndFinish();
+                cleanUpAndDestroy();
             }
         }
     };
 
-    private final Runnable vibrationRunnable = new Runnable() {
+    private final Runnable vibrateRunnable = new Runnable() {
         @Override
         public void run() {
-            if (isVibrating && activityVibrator != null) {
-                activityVibrator.vibrate(VibrationEffect.createOneShot(400, VibrationEffect.DEFAULT_AMPLITUDE));
-                vibrationHandler.postDelayed(this, 800);
+            if (isVibrating && vibrator != null) {
+                vibrator.vibrate(VibrationEffect.createOneShot(600, VibrationEffect.DEFAULT_AMPLITUDE));
+                handler.postDelayed(this, 1000); // 持续高频密集震动
             }
         }
     };
@@ -48,68 +46,53 @@ public class WearAlarmActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON 
+                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED 
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
         
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        setContentView(getResources().getIdentifier("activity_wear_alarm", "layout", getPackageName()));
+        vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
 
-        int layoutId = getResources().getIdentifier("activity_wear_alarm", "layout", getPackageName());
-        if (layoutId != 0) {
-            setContentView(layoutId);
-        } else {
-            setContentView(android.R.layout.activity_list_item);
-        }
+        Button btnDismiss = findViewById(getResources().getIdentifier("btn_dismiss", "id", getPackageName()));
+        Button btnSnooze = findViewById(getResources().getIdentifier("btn_snooze", "id", getPackageName()));
 
-        // 🎯 动态获取按钮 ID 并设置点击，防止因 XML 的 ID 不匹配而中断编译
-        int dismissId = getResources().getIdentifier("btn_wear_dismiss", "id", getPackageName());
-        int snoozeId = getResources().getIdentifier("btn_wear_snooze", "id", getPackageName());
-
-        if (dismissId != 0) {
-            Button btnDismiss = findViewById(dismissId);
-            if (btnDismiss != null) btnDismiss.setOnClickListener(v -> { sendControlActionToPhone("DISMISS"); cleanUpAndFinish(); });
-        }
-        if (snoozeId != 0) {
-            Button btnSnooze = findViewById(snoozeId);
-            if (btnSnooze != null) btnSnooze.setOnClickListener(v -> { sendControlActionToPhone("SNOOZE"); cleanUpAndFinish(); });
-        }
-
-        activityVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-        vibrationHandler = new Handler(Looper.getMainLooper());
-        isVibrating = true;
-        vibrationHandler.post(vibrationRunnable);
+        if (btnDismiss != null) btnDismiss.setOnClickListener(v -> sendActionToPhone("DISMISS"));
+        if (btnSnooze != null) btnSnooze.setOnClickListener(v -> sendActionToPhone("SNOOZE"));
 
         registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
+        isVibrating = true;
+        handler.post(vibrateRunnable);
     }
 
-    private void sendControlActionToPhone(String action) {
+    private void sendActionToPhone(String action) {
         new Thread(() -> {
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "wear");
                 json.put("type", "alarm_control");
                 json.put("action", action);
-                json.put("timestamp", System.currentTimeMillis());
-                
+
                 byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-                for (Node node : nodes) {
-                    Wearable.getMessageClient(this).sendMessage(node.getId(), "/wear-universal-sync", data);
+                for (Node n : nodes) {
+                    Wearable.getMessageClient(this).sendMessage(n.getId(), "/wear-universal-sync", data);
                 }
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
+            runOnUiThread(this::cleanUpAndDestroy);
         }).start();
     }
 
-    private void cleanUpAndFinish() {
+    private void cleanUpAndDestroy() {
         isVibrating = false;
-        if (vibrationHandler != null) vibrationHandler.removeCallbacks(vibrationRunnable);
-        if (activityVibrator != null) activityVibrator.cancel();
-        try { unregisterReceiver(stopReceiver); } catch (Exception e) {}
-        finishAndRemoveTask();
+        handler.removeCallbacks(vibrateRunnable);
+        if (vibrator != null) vibrator.cancel();
+        try { unregisterReceiver(stopReceiver); } catch (Exception ignored) {}
+        finishAndRemoveTask(); // 干净销毁自身任务树
     }
 
     @Override
     protected void onDestroy() {
-        cleanUpAndFinish();
+        cleanUpAndDestroy();
         super.onDestroy();
     }
 }
