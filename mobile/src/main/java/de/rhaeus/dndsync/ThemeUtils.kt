@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.ui.graphics.Color
 
-// 🎯 定義 MainFragment 中需要的所有顏色符號
 data class ThemeColors(
     val background: Color,
     val surfaceCard: Color,
@@ -15,13 +14,14 @@ data class ThemeColors(
 )
 
 object ThemeUtils {
+    fun isDarkTheme(context: Context): Boolean {
+        val currentNightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        return currentNightMode == Configuration.UI_MODE_NIGHT_YES
+    }
+
     fun getColors(context: Context, isDark: Boolean): ThemeColors {
         val prefs = context.getSharedPreferences("dndsync_prefs", Context.MODE_PRIVATE)
-        
-        // 默認顏色
         val defaultAccent = if (isDark) 0xFFFFB74D.toInt() else 0xFFF57C00.toInt()
-        
-        // 從用戶設置中動態讀取顏色（如果用戶在界面上自定義了顏色的話）
         val userAccentColor = prefs.getInt("user_accent_color", defaultAccent)
 
         return if (isDark) {
@@ -30,7 +30,7 @@ object ThemeUtils {
                 surfaceCard = Color(0xFF1E1E1E),
                 textPrimary = Color(0xFFFFFFFF),
                 textSecondary = Color(0xFFAAAAAA),
-                accent = Color(userAccentColor), // 動態自定義強調色
+                accent = Color(userAccentColor),
                 btnText = Color(0xFF121212)
             )
         } else {
@@ -39,7 +39,7 @@ object ThemeUtils {
                 surfaceCard = Color(0xFFFFFFFF),
                 textPrimary = Color(0xFF212121),
                 textSecondary = Color(0xFF757575),
-                accent = Color(userAccentColor), // 動態自定義強調色
+                accent = Color(userAccentColor),
                 btnText = Color(0xFFFFFFFF)
             )
         }

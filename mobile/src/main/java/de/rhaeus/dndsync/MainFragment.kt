@@ -33,19 +33,16 @@ class MainFragment : Fragment() {
     private val isConnectedState = mutableStateOf(false)
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
 
-    // 勿扰板块状态
     private val dndMasterSwitch = mutableStateOf(true)
     private val wearSleepSwitch = mutableStateOf(false)
     private val wearPowerSavingSwitch = mutableStateOf(false)
     private val wearVibrateSwitch = mutableStateOf(false)
 
-    // 闹钟板块状态
     private val alarmMasterSwitch = mutableStateOf(true)
     private val alarmPkgName = mutableStateOf("com.google.android.deskclock")
     private val alarmStopKeywords = mutableStateOf("停止,关闭,dismiss")
     private val alarmSnoozeKeywords = mutableStateOf("稍后提醒, snooze")
 
-    // 相机板块状态
     private val cameraPkgName = mutableStateOf("com.google.android.GoogleCamera")
 
     override fun onCreateView(
@@ -57,7 +54,7 @@ class MainFragment : Fragment() {
         return ComposeView(requireContext()).apply {
             setContent {
                 val isDark = ThemeUtils.isDarkTheme(requireContext())
-                val colors = ThemeUtils.getColors(isDark)
+                val colors = ThemeUtils.getColors(requireContext(), isDark)
 
                 MaterialTheme {
                     Box(
@@ -72,7 +69,6 @@ class MainFragment : Fragment() {
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            // 标题
                             Text(
                                 text = "Wear Universal Sync",
                                 fontSize = 24.sp,
@@ -81,7 +77,6 @@ class MainFragment : Fragment() {
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
 
-                            // 状态总览卡片
                             Card(
                                 shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(containerColor = colors.surfaceCard),
@@ -118,7 +113,6 @@ class MainFragment : Fragment() {
                                 }
                             }
 
-                            // 板块一：勿扰连动设置
                             SectionCard(title = "勿擾模式連動控制", colors = colors) {
                                 SwitchRow("啟用手機/手錶雙向勿擾同步", dndMasterSwitch, colors = colors) { saveSettings() }
                                 val subEnabled = dndMasterSwitch.value
@@ -127,7 +121,6 @@ class MainFragment : Fragment() {
                                 SwitchRow(" └─ 手錶震動模式連動", wearVibrateSwitch, subEnabled, colors) { saveSettings() }
                             }
 
-                            // 板块二：闹钟硬连锁设置
                             SectionCard(title = "鬧鐘硬連鎖動態配置", colors = colors) {
                                 SwitchRow("啟用鬧鐘同步推播", alarmMasterSwitch, colors = colors) { saveSettings() }
                                 val alarmEnabled = alarmMasterSwitch.value
@@ -136,7 +129,6 @@ class MainFragment : Fragment() {
                                 InputField("延後關鍵字 (逗號隔開)", alarmSnoozeKeywords, alarmEnabled, colors) { saveSettings() }
                             }
 
-                            // 板块三：远程相机控制
                             SectionCard(title = "遠程相機同步控制", colors = colors) {
                                 InputField("手機相機 App 包名", cameraPkgName, enabled = true, colors = colors) { saveSettings() }
                                 Spacer(modifier = Modifier.height(4.dp))
@@ -260,8 +252,19 @@ class MainFragment : Fragment() {
                 for (node in nodes) {
                     Wearable.getMessageClient(requireContext()).sendMessage(node.id, "/wear-universal-sync", data)
                 }
+                Log.d("WearSync_Main", "📤 成功向所有节点发送相机唤醒信令")
+
+                val intent = Intent(requireContext(), CameraService::class.java).apply {
+                    action = "START_CAMERA"
+                }
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    requireContext().startForegroundService(intent)
+                } else {
+                    requireContext().startService(intent)
+                }
+                Log.d("WearSync_Main", "⚡ 本地 CameraService 启动命令投递完毕")
             } catch (e: Exception) {
-                Log.e("WearSync_Main", "主動拉起手錶相機失敗", e)
+                Log.e("WearSync_Main", "双向相机拉起逻辑失败", e)
             }
         }.start()
     }
