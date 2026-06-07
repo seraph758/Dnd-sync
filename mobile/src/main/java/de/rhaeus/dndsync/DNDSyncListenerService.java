@@ -41,8 +41,8 @@ public class DNDSyncListenerService extends WearableListenerService {
                         Log.d(TAG, "📱 手机成功响应手表反向控制勿扰: " + dndVal);
                         
                         // 1.5秒后自动解锁
-                        new android.os.Timer().schedule(new java.util.TimerTask() {
-                            @Override
+                       new java.util.Timer().schedule(new java.util.TimerTask() {
+                          @Override
                             public void run() { isInternalUpdate = false; }
                         }, 1500);
                     }
