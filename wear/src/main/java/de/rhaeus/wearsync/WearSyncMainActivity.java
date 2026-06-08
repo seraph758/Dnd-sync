@@ -12,7 +12,7 @@ import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import java.util.List;
 
-public class MainActivity extends FragmentActivity {
+public class WearSyncMainActivity extends FragmentActivity {
     private static final String TAG = "WearSync_WearMain";
 
     @Override
