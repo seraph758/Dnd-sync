@@ -14,7 +14,7 @@ import android.graphics.BitmapFactory;
 import android.view.View;
 import android.widget.ImageView;
 
-public class MainActivity extends AppCompatActivity {
+public class PhoneSyncMainActivity extends AppCompatActivity {
 
     // 🎯 临时排查组件声明
     private ImageView ivLocalPreview;
