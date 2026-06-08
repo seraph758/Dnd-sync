@@ -10,7 +10,7 @@ import com.google.android.gms.wearable.WearableListenerService;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 
-public class WearSyncyncListenerService extends WearableListenerService {
+public class PhoneSyncListenerService extends WearableListenerService {
     private static final String TAG = "WearSync_PhoneListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
@@ -53,15 +53,15 @@ public class WearSyncyncListenerService extends WearableListenerService {
             if ("alarm_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "⏰ 收到手表端传回的闹钟按键动作: " + action);
                 if ("DISMISS".equalsIgnoreCase(action)) {
-                    if (DNDNotificationService.dismissPendingIntent != null) {
-                        DNDNotificationService.dismissPendingIntent.send();
+                    if (PhoneSyncNotificationService.dismissPendingIntent != null) {
+                        PhoneSyncNotificationService.dismissPendingIntent.send();
                         Log.d(TAG, "🎯 [自动化成功] 已代用户点击手机通知栏「停止/关闭」按钮");
                     } else {
                         Log.w(TAG, "⚠️ 触发点击失败：手机端暂未捕获到合法的停止 PendingIntent");
                     }
                 } else if ("SNOOZE".equalsIgnoreCase(action)) {
-                    if (DNDNotificationService.snoozePendingIntent != null) {
-                        DNDNotificationService.snoozePendingIntent.send();
+                    if (PhoneSyncNotificationService.snoozePendingIntent != null) {
+                        PhoneSyncNotificationService.snoozePendingIntent.send();
                         Log.d(TAG, "🎯 [自动化成功] 已代用户点击手机通知栏「延后/稍后提醒」按钮");
                     } else {
                         Log.w(TAG, "⚠️ 触发点击失败：手机端暂未捕获到合法的延后 PendingIntent");
@@ -77,7 +77,7 @@ public class WearSyncyncListenerService extends WearableListenerService {
 
                     // 🎯 核心防发热保护：由于 Android 14 严厉禁止后台直接启动前台相机服务（FGS）
                     // 在正式启动服务前，必须发送一条唤醒 Activity 甚至赋予前台豁免的 Intent，防止系统爆引发热
-                    Intent svc = new Intent(this, CameraService.class);
+                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("START_CAMERA");
                     try {
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -90,14 +90,14 @@ public class WearSyncyncListenerService extends WearableListenerService {
                         // 进行安全回退：此处可以引导通知或通过 Activity 拉起过渡，斩断空转死循环发热源头
                     }
                 } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-                    Intent svc = new Intent(this, CameraService.class);
+                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("STOP_CAMERA");
                     startService(svc);
                 } 
                 // 🎯 核心闭环：手表 3 秒倒计时完美结束，手机本地执行抓拍
                 else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
                     Log.d(TAG, "📸 [核心接收] 接收到手表的拍照动作，准备投递给本地 CameraService");
-                    Intent svc = new Intent(this, CameraService.class);
+                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("TAKE_PICTURE"); // 直接传给 CameraService 让 CameraX 抓取
                     startService(svc);
                 }
