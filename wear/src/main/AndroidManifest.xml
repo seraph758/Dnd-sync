@@ -16,38 +16,30 @@
         android:icon="@mipmap/ic_launcher"
         android:label="Wear Sync"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DNDSync">
+        android:theme="@style/Theme.WearSync">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".WearSyncMainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
+    
         <activity           
             android:name=".WearAlarmActivity" 
             android:exported="false" 
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
+            
         <activity 
             android:name=".WearCameraActivity"
             android:exported="true"
-            android:taskAffinity="de.rhaeus.dndsync.camera"
+            android:taskAffinity="de.rhaeus.wearsync.camera"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
-
-
-        <uses-library
-            android:name="com.google.android.wearable"
-            android:required="true" />
-
-        <meta-data
-            android:name="com.google.android.wearable.standalone"
-            android:value="false" />
-
+    
         <service
-            android:name=".DNDSyncAccessService"
+            android:name=".WearSyncAccessService"
             android:description="@string/access_desc"
             android:enabled="true"
             android:exported="false"
@@ -60,9 +52,9 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
-
+    
         <service
-            android:name=".DNDSyncListenerService"
+            android:name=".WearSyncListenerService"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -70,9 +62,9 @@
                 <data android:host="*" android:pathPrefix="/wear-universal-sync" android:scheme="wear" />
             </intent-filter>
         </service>
-
+    
         <service
-            android:name=".DNDNotificationService"
+            android:name=".WearSyncNotificationService"
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
@@ -82,4 +74,5 @@
         </service>
 
     </application>
+
 </manifest>
