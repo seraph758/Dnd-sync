@@ -1,4 +1,4 @@
-package de.rhaeus.dndsync
+package de.rhaeus.wearsync
 
 import android.content.Context
 import android.content.Intent
