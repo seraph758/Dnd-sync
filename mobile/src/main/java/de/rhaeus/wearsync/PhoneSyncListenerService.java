@@ -54,7 +54,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
             if ("camera_action".equalsIgnoreCase(type) || "camera_control".equalsIgnoreCase(type)) {
                 if ("START_CAMERA_UI".equalsIgnoreCase(action)) {
                     Log.d(TAG, "📸 收到拉起命令，正在启动手机后台前台采集服务...");
-                    Intent svc = new Intent(this, CameraService.class);
+                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("START_CAMERA");
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                         startForegroundService(svc);
@@ -62,7 +62,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
                         startService(svc);
                     }
                 } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-                    Intent svc = new Intent(this, CameraService.class);
+                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("STOP_CAMERA");
                     startService(svc);
                 }
