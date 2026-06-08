@@ -178,7 +178,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
         } catch (Exception e) {
             Log.e(TAG, "畫面壓縮投遞異常", e);
-        } finaly {
+        } finally {
             image.close();
         }
     }
