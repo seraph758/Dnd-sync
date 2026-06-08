@@ -14,7 +14,7 @@ import androidx.preference.PreferenceFragmentCompat;
 import com.google.android.gms.wearable.CapabilityClient;
 import com.google.android.gms.wearable.Wearable;
 
-public class MainFragment extends PreferenceFragmentCompat {
+public class WearSyncMainFragment extends PreferenceFragmentCompat {
     private Preference connectivityPref;
     private Preference dndPref;
     private Preference accPref;
