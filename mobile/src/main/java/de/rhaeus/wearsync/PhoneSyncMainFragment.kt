@@ -33,22 +33,25 @@ import com.google.android.gms.tasks.Tasks
 
 class PhoneSyncMainFragment : Fragment() {
     private val isNotificationAllowedState = mutableStateOf(false)
-    private val isCameraAllowedState = mutableStateOf(false) // 📸 相機權限狀態
+    private val isCameraAllowedState = mutableStateOf(false) // 📸 相机权限状态
     private val isConnectedState = mutableStateOf(false)
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
 
-    // 勿擾模式連動狀態及其下層子開關
+    // 勿扰模式连动状态及其下层子开关
     private val dndMasterSwitch = mutableStateOf(true)
     private val wearSleepSwitch = mutableStateOf(false)
     private val wearPowerSavingSwitch = mutableStateOf(false)
-    private val dndVibrateSwitch = mutableStateOf(false) // 📳 同步時手錶是否震動
+    private val dndVibrateSwitch = mutableStateOf(false) // 📳 同步时手表是否震动
 
-    // 註冊相機權限回調
+    // ⏰ 闹钟模块专用配置状态（从旧代码中完美还原）
+    private val alarmPkgState = mutableStateOf("com.google.android.deskclock")
+
+    // 注册相机权限回调
     private val requestCameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         isCameraAllowedState.value = isGranted
-        Log.d("WearSync_Main", "📸 相機權限動態申請結果: $isGranted")
+        Log.d("WearSync_Main", "📸 相机权限动态申请结果: $isGranted")
     }
 
     override fun onCreateView(
@@ -60,6 +63,9 @@ class PhoneSyncMainFragment : Fragment() {
         wearSleepSwitch.value = sp.getBoolean("wear_sleep", false)
         wearPowerSavingSwitch.value = sp.getBoolean("wear_power_saving", false)
         dndVibrateSwitch.value = sp.getBoolean("dnd_vibrate", false)
+        
+        // 还原闹钟缓存加载
+        alarmPkgState.value = sp.getString("alarm_pkg", "com.google.android.deskclock") ?: "com.google.android.deskclock"
 
         return ComposeView(requireContext()).apply {
             setContent {
@@ -85,7 +91,7 @@ class PhoneSyncMainFragment : Fragment() {
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
 
-                            // 1️⃣ 核心權限管理卡片（通知與相機權限放在一起）
+                            // 1️⃣ 核心权限管理卡片（通知与相机权限并排放在一起）
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -95,18 +101,18 @@ class PhoneSyncMainFragment : Fragment() {
                                     modifier = Modifier.padding(16.dp),
                                     verticalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
-                                    Text("系統核心權限", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
+                                    Text("系统核心权限", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
                                     
-                                    // 通知接管權限
+                                    // 🔔 通知接管权限
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column {
-                                            Text("通知接管服務", fontSize = 15.sp, color = Color.White)
+                                            Text("通知接管服务", fontSize = 15.sp, color = Color.White)
                                             Text(
-                                                text = if (isNotificationAllowedState.value) "已授權" else "未授權 (狀態同步必備)",
+                                                text = if (isNotificationAllowedState.value) "已授权" else "未授权 (状态同步必备)",
                                                 fontSize = 12.sp,
                                                 color = if (isNotificationAllowedState.value) Color(0xFF4CAF50) else Color(0xFFF44336)
                                             )
@@ -116,23 +122,23 @@ class PhoneSyncMainFragment : Fragment() {
                                                 onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
                                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F51B5))
                                             ) {
-                                                Text("去授權", fontSize = 12.sp)
+                                                Text("去授权", fontSize = 12.sp)
                                             }
                                         }
                                     }
 
                                     Divider(color = Color(0xFF2C2C2C), thickness = 1.dp)
 
-                                    // 📸 相機接管權限
+                                    // 📸 相机接管权限
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column {
-                                            Text("相機硬體權限", fontSize = 15.sp, color = Color.White)
+                                            Text("相机硬件权限", fontSize = 15.sp, color = Color.White)
                                             Text(
-                                                text = if (isCameraAllowedState.value) "已授權" else "未授權 (手錶拍照必備)",
+                                                text = if (isCameraAllowedState.value) "已授权" else "未授权 (手表拍照必备)",
                                                 fontSize = 12.sp,
                                                 color = if (isCameraAllowedState.value) Color(0xFF4CAF50) else Color(0xFFF44336)
                                             )
@@ -142,14 +148,14 @@ class PhoneSyncMainFragment : Fragment() {
                                                 onClick = { requestCameraPermissionLauncher.launch(android.Manifest.permission.CAMERA) },
                                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688))
                                             ) {
-                                                Text("授權相機", fontSize = 12.sp)
+                                                Text("授权相机", fontSize = 12.sp)
                                             }
                                         }
                                     }
                                 }
                             }
 
-                            // 連接狀態卡片
+                            // 手表连接状态卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -160,29 +166,29 @@ class PhoneSyncMainFragment : Fragment() {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("手錶連線狀態", fontSize = 16.sp, color = Color.White)
+                                    Text("手表连线状态", fontSize = 16.sp, color = Color.White)
                                     Box(
                                         modifier = Modifier
                                             .background(if (isConnectedState.value) Color(0xFF2E7D32) else Color(0xFFC62828), RoundedCornerShape(20.dp))
                                             .padding(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
-                                        Text(if (isConnectedState.value) "已連接" else "未就緒", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text(if (isConnectedState.value) "已连接" else "未就绪", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
 
-                            // 2️⃣ 自動化同步配置中心
+                            // 2️⃣ 自动化同步配置中心（包含勿扰主开光和依附子项）
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                             ) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    // A. 勿擾總開關
+                                    // A. 勿扰总开关
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("同步手機勿擾狀態", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                            Text("開啟後，手機狀態變更將驅動下層開關同步", fontSize = 12.sp, color = Color.Gray)
+                                            Text("同步手机勿扰状态", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text("开启后，手机状态变更将驱动下层开关同步", fontSize = 12.sp, color = Color.Gray)
                                         }
                                         Switch(
                                             checked = dndMasterSwitch.value,
@@ -193,7 +199,7 @@ class PhoneSyncMainFragment : Fragment() {
                                         )
                                     }
 
-                                    // 依附於勿擾總開關下的子面板
+                                    // 依附于勿扰总开关下的子面板
                                     AnimatedVisibility(visible = dndMasterSwitch.value) {
                                         Column(
                                             modifier = Modifier
@@ -202,10 +208,10 @@ class PhoneSyncMainFragment : Fragment() {
                                                 .padding(12.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            // 子開關 1：睡眠模式（無障礙高級點擊）
+                                            // 子开关 1：睡眠模式（无障碍高级点击）
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                 Column(modifier = Modifier.weight(1f)) {
-                                                    Text("連動睡眠模式 (無障礙亮屏點擊)", fontSize = 14.sp, color = Color.White)
+                                                    Text("连动睡眠模式 (无障碍亮屏点击)", fontSize = 14.sp, color = Color.White)
                                                 }
                                                 Switch(
                                                     checked = wearSleepSwitch.value,
@@ -218,10 +224,10 @@ class PhoneSyncMainFragment : Fragment() {
                                             
                                             Divider(color = Color(0xFF383838))
 
-                                            // 子開關 2：省電模式（Setting Write 底層修改）
+                                            // 子开关 2：省电模式（Setting Write 底层修改）
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                 Column(modifier = Modifier.weight(1f)) {
-                                                    Text("連動省電模式 (Setting Write 底層)", fontSize = 14.sp, color = Color.White)
+                                                    Text("连动省电模式 (Setting Write 底层)", fontSize = 14.sp, color = Color.White)
                                                 }
                                                 Switch(
                                                     checked = wearPowerSavingSwitch.value,
@@ -234,10 +240,10 @@ class PhoneSyncMainFragment : Fragment() {
 
                                             Divider(color = Color(0xFF383838))
 
-                                            // 子開關 3：手錶震動提示
+                                            // 子开关 3：手表震动提示
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                 Column(modifier = Modifier.weight(1f)) {
-                                                    Text("同步狀態時手錶震動提示", fontSize = 14.sp, color = Color.White)
+                                                    Text("同步状态时手表震动提示", fontSize = 14.sp, color = Color.White)
                                                 }
                                                 Switch(
                                                     checked = dndVibrateSwitch.value,
@@ -252,14 +258,42 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
-                            // 3️⃣ 相機測試按鈕
+                            // 3️⃣ ⏰ 闹钟模块配置中心（原封不动从旧代码中完美原样救回！）
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text("闹钟高级拦截配置", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
+                                    Text("配置你手机系统自带闹钟的完整包名，实现双向强弹窗控制：", fontSize = 12.sp, color = Color.Gray)
+
+                                    OutlinedTextField(
+                                        value = alarmPkgState.value,
+                                        onValueChange = {
+                                            alarmPkgState.value = it
+                                            sp.edit().putString("alarm_pkg", it).apply()
+                                        },
+                                        label = { Text("目标闹钟应用包名", color = Color.Gray) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color(0xFF3F51B5),
+                                            unfocusedBorderColor = Color.DarkGray
+                                        )
+                                    )
+                                }
+                            }
+
+                            // 4️⃣ 相机测试按钮
                             Button(
                                 onClick = { triggerDualCameraSync(requireContext()) },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text("🧪 發送遠端相機拉起信令", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Text("🧪 发送远端相机拉起信令", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -271,7 +305,7 @@ class PhoneSyncMainFragment : Fragment() {
     private fun triggerDualCameraSync(context: Context) {
         Thread {
             try {
-                Log.d("WearSync_Main", "📸 開始執行手錶遠端拍照流程...")
+                Log.d("WearSync_Main", "📸 开始执行手表远端拍照流程...")
                 JSONObject().apply {
                     put("sender", "phone")
                     put("type", "camera_action")
@@ -286,9 +320,9 @@ class PhoneSyncMainFragment : Fragment() {
                 val intent = Intent().setClassName("de.rhaeus.wearsync", "de.rhaeus.wearsync.PhoneSyncCameraService")
                 intent.action = "START_CAMERA"
                 context.startForegroundService(intent)
-                Log.d("WearSync_Main", "⚡ 本地 CameraService 啟動完畢")
+                Log.d("WearSync_Main", "⚡ 本地 CameraService 启动完毕")
             } catch (e: Exception) {
-                Log.e("WearSync_Main", "雙向相機拉起邏輯失敗", e)
+                Log.e("WearSync_Main", "双向相机拉起逻辑失败", e)
             }
         }.start()
     }
