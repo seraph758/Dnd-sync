@@ -34,7 +34,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-public class CameraService extends Service implements LifecycleOwner {
+public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private static final String TAG = "WearSync_CameraService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     private static final String CHANNEL_ID = "camera_service_channel";
