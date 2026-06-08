@@ -11,7 +11,6 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-
     <uses-permission android:name="android.permission.CAMERA" />
     
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -20,22 +19,21 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="Wear Sync"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DNDSync">
+        android:theme="@style/Theme.WearSync">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".PhoneSyncMainActivity"
             android:exported="true"
-            android:theme="@style/Theme.DNDSync">
+            android:theme="@style/Theme.WearSync">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
+    
         <service
-            android:name=".DNDNotificationService"
+            android:name=".PhoneSyncNotificationService"
             android:exported="true"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
@@ -44,12 +42,12 @@
         </service>
         
         <service 
-            android:name=".CameraService"
+            android:name=".PhoneSyncCameraService"
             android:foregroundServiceType="camera"
             android:exported="false" />
-
+    
         <service
-            android:name=".DNDSyncListenerService"
+            android:name=".PhoneSyncListenerService"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -59,4 +57,5 @@
         </service>
 
     </application>
+
 </manifest>
