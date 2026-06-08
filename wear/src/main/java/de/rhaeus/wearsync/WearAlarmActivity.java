@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -27,7 +28,7 @@ public class WearAlarmActivity extends Activity {
     private final BroadcastReceiver stopReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if ("de.rhaeus.wearsync.FORCE_STOP_ALARM_UI".equals(intent.getAction())) {
+            if ("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI".equals(intent.getAction())) {
                 cleanUpAndDestroy();
             }
         }
@@ -38,28 +39,40 @@ public class WearAlarmActivity extends Activity {
         public void run() {
             if (isVibrating && vibrator != null) {
                 vibrator.vibrate(VibrationEffect.createOneShot(600, VibrationEffect.DEFAULT_AMPLITUDE));
-                handler.postDelayed(this, 1000); // 持续高频密集震动
+                handler.postDelayed(this, 1200);
             }
         }
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON 
-                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED 
-                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-        
-        setContentView(getResources().getIdentifier("activity_wear_alarm", "layout", getPackageName()));
-        vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        // 🎯 核心手术：在渲染视图前，强制注入最高级别破锁屏和点亮屏幕 Flag，攻克系统静默拦截
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        } else {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED 
+                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+        super.onCreate(savedInstanceState);
+        setContentView(getResources().getIdentifier("activity_wear_alarm", "layout", getPackageName()));
+
+        vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        
         Button btnDismiss = findViewById(getResources().getIdentifier("btn_dismiss", "id", getPackageName()));
         Button btnSnooze = findViewById(getResources().getIdentifier("btn_snooze", "id", getPackageName()));
 
         if (btnDismiss != null) btnDismiss.setOnClickListener(v -> sendActionToPhone("DISMISS"));
         if (btnSnooze != null) btnSnooze.setOnClickListener(v -> sendActionToPhone("SNOOZE"));
 
-        registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.wearsync.FORCE_STOP_ALARM_UI"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"), Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(stopReceiver, new IntentFilter("de.rhaeus.dndsync.FORCE_STOP_ALARM_UI"));
+        }
+        
         isVibrating = true;
         handler.post(vibrateRunnable);
     }
@@ -69,7 +82,7 @@ public class WearAlarmActivity extends Activity {
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "wear");
-                json.put("type", "alarm_control");
+                json.put("type", "alarm_control"); // 匹配手机端新增的协议类型
                 json.put("action", action);
 
                 byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
@@ -87,7 +100,7 @@ public class WearAlarmActivity extends Activity {
         handler.removeCallbacks(vibrateRunnable);
         if (vibrator != null) vibrator.cancel();
         try { unregisterReceiver(stopReceiver); } catch (Exception ignored) {}
-        finishAndRemoveTask(); // 干净销毁自身任务树
+        finishAndRemoveTask();
     }
 
     @Override
