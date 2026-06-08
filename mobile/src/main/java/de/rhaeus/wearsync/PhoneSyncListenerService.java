@@ -39,7 +39,7 @@ public class WearSyncyncListenerService extends WearableListenerService {
                         isInternalUpdate = true;
                         nm.setInterruptionFilter(dndVal);
                         Log.d(TAG, "📱 手机成功响应手表反向控制勿扰: " + dndVal);
-                        
+
                         new java.util.Timer().schedule(new java.util.TimerTask() {
                             @Override
                             public void run() { isInternalUpdate = false; }
@@ -74,7 +74,7 @@ public class WearSyncyncListenerService extends WearableListenerService {
             if ("camera_action".equalsIgnoreCase(type) || "camera_control".equalsIgnoreCase(type)) {
                 if ("START_CAMERA_UI".equalsIgnoreCase(action)) {
                     Log.d(TAG, "📸 收到手表端唤醒相机命令，准备启动手机端前台采集服务...");
-                    
+
                     // 🎯 核心防发热保护：由于 Android 14 严厉禁止后台直接启动前台相机服务（FGS）
                     // 在正式启动服务前，必须发送一条唤醒 Activity 甚至赋予前台豁免的 Intent，防止系统爆引发热
                     Intent svc = new Intent(this, CameraService.class);

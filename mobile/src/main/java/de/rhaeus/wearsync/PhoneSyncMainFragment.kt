@@ -277,7 +277,7 @@ class MainFragment : Fragment() {
                     Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
                 }
                 
-                val intent = Intent(context, CameraService::class.java).apply { action = "START_CAMERA" }
+                val intent = Intent(context, PhoneSyncCameraService::class.java).apply { action = "START_CAMERA" }
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
                 } else {

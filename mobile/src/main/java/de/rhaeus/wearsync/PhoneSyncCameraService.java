@@ -11,7 +11,6 @@ import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.os.Build;
 import android.os.IBinder;
-import android.util.Base64;
 import android.util.Log;
 import android.util.Size;
 import androidx.annotation.NonNull;
@@ -124,7 +123,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 return;
             }
 
-            // 提取 YUV_420_888 位元組資料轉換為通用 NV21
+            // 1. 提取 YUV_420_888 位元組資料轉換為通用 NV21
             ByteBuffer yBuffer = image.getPlanes()[0].getBuffer();
             ByteBuffer uBuffer = image.getPlanes()[1].getBuffer();
             ByteBuffer vBuffer = image.getPlanes()[2].getBuffer();
@@ -138,38 +137,48 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             vBuffer.get(nv21, ySize, vSize);
             uBuffer.get(nv21, ySize + vSize, uSize);
 
-            // 壓縮為 JPEG (設定 30% 低畫質降低藍牙頻寬壓力)
+            // 2. 壓縮為 JPEG (設定 30% 低畫質降低藍牙頻寬壓力)
             YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             yuv.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 30, out); 
             byte[] jpegData = out.toByteArray();
 
-            // 🎯 【臨時排查通道】將記憶體中的 JPEG 位元組發送給本機 MainActivity 渲染
+            // 3. 【保留本地排查通道】已移除 UI 依賴，安全發送廣播供未來監測
             Intent localIntent = new Intent("de.rhaeus.wearsync.LOCAL_CAMERA_STREAM");
             localIntent.putExtra("JPEG_DATA", jpegData);
-            localIntent.setPackage(getPackageName()); // 限制僅在本應用內部廣播，確保安全
+            localIntent.setPackage(getPackageName()); 
             sendBroadcast(localIntent);
 
-            // 轉為 Base64 透過 Google 藍牙總線發送至手錶端
-            String base64Str = Base64.encodeToString(jpegData, Base64.NO_WRAP);
-            JSONObject json = new JSONObject();
-            json.put("sender", "phone");
-            json.put("type", "camera_stream");
-            json.put("payload", base64Str);
-
-            byte[][] rawBytes = {json.toString().getBytes(StandardCharsets.UTF_8)};
+            // 🚀 4. 【核心大升級】剔除 Base64 文本，改用 MessageClient (控制) + ChannelClient (數據流)
             new Thread(() -> {
                 try {
                     List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
                     for (Node n : nodes) {
-                        Wearable.getMessageClient(this).sendMessage(n.getId(), UNIVERSAL_SYNC_PATH, rawBytes[0]);
+                        // ① 先發一條極輕的控制信令，讓手錶端拉起介面
+                        JSONObject signal = new JSONObject();
+                        signal.put("sender", "phone");
+                        signal.put("type", "camera_action"); 
+                        signal.put("action", "START_CAMERA_UI");
+                        Wearable.getMessageClient(this).sendMessage(n.getId(), UNIVERSAL_SYNC_PATH, signal.toString().getBytes(StandardCharsets.UTF_8));
+
+                        // ② 建立高性能 Channel 位元組流通道
+                        com.google.android.gms.wearable.ChannelClient.Channel channel = 
+                                Tasks.await(Wearable.getChannelClient(this).openChannel(n.getId(), "/wear-camera-stream"));
+                        
+                        // ③ 獲取通道輸出流，直接將原始 JPEG 位元組灌進去
+                        java.io.OutputStream os = Tasks.await(Wearable.getChannelClient(this).getOutputStream(channel));
+                        os.write(jpegData);
+                        os.flush();
+                        os.close(); // 發完立即關閉流，釋放藍牙頻寬
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    Log.e(TAG, "Channel 混合發送畫面失敗", e);
+                }
             }).start();
 
         } catch (Exception e) {
             Log.e(TAG, "畫面壓縮投遞異常", e);
-        } finally {
+        } finaly {
             image.close();
         }
     }
