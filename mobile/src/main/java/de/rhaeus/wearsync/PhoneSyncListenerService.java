@@ -10,7 +10,7 @@ import com.google.android.gms.wearable.WearableListenerService;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 
-public class WearSyncListenerService extends WearableListenerService {
+public class PhoneSyncListenerService extends WearableListenerService {
     private static final String TAG = "WearSync_PhoneListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     public static boolean isInternalUpdate = false;
