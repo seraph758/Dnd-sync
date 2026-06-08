@@ -31,7 +31,7 @@
         android:id="@+id/btn_dismiss"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="滑动/点击关闭"
+        android:text="点击关闭"
         android:backgroundTint="#FF3B30"
         android:textColor="#FFFFFF"/>
 </LinearLayout>
