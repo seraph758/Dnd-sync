@@ -27,7 +27,7 @@ public class WearSyncListenerService extends WearableListenerService {
         @Override
         public void onChannelOpened(@NonNull ChannelClient.Channel channel) {
             if ("/wear-camera-stream".equals(channel.getPath())) {
-                Log.d(TAG, "📸 混合架構成功！手錶感知到手機大數據通道已開啟，啟動異步異流接管");
+                Log.d(TAG, "📸 混合架构成功！手表感知到手机大数据通道已开启，启动异步异流接管");
                 
                 Intent intent = new Intent(WearSyncListenerService.this, WearCameraActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
@@ -49,12 +49,12 @@ public class WearSyncListenerService extends WearableListenerService {
                             broadcast.putExtra("WEAR_JPEG", rawJpeg);
                             broadcast.setPackage(getPackageName());
                             sendBroadcast(broadcast);
-                            Log.d(TAG, "📸 手錶成功解析一幀 Channel 圖片，已投遞至界面");
+                            Log.d(TAG, "📸 手表成功解析一帧 Channel 图片，已投递至界面");
                         }
                         is.close();
                         bos.close();
                     } catch (Exception e) {
-                        Log.e(TAG, "手錶端讀取相機 Channel 數據流異常", e);
+                        Log.e(TAG, "手表端读取相机 Channel 数据流异常", e);
                     }
                 }).start();
             }
@@ -95,51 +95,51 @@ public class WearSyncListenerService extends WearableListenerService {
 
             Log.d(TAG, "📥 手表端收到原始通道消息 -> type: " + type + ", action: " + action);
 
-            // 1️⃣ 勿擾/睡眠/省電 狀態變更總線處理
+            // 1️⃣ 勿扰/省电/睡眠 状态变更总线接收器
             if ("dnd".equalsIgnoreCase(type)) {
                 int dndVal = json.optInt("dnd_profile_value", -1);
-                boolean isVibrate = json.optBoolean("is_vibrate", false); // 讀取震動配置
+                boolean isVibrate = json.optBoolean("is_vibrate", false); // 提取手机传来的震动开关值
 
                 if (dndVal != -1) {
-                    // A. 先同步切換手錶硬體勿擾
+                    // A. 先同步切换手表硬件勿扰
                     NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                     if (nm != null) {
                         nm.setInterruptionFilter(dndVal);
                         Log.d(TAG, "🌙 手表硬件成功响应手机勿扰状态更新: " + dndVal);
                     }
 
-                    // B. 處理震動開關邏輯
+                    // B. 执行连动震动逻辑
                     if (isVibrate) {
                         try {
                             Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                             if (vibrator != null && vibrator.hasVibrator()) {
                                 vibrator.vibrate(VibrationEffect.createOneShot(350, VibrationEffect.DEFAULT_AMPLITUDE));
-                                Log.d(TAG, "📳 勿擾狀態變更：觸發手錶同步震動提示");
+                                Log.d(TAG, "📳 勿扰状态变更：成功驱动手表硬件产生同步震动提示");
                             }
                         } catch (Exception e) {
-                            Log.e(TAG, "手錶執行震動失敗", e);
+                            Log.e(TAG, "手表硬件驱动震动发生异常", e);
                         }
                     }
 
-                    // C. 省電模式處理分支：走 Setting Write 底層修改系統數據庫，完全不使用無障礙
+                    // C. 省电模式控制分支：直接执行底层的 Setting Write，无需无障碍干预
                     if ("START_POWER_SAVING_DIRECT".equalsIgnoreCase(action)) {
                         try {
                             boolean res = Settings.Global.putInt(getContentResolver(), "low_power", 1);
-                            Log.d(TAG, "🔋 執行 Setting Write：開啟系統低功耗省電模式 結果: " + res);
+                            Log.d(TAG, "🔋 执行 Setting Write 控制：秒切进入系统低功耗省电模式 结果: " + res);
                         } catch (Exception e) {
-                            Log.e(TAG, "Setting Write 寫入 low_power 失敗，請確保授予了 WRITE_SECURE_SETTINGS 權限", e);
+                            Log.e(TAG, "Setting Write 写入 low_power 失败，请确保下发了 WRITE_SECURE_SETTINGS 授权命令", e);
                         }
-                        return; // 省電底層改完，直接攔截返回
+                        return; // 纯底层直接写库完毕，拦截退出
                     }
 
                     if ("STOP_ALL_MODES".equalsIgnoreCase(action)) {
                         try {
                             Settings.Global.putInt(getContentResolver(), "low_power", 0);
-                            Log.d(TAG, "🔋 關閉省電模式，還原系統資料庫 low_power=0");
+                            Log.d(TAG, "🔋 关闭低功耗省电模式，还原底层 low_power=0");
                         } catch (Exception ignored) {}
                     }
 
-                    // D. 睡眠模式處理分支：強制點亮螢幕 + 無障礙高級快捷欄下拉點擊
+                    // D. 睡眠模式控制分支：强制点亮屏幕并驱动无障碍高级下拉宏指令
                     if ("START_SLEEP_MACRO".equalsIgnoreCase(action)) {
                         try {
                             android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -149,45 +149,45 @@ public class WearSyncListenerService extends WearableListenerService {
                                         android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP, 
                                         "WearSync:WakeForMacro"
                                 );
-                                wakeLock.acquire(5000); // 強制亮屏 5 秒
-                                Log.d(TAG, "⚡ 檢測到黑屏休眠，成功為睡眠巨集強制喚醒亮屏");
-                                Thread.sleep(350); // 留出 350ms 給系統圖形渲染核心準備 UI
+                                wakeLock.acquire(5000); // 强力唤醒亮屏5秒
+                                Log.d(TAG, "⚡ 检测到手表黑屏，已成功为高级睡眠巨集强行亮屏");
+                                Thread.sleep(350); // 给图形渲染核心留出渲染准备时间
                             }
                         } catch (Exception e) {
-                            Log.e(TAG, "強制亮屏發生異常", e);
+                            Log.e(TAG, "强行亮屏唤醒失败", e);
                         }
 
-                        // 通知無障礙服務執行高級下拉巨集
+                        // 下发命令至无障碍高级组件
                         WearSyncAccessService accessService = WearSyncAccessService.getSharedInstance();
                         if (accessService != null) {
                             accessService.triggerBedtimeMacro(true);
-                            Log.d(TAG, "🚀 已成功向無障礙核心投遞高級下拉點擊睡眠巨集指令");
+                            Log.d(TAG, "🚀 已驱动高级无障碍服务唤醒快捷设置面板（openQuickSettings）并进行宏点击");
                         } else {
-                            Log.e(TAG, "❌ 睡眠巨集執行失敗：無障礙服務未授權開啟");
+                            Log.e(TAG, "❌ 睡眠自动化宏触发失败：无障碍接管服务未被用户激活");
                         }
                     }
                 }
                 return;
             }
 
-            // 2️⃣ 鬧鐘模組
+            // 2️⃣ ⏰ 闹钟控制模块（原封不动救回，全套业务链路安全重构！）
             if ("alarm".equalsIgnoreCase(type)) {
                 if ("START_ALARM_UI".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "⏰ 收到手机闹钟响铃指令，准备拉起强弹窗");
+                    Log.d(TAG, "⏰ 收到手机端闹钟响铃信令，准备在手表端拉起全屏强弹窗控制交互");
                     Intent uiIntent = new Intent(this, WearAlarmActivity.class);
                     uiIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                     startActivity(uiIntent);
                 } else if ("FORCE_STOP_WEAR_ALARM".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "⏰ 收到手机关闭指令，发送广播销毁手表响铃 UI");
+                    Log.d(TAG, "⏰ 收到手机端闹钟断开解除信令，发送本地广播撤销全屏强弹窗 UI");
                     sendBroadcast(new Intent("de.rhaeus.wearsync.FORCE_STOP_ALARM_UI"));
                 }
                 return;
             }
 
-            // 3️⃣ 相機模組
+            // 3️⃣ 相机信令控制模块（安全保留）
             if ("camera_action".equalsIgnoreCase(type)) {
                 if ("START_CAMERA_UI".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "📸 收到相机唤醒指令，直接拉起 WearCameraActivity");
+                    Log.d(TAG, "📸 收到相机唤醒指令，直接拉起 WearCameraActivity 界面");
                     Intent camIntent = new Intent(this, WearCameraActivity.class);
                     camIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
                     startActivity(camIntent);
@@ -196,7 +196,7 @@ public class WearSyncListenerService extends WearableListenerService {
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "手表端监听解析异常", e);
+            Log.e(TAG, "手表端解析中央指令集协议层报文异常", e);
         }
     }
 }

@@ -99,8 +99,8 @@ public class WearSyncAccessService extends AccessibilityService {
                 // 🎯 核心修復：放棄不穩定的手勢滑動，改用系統最高優先級的高級官方指令直接調出面板
                 openQuickSettings(); 
                 
-                // 高級命令響應極快，等待面板完全展開 800 毫秒即可
-                Thread.sleep(800); 
+                // 高級命令響應極快，等待面板完全展開 1000 毫秒即可
+                Thread.sleep(1000); 
                 clickIcon1_2(); // 執行點擊
                 
                 Thread.sleep(1000);
@@ -119,7 +119,7 @@ public class WearSyncAccessService extends AccessibilityService {
                 // 🎯 核心修復：同樣將省電模式的下拉手勢升級為高級系統命令
                 openQuickSettings();
                 
-                Thread.sleep(800);
+                Thread.sleep(1000);
                 clickIcon1_2(); 
                 
                 Thread.sleep(1000);
