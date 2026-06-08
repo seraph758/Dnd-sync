@@ -24,7 +24,7 @@ public class WearSyncMainActivity extends FragmentActivity {
         // 這樣你的通知權限、輔助功能跳轉、震動開關、鬧鐘廣播全都會重新生效！
         if (savedInstanceState == null) {
             getSupportFragmentManager().beginTransaction()
-                    .replace(R.id.settings, new MainFragment())
+                    .replace(R.id.settings, new WearSyncMainFragment())
                     .commit();
         }
 

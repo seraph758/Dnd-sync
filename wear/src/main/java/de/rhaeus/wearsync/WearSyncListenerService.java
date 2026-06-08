@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 // 🎯 同時繼承 WearableListenerService 並實現 ChannelListener 介面
-public class WearSyncListenerService extends WearableListenerService implements ChannelClient.ChannelListener {
+public class WearSyncListenerService extends WearableListenerService implements com.google.android.gms.wearable.ChannelClient.ChannelCallback {
     private static final String TAG = "WearSync_WearListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
@@ -25,13 +25,14 @@ public class WearSyncListenerService extends WearableListenerService implements 
     public void onCreate() {
         super.onCreate();
         // 🚀 核心補丁：必須主動向系統註冊 Channel 異步監聽，否則 onChannelOpened 不會起作用
-        Wearable.getChannelClient(this).registerChannelListener(this);
+    Wearable.getChannelClient(this).registerChannelCallback(this);
+
     }
 
     @Override
     public void onDestroy() {
         // 解除註冊，防止記憶體洩漏
-        Wearable.getChannelClient(this).unregisterChannelListener(this);
+    Wearable.getChannelClient(this).unregisterChannelCallback(this);
         super.onDestroy();
     }
 
