@@ -16,7 +16,7 @@ import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-public class DNDNotificationService extends NotificationListenerService {
+public class PhoneSyncNotificationService extends NotificationListenerService {
     private static final String TAG = "WearSync_NotificationService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
     
