@@ -20,10 +20,7 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
     private static final String TAG = "WearSync_NotificationService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
-    // 靜態變量保持引用
     public static StatusBarNotification currentAlarmNotification = null;
-
-    // 🎯 用於保存手機通知欄上對應按鈕的觸發觸點（核心自動化命脈）
     public static PendingIntent dismissPendingIntent = null;
     public static PendingIntent snoozePendingIntent = null;
 
@@ -32,109 +29,99 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
         super.onInterruptionFilterChanged(interruptionFilter);
 
         if (PhoneSyncListenerService.isInternalUpdate) {
-            Log.d(TAG, "🌙 勿扰模式变化源自手表反向修改，防止乒乓死循环，拦截不再回发。");
+            Log.d(TAG, "🌙 勿擾模式變化源自手錶反向修改，攔截防止循環。");
             return;
         }
 
-        SharedPreferences sp = getSharedPreferences("dnd_sync_settings", Context.MODE_PRIVATE);
-        if (!sp.getBoolean("dnd_master", true)) return;
+        // 1. 讀取勿擾總開關
+        SharedPreferences sp = getSharedPreferences("wearsync_prefs", Context.MODE_PRIVATE);
+        boolean isDndMasterEnabled = sp.getBoolean("dnd_master", true);
+        if (!isDndMasterEnabled) {
+            Log.d(TAG, "🌙 勿擾總開關關閉，放棄本次同步流程。");
+            return;
+        }
+
+        // 2. 只有在此時，讀取並載入下層的三個附屬子屬性開關
+        boolean isVibrate = sp.getBoolean("dnd_vibrate", false);
+        boolean isSleepEnabled = sp.getBoolean("wear_sleep", false);
+        boolean isPowerSavingEnabled = sp.getBoolean("wear_power_saving", false);
+
+        Log.d(TAG, "🌙 勿擾變更總線調用 -> Filter: " + interruptionFilter + ", 睡眠連動: " + isSleepEnabled + ", 省電連動: " + isPowerSavingEnabled);
 
         try {
             JSONObject json = new JSONObject();
             json.put("sender", "phone");
             json.put("type", "dnd");
             json.put("dnd_profile_value", interruptionFilter);
-            json.put("wear_sleep_toggle", sp.getBoolean("wear_sleep_toggle", false));
-            json.put("wear_power_saving_toggle", sp.getBoolean("wear_power_saving_toggle", false));
+            json.put("is_vibrate", isVibrate); // 載入下層震動配置
+
+            // 判斷手機是否處於某種有效勿擾狀態
+            boolean isActivated = (interruptionFilter == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
+                                   interruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE ||
+                                   interruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALARMS);
+
+            if (isActivated) {
+                if (isSleepEnabled) {
+                    json.put("action", "START_SLEEP_MACRO");
+                } else if (isPowerSavingEnabled) {
+                    json.put("action", "START_POWER_SAVING_DIRECT");
+                } else {
+                    json.put("action", "JUST_SYNC_DND");
+                }
+            } else {
+                json.put("action", "STOP_ALL_MODES");
+            }
 
             sendProtocolMessage(json.toString());
-            Log.d(TAG, "🌙 成功将手机端原生勿扰状态 [" + interruptionFilter + "] 同步给手表蓝牙端");
         } catch (Exception e) {
-            Log.e(TAG, "封装勿扰同步协议报文失败", e);
+            Log.e(TAG, "封裝勿擾打包數據異常", e);
         }
     }
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
-        super.onNotificationPosted(sbn);
-        if (sbn == null) return;
-
-        // 1. 讀取 UI 設定的 3 個自定義配置
-        SharedPreferences sp = getSharedPreferences("dnd_sync_settings", Context.MODE_PRIVATE);
+        if (sbn == null || sbn.getNotification() == null) return;
+        SharedPreferences sp = getSharedPreferences("wearsync_prefs", Context.MODE_PRIVATE);
         String targetPkg = sp.getString("alarm_pkg", "com.google.android.deskclock");
-        String dismissKey = sp.getString("alarm_dismiss_key", "停止");
-        String snoozeKey = sp.getString("alarm_snooze_key", "延后");
-
         String pkgName = sbn.getPackageName();
-        String category = sbn.getNotification() != null ? sbn.getNotification().category : "";
-        boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
 
-        // 🎯 核心攔截策略：必須匹配設定的包名，或者具備官方鬧鐘標籤
-        if (pkgName.equalsIgnoreCase(targetPkg) || pkgName.contains("deskclock") || isAlarmCategory) {
+        if (pkgName.equalsIgnoreCase(targetPkg) || pkgName.contains("deskclock")) {
+            Notification notification = sbn.getNotification();
+            currentAlarmNotification = sbn;
 
-            // 排除可以被滑動消除的預告通知
-            boolean canUserClearIt = (sbn.getNotification().flags & Notification.FLAG_ONGOING_EVENT) == 0 
-                    && (sbn.getNotification().flags & Notification.FLAG_NO_CLEAR) == 0;
-            if (canUserClearIt && !isAlarmCategory) {
-                return; 
-            }
-
-            if (currentAlarmNotification == null) {
-                currentAlarmNotification = sbn;
-                Log.d(TAG, "⏰ 侦测到合法的「真正响铃」系统闹钟，开始解析动作按钮");
-
-                // 🎯 核心解析：掃描通知欄上的按鈕文字，精準抓取「停止」和「延後」的觸發意圖
-                Notification notification = sbn.getNotification();
-                if (notification != null && notification.actions != null) {
-                    for (Notification.Action action : notification.actions) {
-                        CharSequence actionTitle = action.title;
-                        if (actionTitle != null) {
-                            String titleStr = actionTitle.toString();
-                            // 匹配 UI 設定的停止關鍵字
-                            if (titleStr.contains(dismissKey)) {
-                                dismissPendingIntent = action.actionIntent;
-                                Log.d(TAG, "🎯 成功捕获手机端「" + dismissKey + "」按钮的 PendingIntent");
-                            }
-                            // 匹配 UI 設定的延後關鍵字
-                            else if (titleStr.contains(snoozeKey)) {
-                                snoozePendingIntent = action.actionIntent;
-                                Log.d(TAG, "🎯 成功捕获手机端「" + snoozeKey + "」按钮的 PendingIntent");
-                            }
-                        }
-                    }
+            if (notification.actions != null && notification.actions.length > 0) {
+                dismissPendingIntent = notification.actions[0].actionIntent;
+                if (notification.actions.length > 1) {
+                    snoozePendingIntent = notification.actions[1].actionIntent;
                 }
-
-                // 通知手錶拉起響鈴界面
-                try {
-                    JSONObject json = new JSONObject();
-                    json.put("sender", "phone");
-                    json.put("type", "alarm");
-                    json.put("action", "START_ALARM_UI");
-                    sendProtocolMessage(json.toString());
-                    Log.d(TAG, "⏰ 已向手表端发送 START_ALARM_UI 唤醒信令");
-                } catch (Exception ignored) {}
             }
+
+            Log.d(TAG, "⏰ 監聽到手機端鬧鐘響鈴，發送強彈窗信令");
+            try {
+                JSONObject json = new JSONObject();
+                json.put("sender", "phone");
+                json.put("type", "alarm");
+                json.put("action", "START_ALARM_UI");
+                sendProtocolMessage(json.toString());
+            } catch (Exception ignored) {}
         }
     }
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
-        super.onNotificationRemoved(sbn);
         if (sbn == null) return;
-
-        SharedPreferences sp = getSharedPreferences("dnd_sync_settings", Context.MODE_PRIVATE);
+        SharedPreferences sp = getSharedPreferences("wearsync_prefs", Context.MODE_PRIVATE);
         String targetPkg = sp.getString("alarm_pkg", "com.google.android.deskclock");
         String pkgName = sbn.getPackageName();
         String category = sbn.getNotification() != null ? sbn.getNotification().category : "";
         boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
 
         if (pkgName.equalsIgnoreCase(targetPkg) || pkgName.contains("deskclock") || isAlarmCategory) {
-            // 清空本地靜態緩存
             currentAlarmNotification = null;
             dismissPendingIntent = null;
             snoozePendingIntent = null;
 
-            Log.d(TAG, "⏰ 手机端闹钟已关闭/延后，通知同步解除手表 UI");
+            Log.d(TAG, "⏰ 手機端鬧鐘已關閉/延後，同步通知解除手錶 UI");
             try {
                 JSONObject json = new JSONObject();
                 json.put("sender", "phone");
@@ -154,7 +141,7 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
                     Wearable.getMessageClient(this).sendMessage(n.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "MessageClient 协议报文投递失败", e);
+                Log.e(TAG, "協議數據投遞至 MessageClient 失敗", e);
             }
         }).start();
     }
