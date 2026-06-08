@@ -3,7 +3,6 @@ package de.rhaeus.wearsync;
 import android.os.Bundle;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.FragmentTransaction;
-import de.rhaeus.wearsync.PhoneSyncMainFragment;
 
 public class PhoneSyncMainActivity extends AppCompatActivity {
 
@@ -19,10 +18,10 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
 
-        // 🚀 修正：恢復最核心的主介面 Fragment 加載邏輯，並對齊新類名 PhoneSyncMainFragment
         if (savedInstanceState == null) {
             FragmentTransaction ft = getSupportFragmentManager().beginTransaction();
-            ft.replace(R.id.settings, new PhoneSyncMainFragment()); // 🎯 確保這裡使用的是您改名後的 PhoneSyncMainFragment
+            // 🎯 這裡直接調用對齊後的新類名
+            ft.replace(R.id.settings, new PhoneSyncMainFragment()); 
             ft.commit();
         }
     }
@@ -30,12 +29,10 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // 🎯 預覽小窗已安全移除，不再在此處註冊本地相機流廣播
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        // 🎯 預覽小窗已安全移除，不再在此處註銷本地相機流廣播
     }
 }

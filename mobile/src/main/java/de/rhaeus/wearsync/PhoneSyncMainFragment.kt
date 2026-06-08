@@ -28,7 +28,8 @@ import androidx.compose.ui.graphics.Color
 import org.json.JSONObject
 import com.google.android.gms.tasks.Tasks
 
-class MainFragment : Fragment() {
+
+class PhoneSyncMainFragment : Fragment() {
     private val isNotificationAllowedState = mutableStateOf(false)
     private val isConnectedState = mutableStateOf(false)
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
