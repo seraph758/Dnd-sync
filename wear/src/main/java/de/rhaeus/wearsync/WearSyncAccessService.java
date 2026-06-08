@@ -15,6 +15,7 @@ public class WearSyncAccessService extends AccessibilityService {
     public static WearSyncAccessService getSharedInstance() {
         return instance;
     }
+
     @Override
     protected void onServiceConnected() {
         instance = this;
@@ -91,34 +92,41 @@ public class WearSyncAccessService extends AccessibilityService {
         return clickBuilder.build();
     }
 
-    // 🎯 睡眠模式自动化入口（传入 true 开启，false 关闭）
+    // 🎯 睡眠模式自動化入口（傳入 true 開啟，false 關閉）
     public void triggerBedtimeMacro(boolean enable) {
         new Thread(() -> {
             try {
-                swipeDown(); // 下拉快捷栏
+                // 🎯 核心修復：放棄不穩定的手勢滑動，改用系統最高優先級的高級官方指令直接調出面板
+                openQuickSettings(); 
+                
+                // 高級命令響應極快，等待面板完全展開 800 毫秒即可
+                Thread.sleep(800); 
+                clickIcon1_2(); // 執行點擊
+                
                 Thread.sleep(1000);
-                clickIcon1_2(); 
-                Thread.sleep(1000);
-                goBack(); // 收起
-                Log.d("AccessService", "睡眠自动化宏执行成功 -> " + enable);
+                goBack(); // 收起快捷欄，返回主畫面
+                Log.d("AccessService", "睡眠自動化宏執行成功 -> " + enable);
             } catch (Exception e) {
-                Log.e("AccessService", "执行睡眠自动化异常", e);
+                Log.e("AccessService", "執行睡眠自動化異常", e);
             }
         }).start();
     }
 
-    // 🎯 省电模式自动化入口（传入 true 开启，false 关闭）
+    // 🎯 省電模式自動化入口（傳入 true 開啟，false 關閉）
     public void triggerPowerSavingMacro(boolean enable) {
         new Thread(() -> {
             try {
-                swipeDown();
-                Thread.sleep(1000);
+                // 🎯 核心修復：同樣將省電模式的下拉手勢升級為高級系統命令
+                openQuickSettings();
+                
+                Thread.sleep(800);
                 clickIcon1_2(); 
+                
                 Thread.sleep(1000);
                 goBack();
-                Log.d("AccessService", "省电自动化宏执行成功 -> " + enable);
+                Log.d("AccessService", "省電自動化宏執行成功 -> " + enable);
             } catch (Exception e) {
-                Log.e("AccessService", "执行省电自动化异常", e);
+                Log.e("AccessService", "執行省電自動化異常", e);
             }
         }).start();
     }
