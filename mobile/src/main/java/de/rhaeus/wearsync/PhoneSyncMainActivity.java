@@ -3,6 +3,7 @@ package de.rhaeus.wearsync;
 import android.os.Bundle;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.FragmentTransaction;
+import de.rhaeus.wearsync.PhoneSyncMainFragment;
 
 public class PhoneSyncMainActivity extends AppCompatActivity {
 
