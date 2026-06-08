@@ -19,10 +19,10 @@ import java.util.List;
 public class PhoneSyncNotificationService extends NotificationListenerService {
     private static final String TAG = "WearSync_NotificationService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
-    
+
     // 靜態變量保持引用
     public static StatusBarNotification currentAlarmNotification = null;
-    
+
     // 🎯 用於保存手機通知欄上對應按鈕的觸發觸點（核心自動化命脈）
     public static PendingIntent dismissPendingIntent = null;
     public static PendingIntent snoozePendingIntent = null;
@@ -30,8 +30,8 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
     @Override
     public void onInterruptionFilterChanged(int interruptionFilter) {
         super.onInterruptionFilterChanged(interruptionFilter);
-        
-        if (WearSyncListenerService.isInternalUpdate) {
+
+        if (PhoneSyncListenerService.isInternalUpdate) {
             Log.d(TAG, "🌙 勿扰模式变化源自手表反向修改，防止乒乓死循环，拦截不再回发。");
             return;
         }
@@ -71,7 +71,7 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
 
         // 🎯 核心攔截策略：必須匹配設定的包名，或者具備官方鬧鐘標籤
         if (pkgName.equalsIgnoreCase(targetPkg) || pkgName.contains("deskclock") || isAlarmCategory) {
-            
+
             // 排除可以被滑動消除的預告通知
             boolean canUserClearIt = (sbn.getNotification().flags & Notification.FLAG_ONGOING_EVENT) == 0 
                     && (sbn.getNotification().flags & Notification.FLAG_NO_CLEAR) == 0;
@@ -121,7 +121,7 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
     public void onNotificationRemoved(StatusBarNotification sbn) {
         super.onNotificationRemoved(sbn);
         if (sbn == null) return;
-        
+
         SharedPreferences sp = getSharedPreferences("dnd_sync_settings", Context.MODE_PRIVATE);
         String targetPkg = sp.getString("alarm_pkg", "com.google.android.deskclock");
         String pkgName = sbn.getPackageName();
@@ -133,7 +133,7 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
             currentAlarmNotification = null;
             dismissPendingIntent = null;
             snoozePendingIntent = null;
-            
+
             Log.d(TAG, "⏰ 手机端闹钟已关闭/延后，通知同步解除手表 UI");
             try {
                 JSONObject json = new JSONObject();
