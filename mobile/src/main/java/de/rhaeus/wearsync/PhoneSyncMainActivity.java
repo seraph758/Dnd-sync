@@ -3,7 +3,6 @@ package de.rhaeus.wearsync;
 import android.os.Bundle;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.FragmentTransaction;
-import de.rhaeus.wearsync.R; // 👈 🎯 明確加上這行，告訴編譯器 R 在哪裡
 
 public class PhoneSyncMainActivity extends AppCompatActivity {
 
