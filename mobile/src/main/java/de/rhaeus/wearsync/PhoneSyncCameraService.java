@@ -115,11 +115,14 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
 
-                // 🎯【方案 A】採用高度向下相容的 ExtensionsManager 判斷，確保 100% 編譯通過
+                // 🎯【修正核心】ListenableFuture 應該使用 .get() 而非 Tasks.await()
                 try {
-                    ExtensionsManager extensionsManager = Tasks.await(
-                            ExtensionsManager.getInstanceAsync(this, cameraProvider)
-                    );
+                    ListenableFuture<ExtensionsManager> extensionsManagerFuture = 
+                            ExtensionsManager.getInstanceAsync(this, cameraProvider);
+                    
+                    // 順著 CameraX 的監聽執行緒安全解開 Future 鎖
+                    ExtensionsManager extensionsManager = extensionsManagerFuture.get();
+                    
                     // 檢查基本夜景或 HDR 優化能力是否獲得廠商底層硬體解鎖
                     if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR)) {
                         cameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR);
@@ -207,7 +210,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     mChannelOutputStream = null;
                 }
                 if (mActiveChannel != null) {
-                    // 🎯 修正：將錯誤的 closeChannel 改為 Google 官方標準的 close 方法
                     Wearable.getChannelClient(this).close(mActiveChannel);
                     mActiveChannel = null;
                 }
