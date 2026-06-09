@@ -1,5 +1,12 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
+
+// 🟢 自动压制 AGP 8.0 不完美支持 compileSdk 34 的提示，保持 CI 日志干净
+logger.warn("Enabling suppressUnsupportedCompileSdk for SDK 34")
+System.setProperty("android.suppressUnsupportedCompileSdk", "34")
+
+
+
 buildscript {
     repositories {
         google()
