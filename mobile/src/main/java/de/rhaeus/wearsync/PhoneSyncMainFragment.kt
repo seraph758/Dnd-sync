@@ -46,7 +46,8 @@ class PhoneSyncMainFragment : Fragment() {
     // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_DND_STATE_DECLARATION] ===
 
     // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_ALARM_STATE_DECLARATION] ===
-    // 闹钟高级拦截及自定义关键字状态声明
+    // 闹钟高级拦截、自定义关键字及【新增闹钟同步总开关】状态声明
+    private val alarmMasterSwitch = mutableStateOf(true) // ⏰ 闹钟同步总开关状态
     private val alarmPkgState = mutableStateOf("com.google.android.deskclock")
     private val alarmDismissKeyState = mutableStateOf("停止")
     private val alarmSnoozeKeyState = mutableStateOf("延后")
@@ -68,6 +69,8 @@ class PhoneSyncMainFragment : Fragment() {
         wearPowerSavingSwitch.value = sp.getBoolean("wear_power_saving", false)
         dndVibrateSwitch.value = sp.getBoolean("dnd_vibrate", false)
         
+        // 读取闹钟配置缓存
+        alarmMasterSwitch.value = sp.getBoolean("alarm_master", true)
         alarmPkgState.value = sp.getString("alarm_pkg", "com.google.android.deskclock") ?: "com.google.android.deskclock"
         alarmDismissKeyState.value = sp.getString("alarm_dismiss_key", "停止") ?: "停止"
         alarmSnoozeKeyState.value = sp.getString("alarm_snooze_key", "延后") ?: "延后"
@@ -177,39 +180,48 @@ class PhoneSyncMainFragment : Fragment() {
                             // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_DND_CONFIG_UI] ===
 
                             // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_ALARM_CONFIG_UI] ===
-                            // ⏰ 闹钟拦截配置模块 (去激活匹配词，保留包名与停止/延后映射动作词)
+                            // ⏰ 闹钟拦截配置模块 (已精准加入 alarmMasterSwitch 联动总开关控制，完美保留原映射动作词)
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                             ) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text("闹钟全屏弹窗控制配置", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
-                                    Text("系统默认通过通知分类特征拦截真实响铃。此处用于适配非标闹钟：", fontSize = 12.sp, color = Color.Gray)
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("同步手机闹钟状态", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text("开启后支持手表端接管非标闹钟的全屏响铃拦截与控制", fontSize = 12.sp, color = Color.Gray)
+                                        }
+                                        Switch(checked = alarmMasterSwitch.value, onCheckedChange = { alarmMasterSwitch.value = it; sp.edit().putBoolean("alarm_master", it).apply() })
+                                    }
 
-                                    OutlinedTextField(
-                                        value = alarmPkgState.value,
-                                        onValueChange = { alarmPkgState.value = it; sp.edit().putString("alarm_pkg", it).apply() },
-                                        label = { Text("目标闹钟应用包名", color = Color.Gray) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF3F51B5), unfocusedBorderColor = Color.DarkGray)
-                                    )
+                                    AnimatedVisibility(visible = alarmMasterSwitch.value) {
+                                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            OutlinedTextField(
+                                                value = alarmPkgState.value,
+                                                onValueChange = { alarmPkgState.value = it; sp.edit().putString("alarm_pkg", it).apply() },
+                                                label = { Text("目标闹钟应用包名", color = Color.Gray) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF3F51B5), unfocusedBorderColor = Color.DarkGray)
+                                            )
 
-                                    OutlinedTextField(
-                                        value = alarmDismissKeyState.value,
-                                        onValueChange = { alarmDismissKeyState.value = it; sp.edit().putString("alarm_dismiss_key", it).apply() },
-                                        label = { Text("自定义“停止/关闭”动作按钮文本匹配词", color = Color.Gray) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF4CAF50), unfocusedBorderColor = Color.DarkGray)
-                                    )
+                                            OutlinedTextField(
+                                                value = alarmDismissKeyState.value,
+                                                onValueChange = { alarmDismissKeyState.value = it; sp.edit().putString("alarm_dismiss_key", it).apply() },
+                                                label = { Text("自定义“停止/关闭”动作按钮文本匹配词", color = Color.Gray) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF4CAF50), unfocusedBorderColor = Color.DarkGray)
+                                            )
 
-                                    OutlinedTextField(
-                                        value = alarmSnoozeKeyState.value,
-                                        onValueChange = { alarmSnoozeKeyState.value = it; sp.edit().putString("alarm_snooze_key", it).apply() },
-                                        label = { Text("自定义“延后/稍后”动作按钮文本匹配词", color = Color.Gray) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFFFF9800), unfocusedBorderColor = Color.DarkGray)
-                                    )
+                                            OutlinedTextField(
+                                                value = alarmSnoozeKeyState.value,
+                                                onValueChange = { alarmSnoozeKeyState.value = it; sp.edit().putString("alarm_snooze_key", it).apply() },
+                                                label = { Text("自定义“延后/稍后”动作按钮文本匹配词", color = Color.Gray) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFFFF9800), unfocusedBorderColor = Color.DarkGray)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_ALARM_CONFIG_UI] ===

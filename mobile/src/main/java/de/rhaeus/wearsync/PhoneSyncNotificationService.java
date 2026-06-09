@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class PhoneSyncNotificationService extends NotificationListenerService {
+
     private static final String TAG = "WearSync_NotificationService";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
@@ -25,7 +26,6 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
     public static PendingIntent snoozePendingIntent = null;
 
     // === [AI_SECURITY_FIREWALL: PHONE_NOTIFICATION_SERVICE_DND_BROADCAST] ===
-    // 勿扰拦截发送模块：直接读取实时保存的分数下发，绝无延迟计算
     @Override
     public void onInterruptionFilterChanged(int interruptionFilter) {
         super.onInterruptionFilterChanged(interruptionFilter);
@@ -39,16 +39,15 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
         boolean isDndMasterEnabled = sp.getBoolean("dnd_master", true);
         if (!isDndMasterEnabled) return;
 
-        // 秒读本地现成的 Linux 状态分数，直接打包
         int switchesMask = sp.getInt("switches_mask", 0);
-        Log.d(TAG, "🌙 触发勿扰级别同步 -> 当前 Filter 硬件级别: " + interruptionFilter + " | 组合状态总分数: " + switchesMask);
+        Log.d(TAG, "🌙 触发勿扰级别同步 -> 当前 Filter: " + interruptionFilter + " | switches_mask: " + switchesMask);
 
         try {
             JSONObject json = new JSONObject();
             json.put("sender", "phone");
             json.put("type", "dnd");
             json.put("dnd_profile_value", interruptionFilter);
-            json.put("switches_mask", switchesMask); 
+            json.put("switches_mask", switchesMask);
 
             sendProtocolMessage(json.toString());
         } catch (Exception e) {
@@ -58,103 +57,189 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
     // === [AI_SECURITY_FIREWALL_END: PHONE_NOTIFICATION_SERVICE_DND_BROADCAST] ===
 
     // === [AI_SECURITY_FIREWALL: PHONE_NOTIFICATION_SERVICE_ALARM_INTERCEPT] ===
-    // ⏰ 闹钟核心抓取拦截总线（基于系统闹钟通知分类识别真响铃，支持关键字映射）
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         if (sbn == null || sbn.getNotification() == null) return;
+
         SharedPreferences sp = getSharedPreferences("wearsync_prefs", Context.MODE_PRIVATE);
-        
+        // 新增：引入闹钟同步总开关控制
+        boolean isAlarmMasterEnabled = sp.getBoolean("alarm_master", true);
+        if (!isAlarmMasterEnabled) return;
+
         String targetPkg = sp.getString("alarm_pkg", "com.google.android.deskclock");
         String dismissKey = sp.getString("alarm_dismiss_key", "停止");
         String snoozeKey = sp.getString("alarm_snooze_key", "延后");
-        
+
         String pkgName = sbn.getPackageName();
         Notification notification = sbn.getNotification();
+        String channelId = notification.getChannelId() != null ? notification.getChannelId() : "";
         String category = notification.category != null ? notification.category : "";
 
-        boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
-        boolean isTargetPkg = pkgName.equalsIgnoreCase(targetPkg) || pkgName.contains("deskclock");
+        // 1. 只关注目标闹钟应用
+        boolean isTargetPackage = pkgName.equalsIgnoreCase(targetPkg) || pkgName.contains("deskclock");
+        if (!isTargetPackage) return;
 
-        if (isAlarmCategory || isTargetPkg) {
-            // 系统预告/即将到来通知特征卡死，完美规避提前假响铃
-            if (Notification.CATEGORY_REMINDER.equalsIgnoreCase(category)) {
-                Log.d(TAG, "🛑 拦截预告通知: 识别到 category 属于提醒类特征。");
-                return;
+        // 2. 判断是否为真正的响铃闹钟
+        if (!isRealFiringAlarm(sbn)) {
+            // 拦截预告、摘要等非响铃通知
+            shouldBlockNonFiringNotification(notification, channelId, category);
+            return; 
+        }
+
+        // 3. 防重复触发
+        if (isSameAlarmAsCurrent(sbn)) {
+            Log.d(TAG, "🔁 重复响铃通知，跳过处理 key=" + sbn.getKey());
+            return;
+        }
+
+        // 4. 更新当前闹钟状态
+        currentAlarmNotification = sbn;
+        dismissPendingIntent = null;
+        snoozePendingIntent = null;
+
+        // 5. 提取动作按钮
+        extractAlarmActions(notification, dismissKey, snoozeKey);
+
+        // 6. 安全无崩溃兜底处理
+        if (dismissPendingIntent == null && notification.actions != null && notification.actions.length > 0) {
+            dismissPendingIntent = notification.actions[0].actionIntent;
+            Log.d(TAG, "⚠️ 未匹配到关键字，安全兜底提取首个动作按钮作为停止键");
+            if (notification.actions.length > 1) {
+                snoozePendingIntent = notification.actions[1].actionIntent;
+                Log.d(TAG, "⚠️ 安全兜底提取第二个动作按钮作为延后键");
             }
+        }
 
-            CharSequence titleChar = notification.extras.getCharSequence(Notification.EXTRA_TITLE);
-            CharSequence textChar = notification.extras.getCharSequence(Notification.EXTRA_TEXT);
-            String title = titleChar != null ? titleChar.toString() : "";
-            String text = textChar != null ? textChar.toString() : "";
+        // 7. 安全检查
+        if (dismissPendingIntent == null) {
+            Log.w(TAG, "⚠️ 未提取到任何有效的停止或操作按钮，放弃同步 | key=" + sbn.getKey());
+            currentAlarmNotification = null;
+            return;
+        }
 
-            if (title.contains("即将到来") || text.contains("即将到来") || text.contains("预告")) {
-                Log.d(TAG, "🛑 拦截预告通知: 匹配到明显的日程预告文本。");
-                return;
-            }
+        Log.i(TAG, "🚀 检测到真实响铃闹钟！同步至手表 | channel=" + channelId +
+                   " | key=" + sbn.getKey() + " | actions=" + notification.actions.length);
 
-            // 锁定真闹钟实体结构
-            currentAlarmNotification = sbn;
-            dismissPendingIntent = null;
-            snoozePendingIntent = null;
-
-            if (notification.actions != null) {
-                for (Notification.Action action : notification.actions) {
-                    if (action.title == null) continue;
-                    String actionTitle = action.title.toString();
-                    
-                    if (actionTitle.contains(dismissKey) || actionTitle.contains("关闭")) {
-                        dismissPendingIntent = action.actionIntent;
-                        Log.d(TAG, "🎯 匹配到自定义停止动作端点: " + actionTitle);
-                    }
-                    if (actionTitle.contains(snoozeKey) || actionTitle.contains("稍后")) {
-                        snoozePendingIntent = action.actionIntent;
-                        Log.d(TAG, "🎯 匹配到自定义延后动作端点: " + actionTitle);
-                    }
-                }
-            }
-
-            // 兜底提取器
-            if (dismissPendingIntent == null && notification.actions != null && notification.actions.length > 0) {
-                dismissPendingIntent = notification.actions[0].actionIntent;
-                if (notification.actions.length > 1) {
-                    snoozePendingIntent = notification.actions[1].actionIntent;
-                }
-            }
-
-            Log.d(TAG, "🚀 闹钟检测通行，推送手表端唤醒全屏响铃UI交互层...");
-            try {
-                JSONObject json = new JSONObject();
-                json.put("sender", "phone");
-                json.put("type", "alarm");
-                json.put("action", "START_ALARM_UI");
-                sendProtocolMessage(json.toString());
-            } catch (Exception ignored) {}
+        try {
+            JSONObject json = new JSONObject();
+            json.put("sender", "phone");
+            json.put("type", "alarm");
+            json.put("action", "START_ALARM_UI");
+            sendProtocolMessage(json.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "发送闹钟启动协议失败", e);
         }
     }
     // === [AI_SECURITY_FIREWALL_END: PHONE_NOTIFICATION_SERVICE_ALARM_INTERCEPT] ===
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
-        if (sbn == null) return;
-        SharedPreferences sp = getSharedPreferences("wearsync_prefs", Context.MODE_PRIVATE);
-        String targetPkg = sp.getString("alarm_pkg", "com.google.android.deskclock");
-        String pkgName = sbn.getPackageName();
-        String category = sbn.getNotification() != null ? sbn.getNotification().category : "";
-        boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
+        if (sbn == null || currentAlarmNotification == null) return;
 
-        if (pkgName.equalsIgnoreCase(targetPkg) || pkgName.contains("deskclock") || isAlarmCategory) {
+        // 只处理当前正在响的闹钟
+        if (sbn.getKey().equals(currentAlarmNotification.getKey())) {
             currentAlarmNotification = null;
             dismissPendingIntent = null;
             snoozePendingIntent = null;
 
-            Log.d(TAG, "⏰ 手机闹钟通知撤销，同步释放远端手表交互 UI");
-            try {
-                JSONObject json = new JSONObject();
-                json.put("sender", "phone");
-                json.put("type", "alarm");
-                json.put("action", "FORCE_STOP_WEAR_ALARM");
-                sendProtocolMessage(json.toString());
-            } catch (Exception ignored) {}
+            Log.d(TAG, "⏰ 闹钟通知被移除，同步停止手表端 UI");
+            sendForceStopToWear();
+        }
+    }
+
+    /** 强特征判断真正的响铃闹钟（已修复 importance 读取崩溃并加强日志比对特征） */
+    private boolean isRealFiringAlarm(StatusBarNotification sbn) {
+        Notification n = sbn.getNotification();
+        String channelId = n.getChannelId() != null ? n.getChannelId() : "";
+        String category = n.category != null ? n.category : "";
+
+        // 核心修复：从 sbn 中安全获取通道权重分值
+        int currentImportance = sbn.getImportance();
+
+        boolean isFiringChannel = channelId.toLowerCase().contains("firing");
+        boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
+        boolean hasKeyFlags = (n.flags & (Notification.FLAG_FOREGROUND_SERVICE | Notification.FLAG_NO_CLEAR)) != 0;
+        
+        // 兼容 Android 8.0+ 的高重要性判定
+        boolean highImportance = currentImportance >= NotificationManager.IMPORTANCE_HIGH;
+        
+        // 顶级特征：Google时钟在响铃时必然携带全屏交互意图（fullscreenIntent）
+        boolean hasFullScreen = n.fullScreenIntent != null;
+
+        return (isFiringChannel || isAlarmCategory || hasFullScreen) && hasKeyFlags && highImportance;
+    }
+
+    /** 是否应该拦截非响铃通知 */
+    private boolean shouldBlockNonFiringNotification(Notification notification, String channelId, String category) {
+        if (channelId.toLowerCase().contains("upcoming")) {
+            Log.d(TAG, "🛑 拦截 Upcoming 预告通知: " + channelId);
+            return true;
+        }
+        if ((notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0) {
+            Log.d(TAG, "🛑 拦截 Group Summary 组摘要通知");
+            return true;
+        }
+        if (Notification.CATEGORY_REMINDER.equalsIgnoreCase(category)) {
+            Log.d(TAG, "🛑 拦截 Reminder 类别通知");
+            return true;
+        }
+
+        // 文本过滤
+        CharSequence titleChar = notification.extras.getCharSequence(Notification.EXTRA_TITLE);
+        CharSequence textChar = notification.extras.getCharSequence(Notification.EXTRA_TEXT);
+        String title = titleChar != null ? titleChar.toString() : "";
+        String text = textChar != null ? textChar.toString() : "";
+
+        if (title.contains("即将到来") || text.contains("即将到来") ||
+            title.contains("Upcoming") || text.contains("预告")) {
+            Log.d(TAG, "🛑 拦截预告文本通知");
+            return true;
+        }
+        return false;
+    }
+
+    /** 判断是否为同一个闹钟（防重复） */
+    private boolean isSameAlarmAsCurrent(StatusBarNotification newSbn) {
+        return currentAlarmNotification != null &&
+               currentAlarmNotification.getKey().equals(newSbn.getKey());
+    }
+
+    /** 提取停止和延后按钮 */
+    private void extractAlarmActions(Notification notification, String dismissKey, String snoozeKey) {
+        if (notification.actions == null) return;
+
+        for (Notification.Action action : notification.actions) {
+            if (action.title == null) continue;
+            String title = action.title.toString().trim();
+
+            if (containsAny(title, dismissKey, "关闭", "停止", "Dismiss", "Cancel")) {
+                dismissPendingIntent = action.actionIntent;
+                Log.d(TAG, "✅ 提取到停止按钮: " + title);
+            }
+            if (containsAny(title, snoozeKey, "稍后", "延后", "Snooze", "延期")) {
+                snoozePendingIntent = action.actionIntent;
+                Log.d(TAG, "✅ 提取到延后按钮: " + title);
+            }
+        }
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        for (String kw : keywords) {
+            if (text.contains(kw)) return true;
+        }
+        return false;
+    }
+
+    /** 发送停止指令到手表 */
+    private void sendForceStopToWear() {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("sender", "phone");
+            json.put("type", "alarm");
+            json.put("action", "FORCE_STOP_WEAR_ALARM");
+            sendProtocolMessage(json.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "发送停止协议失败", e);
         }
     }
 
@@ -166,7 +251,9 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
                 for (Node n : nodes) {
                     Wearable.getMessageClient(this).sendMessage(n.getId(), UNIVERSAL_SYNC_PATH, data);
                 }
-            } catch (Exception e) { Log.e(TAG, "投递故障", e); }
+            } catch (Exception e) {
+                Log.e(TAG, "投递消息失败", e);
+            }
         }).start();
     }
 }
