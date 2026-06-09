@@ -134,7 +134,7 @@ class PhoneSyncMainFragment : Fragment() {
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                             ) {
                                 Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text("手表节点连线状态", fontSize = 16.sp, color = Color.White)
+                                    Text("手表连线状态", fontSize = 16.sp, color = Color.White)
                                     Box(modifier = Modifier.background(if (isConnectedState.value) Color(0xFF2E7D32) else Color(0xFFC62828), RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 6.dp)) {
                                         Text(if (isConnectedState.value) "已连接" else "未就绪", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
@@ -151,8 +151,8 @@ class PhoneSyncMainFragment : Fragment() {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("同步手机勿扰状态", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                            Text("开启后将根据实时总分数，双向对齐手表状态(支持开启与联动关闭)", fontSize = 12.sp, color = Color.Gray)
+                                            Text("同步勿扰状态", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text("开启后将双向对齐手表状态(支持开启与联动关闭)", fontSize = 12.sp, color = Color.Gray)
                                         }
                                         Switch(checked = dndMasterSwitch.value, onCheckedChange = { dndMasterSwitch.value = it; sp.edit().putBoolean("dnd_master", it).apply() })
                                     }
@@ -160,17 +160,17 @@ class PhoneSyncMainFragment : Fragment() {
                                     AnimatedVisibility(visible = dndMasterSwitch.value) {
                                         Column(modifier = Modifier.fillMaxWidth().background(Color(0xFF252525), RoundedCornerShape(12.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                Text("1. 同步状态时手表产生硬件震动", fontSize = 14.sp, color = Color.White)
+                                                Text("1. 同步状态时手表震动", fontSize = 14.sp, color = Color.White)
                                                 Switch(checked = dndVibrateSwitch.value, onCheckedChange = { dndVibrateSwitch.value = it; sp.edit().putBoolean("dnd_vibrate", it).apply(); calculateAndSaveMask() })
                                             }
                                             HorizontalDivider(color = Color(0xFF383838))
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                Text("2. 连动睡眠模式 (支持无障碍关闭与打开)", fontSize = 14.sp, color = Color.White)
+                                                Text("2. 连动睡眠模式", fontSize = 14.sp, color = Color.White)
                                                 Switch(checked = wearSleepSwitch.value, onCheckedChange = { wearSleepSwitch.value = it; sp.edit().putBoolean("wear_sleep", it).apply(); calculateAndSaveMask() })
                                             }
                                             HorizontalDivider(color = Color(0xFF383838))
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                Text("3. 连动省电模式 (支持 low_power 全自动还原)", fontSize = 14.sp, color = Color.White)
+                                                Text("3. 连动省电模式", fontSize = 14.sp, color = Color.White)
                                                 Switch(checked = wearPowerSavingSwitch.value, onCheckedChange = { wearPowerSavingSwitch.value = it; sp.edit().putBoolean("wear_power_saving", it).apply(); calculateAndSaveMask() })
                                             }
                                         }
@@ -231,7 +231,7 @@ class PhoneSyncMainFragment : Fragment() {
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
                                 shape = RoundedCornerShape(12.dp)
-                            ) { Text("🧪 调试：拉起远端手表相机", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+                            ) { Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
