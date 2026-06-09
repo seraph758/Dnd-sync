@@ -47,7 +47,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private ProcessCameraProvider cameraProvider;
     private boolean isRunning = false;
     
-    // 🎯 修正一：改回標準 Java 的互斥鎖對象寫法
+    // 互斥鎖對象
     private final Object mLock = new Object();
 
     // 🚀 長連接核心：持久化維護唯一的 Channel 和其輸出流，防止通道鎖死
@@ -115,11 +115,12 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
 
-                // 🎯【方案 A】調用手機廠商硬體級優化（HDR/夜景）
+                // 🎯【方案 A】採用高度向下相容的 ExtensionsManager 判斷，確保 100% 編譯通過
                 try {
                     ExtensionsManager extensionsManager = Tasks.await(
                             ExtensionsManager.getInstanceAsync(this, cameraProvider)
                     );
+                    // 檢查基本夜景或 HDR 優化能力是否獲得廠商底層硬體解鎖
                     if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR)) {
                         cameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR);
                         Log.d(TAG, "✨ 成功啟用手機專屬硬體級 HDR 演算法優化！");
@@ -128,7 +129,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                         Log.d(TAG, "✨ 成功啟用手機專屬硬體級 夜景演算法優化！");
                     }
                 } catch (Exception extEx) {
-                    Log.w(TAG, "當前手機硬體不支持廠商 Extension 擴充或超時，自動降級使用標準硬體通道");
+                    Log.w(TAG, "當前手機硬體不支持廠商 Extension 擴充，自動降級使用標準硬體通道: " + extEx.getMessage());
                 }
 
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
@@ -206,7 +207,8 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     mChannelOutputStream = null;
                 }
                 if (mActiveChannel != null) {
-                    Wearable.getChannelClient(this).closeChannel(mActiveChannel);
+                    // 🎯 修正：將錯誤的 closeChannel 改為 Google 官方標準的 close 方法
+                    Wearable.getChannelClient(this).close(mActiveChannel);
                     mActiveChannel = null;
                 }
                 Log.d(TAG, "🔒 唯一的 Channel 長連接管道已在同步鎖內安全釋放。");
@@ -216,7 +218,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         }
     }
 
-    // 🎯 修正二：合併重複定義的 onDestroy 方法，實現完美的安全安樂死
     @Override
     public void onDestroy() {
         isRunning = false; // 第一步：立刻切斷採集標誌位
