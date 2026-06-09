@@ -5,13 +5,24 @@
     android:background="#000000">
 
     <ImageView
-        android:id="@+id/preview_image"
+        android:id="@+id/frameView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="centerCrop" />
+        android:scaleType="centerCrop"
+        android:contentDescription="Remote Camera Preview" />
+
+    <TextView
+        android:id="@+id/tvCountdown"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:textColor="#FF0000"
+        android:textSize="42sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
     <ImageButton
-        android:id="@+id/btn_capture"
+        android:id="@+id/btnCapture"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="bottom|center_horizontal"
@@ -19,4 +30,5 @@
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:src="@android:drawable/ic_menu_camera"
         android:contentDescription="Capture" />
+
 </FrameLayout>
