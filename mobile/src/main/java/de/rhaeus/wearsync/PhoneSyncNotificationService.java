@@ -147,27 +147,56 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
         }
     }
 
-    /** 强特征判断真正的响铃闹钟（已修复 importance 读取崩溃并加强日志比对特征） */
+    /** 强特征判断真正的响铃闹钟 */
     private boolean isRealFiringAlarm(StatusBarNotification sbn) {
         Notification n = sbn.getNotification();
         String channelId = n.getChannelId() != null ? n.getChannelId() : "";
         String category = n.category != null ? n.category : "";
 
-        // 核心修复：从 sbn 中安全获取通道权重分值
-        int currentImportance = sbn.getImportance();
+        // 🟢 修复：采用兼容性更好的方案获取重要性级别
+        int currentImportance = NotificationManager.IMPORTANCE_HIGH; // 默认给高
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            // Android 10+ 优先尝试从 sbn 提取（支持 API 29 内部隐藏或 API 30+ 公开）
+            try {
+                currentImportance = sbn.getImportance();
+            } catch (NoSuchMethodError e) {
+                // 兜底：如果方法不存在，尝试从系统的 NotificationManager 获取该 Channel 的真实权重
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    android.app.NotificationChannel channel = nm.getNotificationChannel(channelId);
+                    if (channel != null) {
+                        currentImportance = channel.getImportance();
+                    }
+                }
+            }
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            // Android 8.0 - 9.0 规范获取 Channel 权重
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                android.app.NotificationChannel channel = nm.getNotificationChannel(channelId);
+                if (channel != null) {
+                    currentImportance = channel.getImportance();
+                }
+            }
+        } else {
+            // Android 8.0 以下使用 notification.priority
+            currentImportance = n.priority >= Notification.PRIORITY_HIGH ? 
+                    NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_DEFAULT;
+        }
 
         boolean isFiringChannel = channelId.toLowerCase().contains("firing");
         boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
         boolean hasKeyFlags = (n.flags & (Notification.FLAG_FOREGROUND_SERVICE | Notification.FLAG_NO_CLEAR)) != 0;
         
-        // 兼容 Android 8.0+ 的高重要性判定
+        // 重要性判定
         boolean highImportance = currentImportance >= NotificationManager.IMPORTANCE_HIGH;
         
-        // 顶级特征：Google时钟在响铃时必然携带全屏交互意图（fullscreenIntent）
+        // 顶级特征：Google时钟在响铃时必然携带全屏交互意图
         boolean hasFullScreen = n.fullScreenIntent != null;
 
         return (isFiringChannel || isAlarmCategory || hasFullScreen) && hasKeyFlags && highImportance;
     }
+
 
     /** 是否应该拦截非响铃通知 */
     private boolean shouldBlockNonFiringNotification(Notification notification, String channelId, String category) {
