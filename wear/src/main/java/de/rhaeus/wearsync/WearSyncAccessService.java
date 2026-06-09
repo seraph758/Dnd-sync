@@ -33,6 +33,8 @@ public class WearSyncAccessService extends AccessibilityService {
     public void onInterrupt() {}
 
     // === [🔥 LOCKED_FIREWALL: ORIGINAL_DRIVE_CORE - START] ===
+
+/*
     public void openQuickSettings() {
         performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
     }
@@ -48,6 +50,7 @@ public class WearSyncAccessService extends AccessibilityService {
     public void goBack() {
         performGlobalAction(GLOBAL_ACTION_BACK);
     }
+*/
 
     public void click(float x, float y) {
         dispatchGesture(createClick(x, y), null, null);
