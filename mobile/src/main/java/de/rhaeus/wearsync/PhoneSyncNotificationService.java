@@ -148,19 +148,26 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
     }
 
     /** 强特征判断真正的响铃闹钟 */
+        /** 强特征判断真正的响铃闹钟（采用反射彻底绕过旧版 SDK 静态编译报错） */
     private boolean isRealFiringAlarm(StatusBarNotification sbn) {
         Notification n = sbn.getNotification();
         String channelId = n.getChannelId() != null ? n.getChannelId() : "";
         String category = n.category != null ? n.category : "";
 
-        // 🟢 修复：采用兼容性更好的方案获取重要性级别
-        int currentImportance = NotificationManager.IMPORTANCE_HIGH; // 默认给高
+        // 默认先给一个高重要性分值
+        int currentImportance = NotificationManager.IMPORTANCE_HIGH; 
+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            // Android 10+ 优先尝试从 sbn 提取（支持 API 29 内部隐藏或 API 30+ 公开）
+            // 🟢 通过高阶反射动态调用，不留任何方法名硬编码给编译器，彻底击穿静态语法检查
             try {
-                currentImportance = sbn.getImportance();
-            } catch (NoSuchMethodError e) {
-                // 兜底：如果方法不存在，尝试从系统的 NotificationManager 获取该 Channel 的真实权重
+                java.lang.reflect.Method getImportanceMethod = sbn.getClass().getMethod("getImportance");
+                Object result = getImportanceMethod.invoke(sbn);
+                if (result instanceof Integer) {
+                    currentImportance = (Integer) result;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "⚠️ 反射获取 sbn.getImportance 失败，启动 Channel 降级检查方案");
+                // 降级兜底：从系统的 NotificationManager 提取 Channel 真实权重
                 NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 if (nm != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     android.app.NotificationChannel channel = nm.getNotificationChannel(channelId);
@@ -170,7 +177,7 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
                 }
             }
         } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            // Android 8.0 - 9.0 规范获取 Channel 权重
+            // Android 8.0 - 9.0 标准通道获取方式
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 android.app.NotificationChannel channel = nm.getNotificationChannel(channelId);
@@ -179,19 +186,20 @@ public class PhoneSyncNotificationService extends NotificationListenerService {
                 }
             }
         } else {
-            // Android 8.0 以下使用 notification.priority
+            // Android 8.0 以下的古董版本使用 priority 映射
             currentImportance = n.priority >= Notification.PRIORITY_HIGH ? 
                     NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_DEFAULT;
         }
 
+        // 核心过滤多维特征总线
         boolean isFiringChannel = channelId.toLowerCase().contains("firing");
         boolean isAlarmCategory = Notification.CATEGORY_ALARM.equalsIgnoreCase(category);
         boolean hasKeyFlags = (n.flags & (Notification.FLAG_FOREGROUND_SERVICE | Notification.FLAG_NO_CLEAR)) != 0;
         
-        // 重要性判定
+        // 判定提取出来的最终重要性分值
         boolean highImportance = currentImportance >= NotificationManager.IMPORTANCE_HIGH;
         
-        // 顶级特征：Google时钟在响铃时必然携带全屏交互意图
+        // 顶级关键特征：Google时钟在真响铃时必然携带全屏交互意图（fullscreenIntent）
         boolean hasFullScreen = n.fullScreenIntent != null;
 
         return (isFiringChannel || isAlarmCategory || hasFullScreen) && hasKeyFlags && highImportance;
