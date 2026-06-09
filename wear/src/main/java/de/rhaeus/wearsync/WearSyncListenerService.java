@@ -163,11 +163,11 @@ if ("dnd".equalsIgnoreCase(type)) {
                 PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
                 if (pm != null) {
                     wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, "wearsync:WakeLock");
-                    wakeLock.acquire(5000L); // 鎖定 5 秒完成整套動作
+                    wakeLock.acquire(7000L); // 鎖定 7 秒完成整套動作
                 }
 
-                // 2. 核心時序緩衝：留出 800ms 讓螢幕硬體完全亮起，防止螢幕沒亮完導致下滑無效
-                Thread.sleep(800);
+                // 2. 核心時序緩衝：留出 1000ms 讓螢幕硬體完全亮起，防止螢幕沒亮完導致下滑無效
+                Thread.sleep(1000);
 
                 // 3. 呼叫舊代碼純淨下滑
                 serv.swipeDown();
