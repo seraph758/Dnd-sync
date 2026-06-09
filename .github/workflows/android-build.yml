@@ -47,9 +47,9 @@ jobs:
     - name: Copy APKs to root directory
       run: |
         echo "拷贝 APK 到根目录"
-  #      MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
+  #     MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
         WEAR_PATH=$(find . -path "*/wear/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
-     #   if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" ./mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
+     #  if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" ./mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
         if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" ./wear-release.apk; else echo "错误: 找不到 Wear APK"; exit 1; fi
         ls -lh *.apk
 
