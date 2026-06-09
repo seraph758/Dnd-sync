@@ -27,10 +27,25 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Update Mobile build.gradle version
+      if: ${{ github.event.inputs.build_mobile == 'true' }}
+      run: |
+        echo "更新 Mobile build.gradle 版本号为 $GITHUB_RUN_NUMBER"
+        sed -i "s/versionCode [0-9]\+/versionCode $GITHUB_RUN_NUMBER/" mobile/build.gradle
+        sed -i "s/versionName \".*\"/versionName \"1.0.$GITHUB_RUN_NUMBER\"/" mobile/build.gradle
+
+    - name: Update Wear build.gradle version
+      if: ${{ github.event.inputs.build_wear == 'true' }}
+      run: |
+        echo "更新 Wear build.gradle 版本号为 $GITHUB_RUN_NUMBER"
+        sed -i "s/versionCode [0-9]\+/versionCode $GITHUB_RUN_NUMBER/" wear/build.gradle
+        sed -i "s/versionName \".*\"/versionName \"1.0.$GITHUB_RUN_NUMBER\"/" wear/build.gradle
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -56,14 +71,11 @@ jobs:
         ls -l $KEY_PATH
 
     - name: Build Release APKs
-      env:
-        GITHUB_RUN_NUMBER: ${{ github.run_number }}
       run: ./gradlew clean assembleRelease
 
     - name: Copy APKs to root directory
       run: |
-        echo "查找生成的 APK 并拷贝到根目录"
-
+        echo "拷贝 APK 到根目录"
         if [ "${{ github.event.inputs.build_mobile }}" = "true" ]; then
           MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
           if [ -f "$MOBILE_PATH" ]; then
@@ -87,41 +99,39 @@ jobs:
 
         ls -lh *.apk || echo "无 APK 文件生成"
 
-    - name: Create flat ZIP package
+    - name: Create optional ZIP backup
       run: |
-        echo "生成平铺 ZIP"
-        ZIP_NAME="dnd-sync-v1.0.${{ github.run_number }}.zip"
+        echo "生成平铺 ZIP 备份 (可选)"
         FILES_TO_ZIP=""
-
         [ -f ./mobile-release.apk ] && FILES_TO_ZIP="./mobile-release.apk"
         [ -f ./wear-release.apk ] && FILES_TO_ZIP="$FILES_TO_ZIP ./wear-release.apk"
 
-        if [ -z "$FILES_TO_ZIP" ]; then
-          echo "错误: 没有找到 APK 文件可打包"
-          exit 1
+        if [ ! -z "$FILES_TO_ZIP" ]; then
+          ZIP_NAME="dnd-sync-v1.0.$GITHUB_RUN_NUMBER.zip"
+          zip -j "$ZIP_NAME" $FILES_TO_ZIP
+          echo "ZIP 文件生成完成: $ZIP_NAME"
+          ls -lh "$ZIP_NAME"
+        else
+          echo "没有 APK 文件可打包，跳过 ZIP"
         fi
-
-        zip -j "$ZIP_NAME" $FILES_TO_ZIP
-        echo "ZIP 文件生成完成: $ZIP_NAME"
-        ls -lh "$ZIP_NAME"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: dnd-sync-v1.0.${{ github.run_number }}
-        path: ./dnd-sync-v1.0.${{ github.run_number }}.zip
+        name: dnd-sync-v1.0.$GITHUB_RUN_NUMBER
+        path: |
+          ./mobile-release.apk
+          ./wear-release.apk
         retention-days: 7
 
-    # 🎯 条件推送 Release（手动触发参数 push_release = true 时才启用）
     - name: Create Release
       if: ${{ github.event.inputs.push_release == 'true' }}
       id: create_release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.0.${{ github.run_number }}
-        name: Release v1.0.${{ github.run_number }}
+        tag_name: v1.0.$GITHUB_RUN_NUMBER
+        name: Release v1.0.$GITHUB_RUN_NUMBER
         generate_release_notes: true
         files: |
-          # 根据触发参数选择 APK 文件
           ${{ github.event.inputs.build_mobile == 'true' && './mobile-release.apk' || '' }}
           ${{ github.event.inputs.build_wear == 'true' && './wear-release.apk' || '' }}
