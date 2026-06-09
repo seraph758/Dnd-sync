@@ -47,27 +47,27 @@ jobs:
     - name: Copy APKs to root directory
       run: |
         echo "拷贝 APK 到根目录"
-        MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
+  #      MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
         WEAR_PATH=$(find . -path "*/wear/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
-        if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" ./mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
+     #   if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" ./mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
         if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" ./wear-release.apk; else echo "错误: 找不到 Wear APK"; exit 1; fi
         ls -lh *.apk
 
     - name: Create flat ZIP package
       run: |
         echo "生成平铺 ZIP (留作本地备份或未来备用)"
-        zip -j ./dnd-sync-v1.0.${{ github.run_number }}.zip \
-          ./mobile-release.apk \
+        zip -j ./wear-sync-v1.0.${{ github.run_number }}.zip \
+  #        ./mobile-release.apk \
           ./wear-release.apk
-        ls -lh ./dnd-sync-v1.0.${{ github.run_number }}.zip
+        ls -lh ./wear-sync-v1.0.${{ github.run_number }}.zip
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: dnd-sync-v1.0.${{ github.run_number }}
+        name: wear-sync-v1.0.${{ github.run_number }}
         # 🎯 这里直接指定两个 APK，GitHub 自动打包下载时就不会再有“内层 ZIP”了
         path: |
-          ./mobile-release.apk
+  #        ./mobile-release.apk
           ./wear-release.apk
         retention-days: 7
 
