@@ -114,7 +114,7 @@ class PhoneSyncMainFragment : Fragment() {
                                             Button(onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("去授权") }
                                         }
                                     }
-                                    Divider(color = Color(0xFF2C2C2C))
+                                    HorizontalDivider(color = Color(0xFF2C2C2C))
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column {
                                             Text("相机硬件权限", fontSize = 15.sp, color = Color.White)
@@ -163,12 +163,12 @@ class PhoneSyncMainFragment : Fragment() {
                                                 Text("1. 同步状态时手表产生硬件震动", fontSize = 14.sp, color = Color.White)
                                                 Switch(checked = dndVibrateSwitch.value, onCheckedChange = { dndVibrateSwitch.value = it; sp.edit().putBoolean("dnd_vibrate", it).apply(); calculateAndSaveMask() })
                                             }
-                                            Divider(color = Color(0xFF383838))
+                                            HorizontalDivider(color = Color(0xFF383838))
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                 Text("2. 连动睡眠模式 (支持无障碍关闭与打开)", fontSize = 14.sp, color = Color.White)
                                                 Switch(checked = wearSleepSwitch.value, onCheckedChange = { wearSleepSwitch.value = it; sp.edit().putBoolean("wear_sleep", it).apply(); calculateAndSaveMask() })
                                             }
-                                            Divider(color = Color(0xFF383838))
+                                            HorizontalDivider(color = Color(0xFF383838))
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                 Text("3. 连动省电模式 (支持 low_power 全自动还原)", fontSize = 14.sp, color = Color.White)
                                                 Switch(checked = wearPowerSavingSwitch.value, onCheckedChange = { wearPowerSavingSwitch.value = it; sp.edit().putBoolean("wear_power_saving", it).apply(); calculateAndSaveMask() })
