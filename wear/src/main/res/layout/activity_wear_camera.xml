@@ -1,3 +1,12 @@
+<ImageView android:id="@+id/preview_image" ... /> <ImageButton android:id="@+id/btn_capture" ... /> ```
+
+---
+
+## 🎯 終極修正：手錶端 `activity_wear_camera.xml` 100% 匹配源碼版
+
+為了完美對齊你 Java 代碼中的動態反射字串（`"camera_frame_view"`、`"tv_countdown"`、`"btn_capture"`），請**再次更新**手錶端的 `wear/src/main/res/layout/activity_wear_camera.xml`，直接複製以下代碼完整覆蓋：
+
+```xml
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -5,14 +14,14 @@
     android:background="#000000">
 
     <ImageView
-        android:id="@+id/frameView"
+        android:id="@+id/camera_frame_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
         android:contentDescription="Remote Camera Preview" />
 
     <TextView
-        android:id="@+id/tvCountdown"
+        android:id="@+id/tv_countdown"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
@@ -22,7 +31,7 @@
         android:visibility="gone" />
 
     <ImageButton
-        android:id="@+id/btnCapture"
+        android:id="@+id/btn_capture"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="bottom|center_horizontal"
