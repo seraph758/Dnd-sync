@@ -1,7 +1,23 @@
 name: Build and Release APKs
 
 on:
-  workflow_dispatch:   # 手动触发
+  workflow_dispatch:
+    inputs:
+      build_mobile:
+        description: '是否打包 Mobile APK'
+        required: false
+        default: 'true'
+        type: boolean
+      build_wear:
+        description: '是否打包 Wear APK'
+        required: false
+        default: 'true'
+        type: boolean
+      push_release:
+        description: '是否推送到 GitHub Release'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: write
@@ -10,7 +26,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
     - name: Checkout code
@@ -46,39 +62,66 @@ jobs:
 
     - name: Copy APKs to root directory
       run: |
-        echo "拷贝 APK 到根目录"
-        # MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
-        WEAR_PATH=$(find . -path "*/wear/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
-        # if [ -f "$MOBILE_PATH" ]; then cp "$MOBILE_PATH" ./mobile-release.apk; else echo "错误: 找不到 Mobile APK"; exit 1; fi
-        if [ -f "$WEAR_PATH" ]; then cp "$WEAR_PATH" ./wear-release.apk; else echo "错误: 找不到 Wear APK"; exit 1; fi
-        ls -lh *.apk
+        echo "查找生成的 APK 并拷贝到根目录"
+
+        if [ "${{ github.event.inputs.build_mobile }}" = "true" ]; then
+          MOBILE_PATH=$(find . -path "*/mobile/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
+          if [ -f "$MOBILE_PATH" ]; then
+            cp "$MOBILE_PATH" ./mobile-release.apk
+            echo "Mobile APK 已拷贝到 ./mobile-release.apk"
+          else
+            echo "警告: 找不到 Mobile APK"
+          fi
+        fi
+
+        if [ "${{ github.event.inputs.build_wear }}" = "true" ]; then
+          WEAR_PATH=$(find . -path "*/wear/build/outputs/apk/release/*" -name "*.apk" | head -n 1)
+          if [ -f "$WEAR_PATH" ]; then
+            cp "$WEAR_PATH" ./wear-release.apk
+            echo "Wear APK 已拷贝到 ./wear-release.apk"
+          else
+            echo "错误: 找不到 Wear APK"
+            exit 1
+          fi
+        fi
+
+        ls -lh *.apk || echo "无 APK 文件生成"
 
     - name: Create flat ZIP package
       run: |
-        echo "生成平铺 ZIP (留作本地备份或未来备用)"
-        zip -j ./wear-sync-v1.0.${{ github.run_number }}.zip \
-          # ./mobile-release.apk \
-          ./wear-release.apk
-        ls -lh ./wear-sync-v1.0.${{ github.run_number }}.zip
+        echo "生成平铺 ZIP"
+        ZIP_NAME="dnd-sync-v1.0.${{ github.run_number }}.zip"
+        FILES_TO_ZIP=""
+
+        [ -f ./mobile-release.apk ] && FILES_TO_ZIP="./mobile-release.apk"
+        [ -f ./wear-release.apk ] && FILES_TO_ZIP="$FILES_TO_ZIP ./wear-release.apk"
+
+        if [ -z "$FILES_TO_ZIP" ]; then
+          echo "错误: 没有找到 APK 文件可打包"
+          exit 1
+        fi
+
+        zip -j "$ZIP_NAME" $FILES_TO_ZIP
+        echo "ZIP 文件生成完成: $ZIP_NAME"
+        ls -lh "$ZIP_NAME"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: wear-sync-v1.0.${{ github.run_number }}
-        # 这里直接指定 APK，GitHub 下载时不会再嵌套 ZIP
-        path: |
-          # ./mobile-release.apk
-          ./wear-release.apk
+        name: dnd-sync-v1.0.${{ github.run_number }}
+        path: ./dnd-sync-v1.0.${{ github.run_number }}.zip
         retention-days: 7
 
-    # 🎯 Release 推送步骤：以后想用时，把下面所有行的 # 号删掉即可
-    # - name: Create Release
-    #   id: create_release
-    #   uses: softprops/action-gh-release@v2
-    #   with:
-    #     tag_name: v1.0.${{ github.run_number }}
-    #     name: Release v1.0.${{ github.run_number }}
-    #     generate_release_notes: true
-    #     files: |
-    #       mobile-release.apk
-    #       wear-release.apk
+    # 🎯 条件推送 Release（手动触发参数 push_release = true 时才启用）
+    - name: Create Release
+      if: ${{ github.event.inputs.push_release == 'true' }}
+      id: create_release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: Release v1.0.${{ github.run_number }}
+        generate_release_notes: true
+        files: |
+          # 根据触发参数选择 APK 文件
+          ${{ github.event.inputs.build_mobile == 'true' && './mobile-release.apk' || '' }}
+          ${{ github.event.inputs.build_wear == 'true' && './wear-release.apk' || '' }}
