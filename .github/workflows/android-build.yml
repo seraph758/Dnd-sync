@@ -57,7 +57,7 @@ jobs:
       run: |
         echo "生成平铺 ZIP (留作本地备份或未来备用)"
         zip -j ./wear-sync-v1.0.${{ github.run_number }}.zip \
-  #        ./mobile-release.apk \
+  #       ./mobile-release.apk \
           ./wear-release.apk
         ls -lh ./wear-sync-v1.0.${{ github.run_number }}.zip
 
@@ -67,7 +67,7 @@ jobs:
         name: wear-sync-v1.0.${{ github.run_number }}
         # 🎯 这里直接指定两个 APK，GitHub 自动打包下载时就不会再有“内层 ZIP”了
         path: |
-  #        ./mobile-release.apk
+  #       ./mobile-release.apk
           ./wear-release.apk
         retention-days: 7
 
