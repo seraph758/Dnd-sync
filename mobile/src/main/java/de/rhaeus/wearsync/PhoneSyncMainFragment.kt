@@ -214,17 +214,24 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
-                            // 🧪 原有调试按钮：拉起远端相机控制 (100% 保持原样)
+                            // 🧪 調試按鈕：拉起本地前台相機服務
                             Button(
-                                onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA") },
+                                onClick = {
+                                    if (!isCameraAllowedState.value) {
+                                        requestCameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                    } else {
+                                        val intent = Intent(requireContext(), PhoneSyncCameraService::class.java)
+                                        requireContext().startForegroundService(intent)
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
                                 shape = RoundedCornerShape(12.dp)
                             ) { 
-                                Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
+                                Text("🧪 調試：拉起遠端相機控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
                             }
 
-                            // 🎯【相機單獨擴展區 - 絕不碰上方任何模塊】：新增退出後台拍照服務按鈕
+                            // 🛑 關閉手機端後台拍照服務按鈕
                             Button(
                                 onClick = {
                                     try {
@@ -236,7 +243,7 @@ class PhoneSyncMainFragment : Fragment() {
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3B30)), // 醒目的紅色退出按鈕
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3B30)),
                                 shape = RoundedCornerShape(12.dp)
                             ) { 
                                 Text("🛑 關閉後台拍照服務", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White) 
