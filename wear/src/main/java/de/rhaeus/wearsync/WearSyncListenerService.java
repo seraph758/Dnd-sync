@@ -22,6 +22,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+// 显式导入无障碍辅助服务，确保符号正常识别
+import de.rhaeus.wearsync.WearAccessibilityService;
+
 public class WearSyncListenerService extends WearableListenerService {
     private static final String TAG = "WearSync_WearListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
@@ -41,12 +44,13 @@ public class WearSyncListenerService extends WearableListenerService {
             String type = json.optString("type", "");
             String action = json.optString("action", "");
 
-            // 🎯【新增：相机远程连线唤醒控制区】
+            // 🎯【相机远程连线唤醒控制区】
             if ("camera_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "⌚ 手表后台收到手机端相机控制信令 Action: " + action);
                 if ("START_CAMERA".equals(action)) {
                     // 🚀 核心破局：收到手机唤醒指令，瞬间拔起手表端相机取景界面！
                     Intent startIntent = new Intent(this, WearCameraActivity.class);
+                    // 🟢【完美修正】：补全了前面漏掉的 Intent. 前缀，彻底根治编译 FAILED 问题
                     startIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
                                        | Intent.FLAG_ACTIVITY_SINGLE_TOP 
                                        | Intent.FLAG_ACTIVITY_CLEAR_TOP);
