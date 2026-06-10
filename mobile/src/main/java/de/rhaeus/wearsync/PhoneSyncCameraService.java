@@ -84,7 +84,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                         .build();
 
                 try {
-                    // 🎯【核心修正】：加入更安全的異常阻斷機制，確保遵守 Android 14 規範
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                         startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
                     } else {
@@ -104,12 +103,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         return START_NOT_STICKY;
     }
 
-    /**
-     * 🎯 靜態工具解耦方法：供 MainFragment 點擊按鈕時調用
-     * 完美破局 Android 14 限制：在點擊時由活躍的 UI 立刻拉起本地 Service，隨後發射信令拉起手錶 UI！
-     */
     public static void sendCameraControlToWatchLive(Context context, String action) {
-        // 1. 🎯【安全破局關鍵】：既然現在使用者正在點擊手機 UI，立刻由前台 UI 順暢啟動 Service，100% 免疫背景限制！
         if ("START_CAMERA".equals(action)) {
             try {
                 Intent serviceIntent = new Intent(context, PhoneSyncCameraService.class);
@@ -121,7 +115,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             }
         }
 
-        // 2. 非同步通知手錶端拉起 UI 畫面
         new Thread(() -> {
             try {
                 JSONObject json = new JSONObject();
@@ -193,20 +186,46 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
 
+                // 🎯【核心修正】：加入 ExtensionsManager 的 ImageAnalysis 相容性深度校驗
                 try {
                     ListenableFuture<ExtensionsManager> extensionsManagerFuture = 
                             ExtensionsManager.getInstanceAsync(this, cameraProvider);
                     ExtensionsManager extensionsManager = extensionsManagerFuture.get();
 
+                    CameraSelector hdrSelector = null;
+                    CameraSelector nightSelector = null;
+
+                    // 1. 檢查 HDR 是否可用且硬體支援與 ImageAnalysis 同時繫結
                     if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR)) {
-                        cameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR);
-                        Log.d(TAG, "✨ 成功啟用手機專屬硬體級 HDR 演算法優化！");
-                    } else if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.NIGHT)) {
-                        cameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.NIGHT);
-                        Log.d(TAG, "✨ 成功啟用手機專屬硬體級 夜景演算法優化！");
+                        hdrSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR);
+                        if (!extensionsManager.isImageAnalysisSupported(hdrSelector, androidx.camera.extensions.ExtensionMode.HDR)) {
+                            Log.w(TAG, "⚠️ 檢測到目前硬體不支援在 HDR 開啟時進行影像串流採集，放棄啟用 HDR 特效。");
+                            hdrSelector = null;
+                        }
                     }
+
+                    // 2. 檢查 夜景 是否可用且硬體支援與 ImageAnalysis 同時繫結
+                    if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.NIGHT)) {
+                        nightSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.NIGHT);
+                        if (!extensionsManager.isImageAnalysisSupported(nightSelector, androidx.camera.extensions.ExtensionMode.NIGHT)) {
+                            Log.w(TAG, "⚠️ 檢測到目前硬體不支援在夜景模式開啟時進行影像串流採集，放棄啟用夜景特效。");
+                            nightSelector = null;
+                        }
+                    }
+
+                    // 3. 根據校驗結果安全指派 Selector，若都不支援則維持原生標準通道
+                    if (hdrSelector != null) {
+                        cameraSelector = hdrSelector;
+                        Log.d(TAG, "✨ 通過相容性校驗，成功啟用手機硬體級 HDR 串流優化！");
+                    } else if (nightSelector != null) {
+                        cameraSelector = nightSelector;
+                        Log.d(TAG, "✨ 通過相容性校驗，成功啟用手機硬體級 夜景串流優化！");
+                    } else {
+                        Log.d(TAG, "ℹ️ 為了保證低延遲取景串流穩定性，自動安全採用標準硬體通道。");
+                    }
+
                 } catch (Exception extEx) {
-                    Log.w(TAG, "自動降級使用標準硬體通道: " + extEx.getMessage());
+                    Log.w(TAG, "廠商 Extension 模組載入異常，自動降級使用標準硬體通道: " + extEx.getMessage());
                 }
 
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
@@ -216,11 +235,13 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
                 imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), this::processImageProxy);
 
+                // 🎯 此時 cameraSelector 已經過嚴格的相容性校驗，絕對不會再拋出 IllegalArgumentException！
                 cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis);
                 lifecycleRegistry.setCurrentState(Lifecycle.State.RESUMED);
+                Log.d(TAG, "🎉 CameraX Pipeline 成功繫結生命週期，資料串流已就緒！");
 
             } catch (Exception e) {
-                Log.e(TAG, "綁定專屬相機生命週期失敗", e);
+                Log.e(TAG, "❌ 嚴重錯誤：繫結專屬相機生命週期失敗", e);
             }
         }, ContextCompat.getMainExecutor(this));
     }
