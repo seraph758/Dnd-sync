@@ -89,6 +89,7 @@ class PhoneSyncMainFragment : Fragment() {
                         ) {
                             Text(text = "WearSync 控制台", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
 
+                            // 核心權限卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -118,6 +119,7 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
+                            // 連線狀態卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -131,6 +133,7 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
+                            // 勿擾同步卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -166,6 +169,7 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
+                            // 鬧鐘攔截卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -210,13 +214,15 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
+                            // 🎯【排版修正】：按鈕已被安全地移入 Column 大括號的最底部，保證其正常滾動並渲染
                             Button(
-                                // 🎯【核心優化】：與你的優秀想法完全融合，點擊時即時動態獲取手錶 ID 並精準發射標準對齊信令
                                 onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA") },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
                                 shape = RoundedCornerShape(12.dp)
-                            ) { Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+                            ) { 
+                                Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
+                            }
                         }
                     }
                 }
