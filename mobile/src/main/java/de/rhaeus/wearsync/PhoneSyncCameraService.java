@@ -75,9 +75,10 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 isRunning = true;
                 lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
 
+                // 🎯【UI简中修正】
                 Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setContentTitle("WearSync 遠端取景器")
-                        .setContentText("正在為手錶端提供高性能影像傳輸...")
+                        .setContentTitle("WearSync 远程取景器")
+                        .setContentText("正在为手表端提供高性能影像传输...")
                         .setSmallIcon(android.R.drawable.ic_menu_camera)
                         .setPriority(NotificationCompat.PRIORITY_LOW)
                         .setOngoing(true)
@@ -89,16 +90,20 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     } else {
                         startForeground(NOTIFICATION_ID, notification);
                     }
-                    Log.d(TAG, "✅ 成功以 FOREGROUND_SERVICE_TYPE_CAMERA 啟動前台服務");
+                    Log.d(TAG, "✅ 成功以 FOREGROUND_SERVICE_TYPE_CAMERA 启动前台服务");
                     prepareChannelAndCamera();
                 } catch (SecurityException se) {
-                    Log.e(TAG, "❌ 權限或前台狀態校驗失敗！拒絕盲目啟動以防止 FC：", se);
+                    Log.e(TAG, "❌ 权限或前台状态校验失败！拒绝盲目启动以防止 FC：", se);
                     stopSelf();
                     return START_NOT_STICKY;
                 }
             }
         } else if (intent != null && "STOP_CAMERA".equals(intent.getAction())) {
+            // 🎯【核心修正】：允许手机 UI 通过 STOP_CAMERA 指令将其主动关闭，不依赖手表
+            Log.d(TAG, "🛑 收到明确的停止 Action 指令，手机端主动关闭相机服务...");
+            isRunning = false;
             stopSelf();
+            return START_NOT_STICKY;
         }
         return START_NOT_STICKY;
     }
@@ -109,9 +114,9 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 Intent serviceIntent = new Intent(context, PhoneSyncCameraService.class);
                 serviceIntent.setAction("START_CAMERA");
                 ContextCompat.startForegroundService(context, serviceIntent);
-                Log.d(TAG, "⚡ [Android 14 守護者機制] 已由前台 UI 點擊事件提前安全拉起 Service");
+                Log.d(TAG, "⚡ [Android 14 守护者机制] 已由前台 UI 点击事件提前安全拉起 Service");
             } catch (Exception e) {
-                Log.e(TAG, "前台 UI 啟動 Service 異常", e);
+                Log.e(TAG, "前台 UI 启动 Service 异常", e);
             }
         }
 
@@ -136,13 +141,13 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 if (realWatchNodeId != null) {
                     Wearable.getMessageClient(context)
                             .sendMessage(realWatchNodeId, "/wear-universal-sync", data)
-                            .addOnSuccessListener(integer -> Log.d(TAG, "🚀 已成功向手錶發送指令：" + action))
-                            .addOnFailureListener(e -> Log.e(TAG, "❌ 向手錶發送信令失敗"));
+                            .addOnSuccessListener(integer -> Log.d(TAG, "🚀 已成功向手表发送指令：" + action))
+                            .addOnFailureListener(e -> Log.e(TAG, "❌ 向手表发送信令失败"));
                 } else {
-                    Log.e(TAG, "❌ 發送失敗：當下未偵測到任何有效的在線手錶設備！");
+                    Log.e(TAG, "❌ 发送失败：当下未侦测到任何有效的在线手表设备！");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "發送相機控制訊息崩潰", e);
+                Log.e(TAG, "发送相机控制消息崩溃", e);
             }
         }).start();
     }
@@ -150,7 +155,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private void prepareChannelAndCamera() {
         mStreamExecutor.execute(() -> {
             try {
-                Log.d(TAG, "正在建立全局唯一 Channel 長連接管道...");
+                Log.d(TAG, "正在建立全局唯一 Channel 长连接管道...");
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
 
                 String realWatchNodeId = null;
@@ -165,12 +170,12 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     ChannelClient channelClient = Wearable.getChannelClient(this);
                     mActiveChannel = Tasks.await(channelClient.openChannel(realWatchNodeId, "/wear-camera-stream"));
                     mChannelOutputStream = Tasks.await(channelClient.getOutputStream(mActiveChannel));
-                    Log.d(TAG, "🚀 全局 Channel 長連接管道建立成功，自來水管已接通！");
+                    Log.d(TAG, "🚀 全局 Channel 长连接管道建立成功，自来水管已接通！");
                 } else {
-                    Log.w(TAG, "⚠️ 未找到有效手錶節點，暫時掛起 Channel，等待手錶接入");
+                    Log.w(TAG, "⚠️ 未找到有效手表节点，暂时挂起 Channel，等待手表接入");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "建立 Channel 長連接管道失敗", e);
+                Log.e(TAG, "建立 Channel 长连接管道失败", e);
             }
 
             ContextCompat.getMainExecutor(this).execute(this::startCameraPipeline);
@@ -186,7 +191,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
 
-                // 🎯【核心修正】：加入 ExtensionsManager 的 ImageAnalysis 相容性深度校驗
                 try {
                     ListenableFuture<ExtensionsManager> extensionsManagerFuture = 
                             ExtensionsManager.getInstanceAsync(this, cameraProvider);
@@ -195,37 +199,34 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     CameraSelector hdrSelector = null;
                     CameraSelector nightSelector = null;
 
-                    // 1. 檢查 HDR 是否可用且硬體支援與 ImageAnalysis 同時繫結
                     if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR)) {
                         hdrSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR);
                         if (!extensionsManager.isImageAnalysisSupported(hdrSelector, androidx.camera.extensions.ExtensionMode.HDR)) {
-                            Log.w(TAG, "⚠️ 檢測到目前硬體不支援在 HDR 開啟時進行影像串流採集，放棄啟用 HDR 特效。");
+                            Log.w(TAG, "⚠️ 检测到目前硬件不支持在 HDR 开启时进行影像串流采集，放弃启用 HDR 特效。");
                             hdrSelector = null;
                         }
                     }
 
-                    // 2. 檢查 夜景 是否可用且硬體支援與 ImageAnalysis 同時繫結
                     if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.NIGHT)) {
                         nightSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.NIGHT);
                         if (!extensionsManager.isImageAnalysisSupported(nightSelector, androidx.camera.extensions.ExtensionMode.NIGHT)) {
-                            Log.w(TAG, "⚠️ 檢測到目前硬體不支援在夜景模式開啟時進行影像串流採集，放棄啟用夜景特效。");
+                            Log.w(TAG, "⚠️ 检测到目前硬件不支持在夜景模式开启时进行影像串流采集，放弃启用夜景特效。");
                             nightSelector = null;
                         }
                     }
 
-                    // 3. 根據校驗結果安全指派 Selector，若都不支援則維持原生標準通道
                     if (hdrSelector != null) {
                         cameraSelector = hdrSelector;
-                        Log.d(TAG, "✨ 通過相容性校驗，成功啟用手機硬體級 HDR 串流優化！");
+                        Log.d(TAG, "✨ 通过兼容性校验，成功启用手机硬件级 HDR 串流优化！");
                     } else if (nightSelector != null) {
                         cameraSelector = nightSelector;
-                        Log.d(TAG, "✨ 通過相容性校驗，成功啟用手機硬體級 夜景串流優化！");
+                        Log.d(TAG, "✨ 通过兼容性校验，成功启用手机硬件级 夜景串流优化！");
                     } else {
-                        Log.d(TAG, "ℹ️ 為了保證低延遲取景串流穩定性，自動安全採用標準硬體通道。");
+                        Log.d(TAG, "ℹ️ 为了保证低延迟取景串流稳定性，自动安全采用标准硬件通道。");
                     }
 
                 } catch (Exception extEx) {
-                    Log.w(TAG, "廠商 Extension 模組載入異常，自動降級使用標準硬體通道: " + extEx.getMessage());
+                    Log.w(TAG, "厂商 Extension 模块加载异常，自动降级使用标准硬件通道: " + extEx.getMessage());
                 }
 
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
@@ -235,13 +236,15 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
                 imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this), this::processImageProxy);
 
-                // 🎯 此時 cameraSelector 已經過嚴格的相容性校驗，絕對不會再拋出 IllegalArgumentException！
                 cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis);
                 lifecycleRegistry.setCurrentState(Lifecycle.State.RESUMED);
-                Log.d(TAG, "🎉 CameraX Pipeline 成功繫結生命週期，資料串流已就緒！");
+                Log.d(TAG, "🎉 CameraX Pipeline 成功绑定生命周期，数据串流已就绪！");
 
             } catch (Exception e) {
-                Log.e(TAG, "❌ 嚴重錯誤：繫結專屬相機生命週期失敗", e);
+                Log.e(TAG, "❌ 严重错误：绑定专属相机生命周期失败，强制自杀退出，防止卡死后台！", e);
+                // 🎯【核心修正】：绑定失败（例如硬件不兼容抛错时）立即自我销毁，防止前台通知常驻卡死
+                isRunning = false;
+                stopSelf();
             }
         }, ContextCompat.getMainExecutor(this));
     }
@@ -273,7 +276,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             jpegData = out.toByteArray();
 
         } catch (Exception e) {
-            Log.e(TAG, "畫面分析採集崩潰", e);
+            Log.e(TAG, "画面分析采集崩溃", e);
         } finally {
             image.close();
         }
@@ -288,7 +291,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                             mChannelOutputStream.flush();
                         }
                     } catch (Exception e) {
-                        Log.w(TAG, "手錶端已關閉，流寫入嘗試被安全忽略");
+                        Log.w(TAG, "手表端已关闭，流写入尝试被安全忽略");
                     }
                 }
             });
@@ -307,9 +310,9 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     Wearable.getChannelClient(this).close(mActiveChannel);
                     mActiveChannel = null;
                 }
-                Log.d(TAG, "🔒 唯一的 Channel 長連接管道已在同步鎖內安全釋放。");
+                Log.d(TAG, "🔒 唯一的 Channel 长连接管道已在同步锁内安全释放。");
             } catch (Exception e) {
-                Log.e(TAG, "關閉通道失敗", e);
+                Log.e(TAG, "关闭通道失败", e);
             }
         }
     }
@@ -333,7 +336,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, "相機背景採集通知", NotificationManager.IMPORTANCE_LOW
+                    CHANNEL_ID, "相机后台采集通知", NotificationManager.IMPORTANCE_LOW
             );
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(channel);
