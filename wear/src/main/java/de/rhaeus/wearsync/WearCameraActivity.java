@@ -58,51 +58,65 @@ public class WearCameraActivity extends Activity {
         }
     }
 
-    private void startChannelStreamListener() {
-        isListening = true;
-        ChannelClient channelClient = Wearable.getChannelClient(this);
-
-        mChannelCallback = new ChannelClient.ChannelCallback() {
-            @Override
-            public void onChannelOpened(ChannelClient.Channel channel) {
-                if (!"/wear-camera-stream".equals(channel.getPath())) return;
-                new Thread(() -> {
-                    try {
-                        InputStream is = Tasks.await(channelClient.getInputStream(channel));
-                        ByteArrayOutputStream frameBuffer = new ByteArrayOutputStream();
-                        // 🎯 優化：緩衝區大小提升至 16K，應對高速影格傳輸
-                        byte[] buffer = new byte[16384]; 
-                        int readBytes;
-
-                        while (isListening && (readBytes = is.read(buffer)) != -1) {
-                            for (int i = 0; i < readBytes; i++) {
-                                frameBuffer.write(buffer[i]);
-                                int size = frameBuffer.size();
-                                // 檢查 JPEG 結尾標識符 [0xFF, 0xD9]
-                                if (size > 4 && frameBuffer.toByteArray()[size - 2] == (byte) 0xFF 
-                                        && frameBuffer.toByteArray()[size - 1] == (byte) 0xD9) {
-                                    byte[] rawJpeg = frameBuffer.toByteArray();
-                                    frameBuffer.reset();
-                                    if (rawJpeg.length > 0) {
-                                        Bitmap bitmap = BitmapFactory.decodeByteArray(rawJpeg, 0, rawJpeg.length);
-                                        if (bitmap != null) {
-                                            mainHandler.post(() -> { if (frameView != null) frameView.setImageBitmap(bitmap); });
-                                        }
+// 🎯 升級手錶端的監聽解包協議，徹底消滅黑屏
+        private void startChannelStreamListener() {
+            isListening = true;
+            ChannelClient channelClient = Wearable.getChannelClient(this);
+        
+            mChannelCallback = new ChannelClient.ChannelCallback() {
+                @Override
+                public void onChannelOpened(ChannelClient.Channel channel) {
+                    if (!"/wear-camera-stream".equals(channel.getPath())) return;
+                    new Thread(() -> {
+                        try {
+                            InputStream is = Tasks.await(channelClient.getInputStream(channel));
+                            byte[] headerBuffer = new byte[4]; // 專門讀取 4 字節長度的快取
+        
+                            while (isListening) {
+                                // 1. 精準讀取 4 字節的長度頭
+                                int bytesReadHeader = 0;
+                                while (bytesReadHeader < 4) {
+                                    int r = is.read(headerBuffer, bytesReadHeader, 4 - bytesReadHeader);
+                                    if (r == -1) throw new java.io.EOFException("管道過早關閉");
+                                    bytesReadHeader += r;
+                                }
+        
+                                // 2. 解析出即將進來的圖片大小
+                                int imageSize = java.nio.ByteBuffer.wrap(headerBuffer).getInt();
+                                if (imageSize <= 0 || imageSize > 5 * 1024 * 1024) continue; // 安全邊界保護
+        
+                                // 3. 根據長度，精準開闢並讀滿圖片字節
+                                byte[] imageBuffer = new byte[imageSize];
+                                int bytesReadData = 0;
+                                while (bytesReadData < imageSize) {
+                                    int r = is.read(imageBuffer, bytesReadData, imageSize - bytesReadData);
+                                    if (r == -1) throw new java.io.EOFException("圖片傳輸中斷");
+                                    bytesReadData += r;
+                                }
+        
+                                // 4. 高效解碼並直接刷新到 UI 畫面
+                                if (isListening) {
+                                    Bitmap bitmap = BitmapFactory.decodeByteArray(imageBuffer, 0, imageBuffer.length);
+                                    if (bitmap != null) {
+                                        mainHandler.post(() -> {
+                                            if (frameView != null) frameView.setImageBitmap(bitmap);
+                                        });
                                     }
                                 }
                             }
+                            is.close();
+                        } catch (Exception e) {
+                            Log.d(TAG, "長管道讀取安全結束、手錶退出或連接中斷: " + e.getMessage());
                         }
-                        is.close();
-                    } catch (Exception e) {
-                        Log.d(TAG, "長管道讀取安全結束或中斷");
-                    }
-                }).start();
-            }
-        };
-
-        channelClient.registerChannelCallback(mChannelCallback);
-    }
-
+                    }).start();
+                }
+            };
+        
+            channelClient.registerChannelCallback(mChannelCallback);
+        }
+        
+        
+        
     private void startCountdown() {
         countdown = 3;
         if (tvCountdown != null) {
