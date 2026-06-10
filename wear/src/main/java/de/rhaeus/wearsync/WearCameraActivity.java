@@ -26,8 +26,6 @@ import java.util.List;
 public class WearCameraActivity extends Activity {
     private ChannelClient.ChannelCallback mChannelCallback = null;
     private static final String TAG = "WearSync_WearCamera";
-    
-    // 🎯 修正三：去掉轉義多餘的反斜杠
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
     private ImageView frameView;
@@ -35,27 +33,21 @@ public class WearCameraActivity extends Activity {
     private Button btnCapture;
     private int countdown = 3;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-
-    // 🚀 長連接核心：異步執行緒與停止標誌
-    private Thread mReceiveThread = null;
     private volatile boolean isListening = false;
 
-    // 🎯 修正四：補全被不小心漏掉的完整的 onCreate 方法簽名
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        // 為了不依賴 DataBinding 的佈局問題，直接透過原生最安全的代碼獲取 UI
         setContentView(R.layout.activity_wear_camera);
 
         frameView = findViewById(R.id.frameView);
         tvCountdown = findViewById(R.id.tvCountdown);
         btnCapture = findViewById(R.id.btnCapture);
 
-        // 通知手機端：啟動相機服務並做好接管長連接的準備
+        // 🎯 完美對齊：通知手機端拉起背景相機服務
         notifyPhoneCameraService("START_CAMERA");
 
-        // 啟動長連接自來水管異步監聽
+        // 啟動 Channel 監聽
         startChannelStreamListener();
 
         if (btnCapture != null) {
@@ -70,7 +62,6 @@ public class WearCameraActivity extends Activity {
         isListening = true;
         ChannelClient channelClient = Wearable.getChannelClient(this);
 
-        // 2. 建立唯一的靜態回調，不要在 while 循環裡重複 register
         mChannelCallback = new ChannelClient.ChannelCallback() {
             @Override
             public void onChannelOpened(ChannelClient.Channel channel) {
@@ -79,13 +70,15 @@ public class WearCameraActivity extends Activity {
                     try {
                         InputStream is = Tasks.await(channelClient.getInputStream(channel));
                         ByteArrayOutputStream frameBuffer = new ByteArrayOutputStream();
-                        byte[] buffer = new byte[8192];
+                        // 🎯 優化：緩衝區大小提升至 16K，應對高速影格傳輸
+                        byte[] buffer = new byte[16384]; 
                         int readBytes;
 
                         while (isListening && (readBytes = is.read(buffer)) != -1) {
                             for (int i = 0; i < readBytes; i++) {
                                 frameBuffer.write(buffer[i]);
                                 int size = frameBuffer.size();
+                                // 檢查 JPEG 結尾標識符 [0xFF, 0xD9]
                                 if (size > 4 && frameBuffer.toByteArray()[size - 2] == (byte) 0xFF 
                                         && frameBuffer.toByteArray()[size - 1] == (byte) 0xD9) {
                                     byte[] rawJpeg = frameBuffer.toByteArray();
@@ -107,7 +100,6 @@ public class WearCameraActivity extends Activity {
             }
         };
 
-        // 3. 在外部僅註冊一次
         channelClient.registerChannelCallback(mChannelCallback);
     }
 
@@ -127,7 +119,6 @@ public class WearCameraActivity extends Activity {
                     mainHandler.postDelayed(this, 1000);
                 } else {
                     if (tvCountdown != null) tvCountdown.setText("📸");
-                    // 🎯 控制信令：走 MessageClient 發送拍照
                     notifyPhoneCameraService("TAKE_PICTURE");
                     mainHandler.postDelayed(() -> {
                         if (tvCountdown != null) tvCountdown.setVisibility(View.GONE);
@@ -160,15 +151,12 @@ public class WearCameraActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        isListening = false; // 瞬間讓異步 read 退出循環
-        
-        // 4. 顯式註銷谷歌通道回調，徹底杜絕 Activity 銷毀後的殘留 FC
+        isListening = false; 
         if (mChannelCallback != null) {
             Wearable.getChannelClient(this).unregisterChannelCallback(mChannelCallback);
         }
-        
         mainHandler.removeCallbacksAndMessages(null);
-        notifyPhoneCameraService("STOP_CAMERA"); // 通知手機安全下線
+        notifyPhoneCameraService("STOP_CAMERA"); 
         super.onDestroy();
     }
 }
