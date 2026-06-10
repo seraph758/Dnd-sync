@@ -31,9 +31,11 @@ import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import com.google.common.util.concurrent.ListenableFuture;
 
+import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,12 +43,12 @@ import java.util.concurrent.Executors;
 public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private static final String TAG = "WearSync_CameraService";
     private static final String CHANNEL_ID = "wear_sync_camera_channel";
-    private static final int NOTIFICATION_ID = 8899; // 🎯 統一使用此 ID
+    private static final int NOTIFICATION_ID = 8899; 
 
     private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
     private ProcessCameraProvider cameraProvider;
-    private boolean isRunning = false;
-    
+    private volatile boolean isRunning = false;
+
     private final Object mLock = new Object();
 
     private ChannelClient.Channel mActiveChannel = null;
@@ -63,7 +65,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     public void onCreate() {
         super.onCreate();
         lifecycleRegistry.setCurrentState(Lifecycle.State.CREATED);
-        // 🎯 修正：必須在服務建立時先接通通知管道，否則 startForeground 會因找不到 Channel 閃退
         createNotificationChannel();
     }
 
@@ -82,15 +83,12 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                         .setOngoing(true)
                         .build();
 
-                // 🎯 修正：將硬編碼的 2026 全部替換為定義好的 NOTIFICATION_ID 常數
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    // Android 14 (API 34) 及以上必須帶上相機類型引數
                     startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
                 } else {
-                    // Android 13 及以下保持標準啟動
                     startForeground(NOTIFICATION_ID, notification);
                 }
-                
+
                 prepareChannelAndCamera();
             }
         } else if (intent != null && "STOP_CAMERA".equals(intent.getAction())) {
@@ -99,18 +97,67 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         return START_NOT_STICKY;
     }
 
+    /**
+     * 🎯 靜態工具解耦方法：供 MainFragment 點擊按鈕時調用
+     * 點擊的當下即時動態抓取最新手錶 ID，完成點對點發送，避免耗電與設備騷擾
+     */
+    public static void sendCameraControlToWatchLive(Context context, String action) {
+        new Thread(() -> {
+            try {
+                // 1. 組裝和手錶 WearCameraActivity 嚴格對齊的控制信令
+                JSONObject json = new JSONObject();
+                json.put("sender", "phone");
+                json.put("type", "camera_control");
+                json.put("action", action); // 手錶那端期待接收的就是 "START_CAMERA"
+                byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
+
+                // 2. 獲取當前在線的所有節點
+                List<Node> nodes = Tasks.await(Wearable.getNodeClient(context).getConnectedNodes());
+                
+                String realWatchNodeId = null;
+                for (Node node : nodes) {
+                    if (node.isNearby()) { // 過濾出真實靠在身邊的手錶
+                        realWatchNodeId = node.getId();
+                        break;
+                    }
+                }
+
+                // 3. 定向定向發射，信令 Path 一字不差完美對齊：/wear-universal-sync
+                if (realWatchNodeId != null) {
+                    Wearable.getMessageClient(context)
+                            .sendMessage(realWatchNodeId, "/wear-universal-sync", data)
+                            .addOnSuccessListener(integer -> Log.d(TAG, "🚀 即時獲取手錶 ID 成功，已點對點拉起手錶端 UI"))
+                            .addOnFailureListener(e -> Log.e(TAG, "❌ 點對點發送信令失敗"));
+                } else {
+                    Log.e(TAG, "❌ 發送失敗：當下未偵測到任何有效的在線手錶設備！");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "發送相機控制訊息崩潰", e);
+            }
+        }).start();
+    }
+
     private void prepareChannelAndCamera() {
         mStreamExecutor.execute(() -> {
             try {
                 Log.d(TAG, "正在建立全局唯一 Channel 長連接管道...");
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-                if (!nodes.isEmpty()) {
-                    String targetNodeId = nodes.get(0).getId();
+                
+                String realWatchNodeId = null;
+                for (Node node : nodes) {
+                    if (node.isNearby()) {
+                        realWatchNodeId = node.getId();
+                        break;
+                    }
+                }
+
+                if (realWatchNodeId != null) {
                     ChannelClient channelClient = Wearable.getChannelClient(this);
-                    
-                    mActiveChannel = Tasks.await(channelClient.openChannel(targetNodeId, "/wear-camera-stream"));
+                    mActiveChannel = Tasks.await(channelClient.openChannel(realWatchNodeId, "/wear-camera-stream"));
                     mChannelOutputStream = Tasks.await(channelClient.getOutputStream(mActiveChannel));
                     Log.d(TAG, "🚀 全局 Channel 長連接管道建立成功，自來水管已接通！");
+                } else {
+                    Log.w(TAG, "⚠️ 未找到有效手錶節點，無法開通 Channel");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "建立 Channel 長連接管道失敗", e);
@@ -132,9 +179,8 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 try {
                     ListenableFuture<ExtensionsManager> extensionsManagerFuture = 
                             ExtensionsManager.getInstanceAsync(this, cameraProvider);
-                    
                     ExtensionsManager extensionsManager = extensionsManagerFuture.get();
-                    
+
                     if (extensionsManager.isExtensionAvailable(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR)) {
                         cameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, androidx.camera.extensions.ExtensionMode.HDR);
                         Log.d(TAG, "✨ 成功啟用手機專屬硬體級 HDR 演算法優化！");
@@ -143,7 +189,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                         Log.d(TAG, "✨ 成功啟用手機專屬硬體級 夜景演算法優化！");
                     }
                 } catch (Exception extEx) {
-                    Log.w(TAG, "當前手機硬體不支持廠商 Extension 擴充，自動降級使用標準硬體通道: " + extEx.getMessage());
+                    Log.w(TAG, "自動降級使用標準硬體通道: " + extEx.getMessage());
                 }
 
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
@@ -163,12 +209,14 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     }
 
     private void processImageProxy(@NonNull ImageProxy image) {
+        byte[] jpegData = null;
         try {
             if (!isRunning || mChannelOutputStream == null) {
                 image.close();
                 return;
             }
 
+            // 🎯【核心修正】：在 image.close() 呼叫前，必須在同步區域內完整提取並轉化完位元組數據
             ByteBuffer yBuffer = image.getPlanes()[0].getBuffer();
             ByteBuffer uBuffer = image.getPlanes()[1].getBuffer();
             ByteBuffer vBuffer = image.getPlanes()[2].getBuffer();
@@ -185,13 +233,22 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             yuv.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 35, out);
-            byte[] jpegData = out.toByteArray();
+            jpegData = out.toByteArray();
 
+        } catch (Exception e) {
+            Log.e(TAG, "畫面分析採集崩潰", e);
+        } finally {
+            // 🎯 確保立刻釋放影格硬體鎖，絕不引發 image already closed 崩潰，這才是解決黑屏的底層關鍵！
+            image.close();
+        }
+
+        if (jpegData != null && jpegData.length > 0) {
+            final byte[] finalData = jpegData;
             mStreamExecutor.execute(() -> {
                 synchronized (mLock) { 
                     try {
                         if (isRunning && mChannelOutputStream != null) {
-                            mChannelOutputStream.write(jpegData);
+                            mChannelOutputStream.write(finalData);
                             mChannelOutputStream.flush();
                         }
                     } catch (Exception e) {
@@ -199,11 +256,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     }
                 }
             });
-
-        } catch (Exception e) {
-            Log.e(TAG, "畫面分析採集崩潰", e);
-        } finally {
-            image.close();
         }
     }
 
@@ -233,7 +285,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
         }
-        
+
         mStreamExecutor.shutdownNow(); 
         closeChannelSafely();
         super.onDestroy();
