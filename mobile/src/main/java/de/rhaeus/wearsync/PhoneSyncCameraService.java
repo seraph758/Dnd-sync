@@ -64,10 +64,11 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         mStreamExecutor = Executors.newSingleThreadExecutor();
         createNotificationChannel();
 
+        // 🎯 這裡修正為 Android 系統自帶的相機圖標，確保 100% 順利編譯通過
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("WearSync 相機同步服務")
                 .setContentText("正在背景提供手錶遠端影像串流...")
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
         startForeground(NOTIFICATION_ID, notification);
