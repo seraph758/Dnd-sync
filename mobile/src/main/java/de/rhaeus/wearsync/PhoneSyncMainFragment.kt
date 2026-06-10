@@ -28,8 +28,6 @@ import androidx.fragment.app.Fragment
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
 import androidx.compose.ui.graphics.Color
-import org.json.JSONObject
-import com.google.android.gms.tasks.Tasks
 
 class PhoneSyncMainFragment : Fragment() {
     private val isNotificationAllowedState = mutableStateOf(false)
@@ -38,7 +36,6 @@ class PhoneSyncMainFragment : Fragment() {
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
 
     // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_DND_STATE_DECLARATION] ===
-    // 勿扰联动子开关响应式状态声明
     private val dndMasterSwitch = mutableStateOf(true)
     private val wearSleepSwitch = mutableStateOf(false)
     private val wearPowerSavingSwitch = mutableStateOf(false)
@@ -46,8 +43,7 @@ class PhoneSyncMainFragment : Fragment() {
     // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_DND_STATE_DECLARATION] ===
 
     // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_ALARM_STATE_DECLARATION] ===
-    // 闹钟高级拦截、自定义关键字及【新增闹钟同步总开关】状态声明
-    private val alarmMasterSwitch = mutableStateOf(true) // ⏰ 闹钟同步总开关状态
+    private val alarmMasterSwitch = mutableStateOf(true) 
     private val alarmPkgState = mutableStateOf("com.google.android.deskclock")
     private val alarmDismissKeyState = mutableStateOf("停止")
     private val alarmSnoozeKeyState = mutableStateOf("延后")
@@ -68,24 +64,20 @@ class PhoneSyncMainFragment : Fragment() {
         wearSleepSwitch.value = sp.getBoolean("wear_sleep", false)
         wearPowerSavingSwitch.value = sp.getBoolean("wear_power_saving", false)
         dndVibrateSwitch.value = sp.getBoolean("dnd_vibrate", false)
-        
-        // 读取闹钟配置缓存
+
         alarmMasterSwitch.value = sp.getBoolean("alarm_master", true)
         alarmPkgState.value = sp.getString("alarm_pkg", "com.google.android.deskclock") ?: "com.google.android.deskclock"
         alarmDismissKeyState.value = sp.getString("alarm_dismiss_key", "停止") ?: "停止"
         alarmSnoozeKeyState.value = sp.getString("alarm_snooze_key", "延后") ?: "延后"
 
-        // === [AI_SECURITY_FIREWALL: PHONE_REALTIME_SCORE_CALCULATOR] ===
-        // 操作开关时，在本地实时进行 Linux 权重分数累加并直接落盘保存
         fun calculateAndSaveMask() {
             var score = 0
-            if (wearSleepSwitch.value) score += 1       // 🛌 睡眠模式权重数 = 1
-            if (wearPowerSavingSwitch.value) score += 2 // 🔋 省电模式权重数 = 2
-            if (dndVibrateSwitch.value) score += 4     // 📳 同步震动权重数 = 4
+            if (wearSleepSwitch.value) score += 1       
+            if (wearPowerSavingSwitch.value) score += 2 
+            if (dndVibrateSwitch.value) score += 4     
             sp.edit().putInt("switches_mask", score).apply()
-            Log.d("WearSync_Main", "📊 用户拨动开关，本地开关实时组合总分数更新为: $score")
+            Log.d("WearSync_Main", "📊 本地开关实时组合总分数更新为: $score")
         }
-        // === [AI_SECURITY_FIREWALL_END: PHONE_REALTIME_SCORE_CALCULATOR] ===
 
         return ComposeView(requireContext()).apply {
             setContent {
@@ -97,7 +89,6 @@ class PhoneSyncMainFragment : Fragment() {
                         ) {
                             Text(text = "WearSync 控制台", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
 
-                            // 核心系统权限卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -127,7 +118,6 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
-                            // 手表通信就绪状态卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -141,8 +131,6 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
-                            // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_DND_CONFIG_UI] ===
-                            // 勿扰自动化组合配置 UI 模块
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -177,10 +165,7 @@ class PhoneSyncMainFragment : Fragment() {
                                     }
                                 }
                             }
-                            // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_DND_CONFIG_UI] ===
 
-                            // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_ALARM_CONFIG_UI] ===
-                            // ⏰ 闹钟拦截配置模块 (已精准加入 alarmMasterSwitch 联动总开关控制，完美保留原映射动作词)
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -224,10 +209,10 @@ class PhoneSyncMainFragment : Fragment() {
                                     }
                                 }
                             }
-                            // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_ALARM_CONFIG_UI] ===
 
                             Button(
-                                onClick = { triggerDualCameraSync(requireContext()) },
+                                // 🎯【核心優化】：與你的優秀想法完全融合，點擊時即時動態獲取手錶 ID 並精準發射標準對齊信令
+                                onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA") },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
                                 shape = RoundedCornerShape(12.dp)
@@ -237,27 +222,6 @@ class PhoneSyncMainFragment : Fragment() {
                 }
             }
         }
-    }
-
-    private fun triggerDualCameraSync(context: Context) {
-        Thread {
-            try {
-                JSONObject().apply {
-                    put("sender", "phone")
-                    put("type", "camera_action")
-                    put("action", "START_CAMERA_UI")
-                }.toString().also { payload ->
-                    val data = payload.toByteArray(Charsets.UTF_8)
-                    val nodes = Tasks.await(Wearable.getNodeClient(context).connectedNodes)
-                    for (node in nodes) {
-                        Wearable.getMessageClient(context).sendMessage(node.id, "/wear-universal-sync", data)
-                    }
-                }
-                val intent = Intent().setClassName("de.rhaeus.wearsync", "de.rhaeus.wearsync.PhoneSyncCameraService")
-                intent.action = "START_CAMERA"
-                context.startForegroundService(intent)
-            } catch (e: Exception) { Log.e("WearSync_Main", "拉起相机异常", e) }
-        }.start()
     }
 
     override fun onResume() {
