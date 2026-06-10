@@ -35,237 +35,216 @@ class PhoneSyncMainFragment : Fragment() {
     private val isConnectedState = mutableStateOf(false)
     private var capabilityChangedListener: CapabilityClient.OnCapabilityChangedListener? = null
 
-    private val cameraPermissionLauncher = registerForActivityResult(
+    // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_DND_STATE_DECLARATION] ===
+    private val dndMasterSwitch = mutableStateOf(true)
+    private val wearSleepSwitch = mutableStateOf(false)
+    private val wearPowerSavingSwitch = mutableStateOf(false)
+    private val dndVibrateSwitch = mutableStateOf(false) 
+    // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_DND_STATE_DECLARATION] ===
+
+    // === [AI_SECURITY_FIREWALL: MAIN_FRAGMENT_ALARM_STATE_DECLARATION] ===
+    private val alarmMasterSwitch = mutableStateOf(true) 
+    private val alarmPkgState = mutableStateOf("com.google.android.deskclock")
+    private val alarmDismissKeyState = mutableStateOf("停止")
+    private val alarmSnoozeKeyState = mutableStateOf("延后")
+    // === [AI_SECURITY_FIREWALL_END: MAIN_FRAGMENT_ALARM_STATE_DECLARATION] ===
+
+    private val requestCameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
+    ) { isGranted: Boolean ->
         isCameraAllowedState.value = isGranted
     }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
     ): View {
+        val sp = requireContext().getSharedPreferences("wearsync_prefs", Context.MODE_PRIVATE)
+        dndMasterSwitch.value = sp.getBoolean("dnd_master", true)
+        wearSleepSwitch.value = sp.getBoolean("wear_sleep", false)
+        wearPowerSavingSwitch.value = sp.getBoolean("wear_power_saving", false)
+        dndVibrateSwitch.value = sp.getBoolean("dnd_vibrate", false)
+
+        alarmMasterSwitch.value = sp.getBoolean("alarm_master", true)
+        alarmPkgState.value = sp.getString("alarm_pkg", "com.google.android.deskclock") ?: "com.google.android.deskclock"
+        alarmDismissKeyState.value = sp.getString("alarm_dismiss_key", "停止") ?: "停止"
+        alarmSnoozeKeyState.value = sp.getString("alarm_snooze_key", "延后") ?: "延后"
+
+        fun calculateAndSaveMask() {
+            var score = 0
+            if (wearSleepSwitch.value) score += 1       
+            if (wearPowerSavingSwitch.value) score += 2 
+            if (dndVibrateSwitch.value) score += 4     
+            sp.edit().putInt("switches_mask", score).apply()
+            Log.d("WearSync_Main", "📊 本地开关实时组合总分数更新为: $score")
+        }
+
         return ComposeView(requireContext()).apply {
             setContent {
                 MaterialTheme {
-                    var isNotificationAllowed by remember { isNotificationAllowedState }
-                    var isCameraAllowed by remember { isCameraAllowedState }
-                    var isConnected by remember { isConnectedState }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF121212))
-                            .padding(16.dp)
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF121212)).statusBarsPadding()) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState()),
+                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Text(
-                                text = "WearSync 控制中心",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
+                            Text(text = "WearSync 控制台", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
 
-                            // 连线状态卡片
+                            // 核心權限卡片
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isConnected) Color(0xFF1B5E20) else Color(0xFFB71C1C)
-                                )
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = if (isConnected) "🟢 手表已连接" else "🔴 未侦测到手表",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    Text("系统核心权限", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column {
+                                            Text("通知接管服务", fontSize = 15.sp, color = Color.White)
+                                            Text(text = if (isNotificationAllowedState.value) "已授权" else "未授权 (核心状态同步必备)", fontSize = 12.sp, color = if (isNotificationAllowedState.value) Color(0xFF4CAF50) else Color(0xFFF44336))
+                                        }
+                                        if (!isNotificationAllowedState.value) {
+                                            Button(onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("去授权") }
+                                        }
+                                    }
+                                    HorizontalDivider(color = Color(0xFF2C2C2C))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column {
+                                            Text("相机硬件权限", fontSize = 15.sp, color = Color.White)
+                                            Text(text = if (isCameraAllowedState.value) "已授权" else "未授权 (远程拍照必备)", fontSize = 12.sp, color = if (isCameraAllowedState.value) Color(0xFF4CAF50) else Color(0xFFF44336))
+                                        }
+                                        if (!isCameraAllowedState.value) {
+                                            Button(onClick = { requestCameraPermissionLauncher.launch(android.Manifest.permission.CAMERA) }) { Text("授权相机") }
+                                        }
+                                    }
                                 }
                             }
 
-                            // 权限请求卡片
-                            if (!isNotificationAllowed || !isCameraAllowed) {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
+                            // 連線狀態卡片
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C))
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        Text("需要授权核心权限", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                            ) {
+                                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("手表连线状态", fontSize = 16.sp, color = Color.White)
+                                    Box(modifier = Modifier.background(if (isConnectedState.value) Color(0xFF2E7D32) else Color(0xFFC62828), RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                        Text(if (isConnectedState.value) "已连接" else "未就绪", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
 
-                                        if (!isNotificationAllowed) {
-                                            Button(
-                                                onClick = { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) },
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
-                                            ) {
-                                                Text("授权通知拦截权限 (勿扰同步)", color = Color.Black)
+                            // 勿擾同步卡片
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("同步勿扰状态", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text("开启后将双向对齐手表状态(支持开启与联动关闭)", fontSize = 12.sp, color = Color.Gray)
+                                        }
+                                        Switch(checked = dndMasterSwitch.value, onCheckedChange = { dndMasterSwitch.value = it; sp.edit().putBoolean("dnd_master", it).apply() })
+                                    }
+
+                                    AnimatedVisibility(visible = dndMasterSwitch.value) {
+                                        Column(modifier = Modifier.fillMaxWidth().background(Color(0xFF252525), RoundedCornerShape(12.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                Text("1. 同步状态时手表震动", fontSize = 14.sp, color = Color.White)
+                                                Switch(checked = dndVibrateSwitch.value, onCheckedChange = { dndVibrateSwitch.value = it; sp.edit().putBoolean("dnd_vibrate", it).apply(); calculateAndSaveMask() })
+                                            }
+                                            HorizontalDivider(color = Color(0xFF383838))
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                Text("2. 连动睡眠模式", fontSize = 14.sp, color = Color.White)
+                                                Switch(checked = wearSleepSwitch.value, onCheckedChange = { wearSleepSwitch.value = it; sp.edit().putBoolean("wear_sleep", it).apply(); calculateAndSaveMask() })
+                                            }
+                                            HorizontalDivider(color = Color(0xFF383838))
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                Text("3. 连动省电模式", fontSize = 14.sp, color = Color.White)
+                                                Switch(checked = wearPowerSavingSwitch.value, onCheckedChange = { wearPowerSavingSwitch.value = it; sp.edit().putBoolean("wear_power_saving", it).apply(); calculateAndSaveMask() })
                                             }
                                         }
+                                    }
+                                }
+                            }
 
-                                        if (!isCameraAllowed) {
-                                            Button(
-                                                onClick = { cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA) },
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
-                                            ) {
-                                                Text("授权相机权限 (远程取景)")
-                                            }
+                            // 鬧鐘攔截卡片
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("同步手机闹钟状态", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text("开启后支持手表端接管非标闹钟的全屏响铃拦截与控制", fontSize = 12.sp, color = Color.Gray)
+                                        }
+                                        Switch(checked = alarmMasterSwitch.value, onCheckedChange = { alarmMasterSwitch.value = it; sp.edit().putBoolean("alarm_master", it).apply() })
+                                    }
+
+                                    AnimatedVisibility(visible = alarmMasterSwitch.value) {
+                                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            OutlinedTextField(
+                                                value = alarmPkgState.value,
+                                                onValueChange = { alarmPkgState.value = it; sp.edit().putString("alarm_pkg", it).apply() },
+                                                label = { Text("目标闹钟应用包名", color = Color.Gray) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF3F51B5), unfocusedBorderColor = Color.DarkGray)
+                                            )
+
+                                            OutlinedTextField(
+                                                value = alarmDismissKeyState.value,
+                                                onValueChange = { alarmDismissKeyState.value = it; sp.edit().putString("alarm_dismiss_key", it).apply() },
+                                                label = { Text("自定义“停止/关闭”动作按钮文本匹配词", color = Color.Gray) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFF4CAF50), unfocusedBorderColor = Color.DarkGray)
+                                            )
+
+                                            OutlinedTextField(
+                                                value = alarmSnoozeKeyState.value,
+                                                onValueChange = { alarmSnoozeKeyState.value = it; sp.edit().putString("alarm_snooze_key", it).apply() },
+                                                label = { Text("自定义“延后/稍后”动作按钮文本匹配词", color = Color.Gray) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color(0xFFFF9800), unfocusedBorderColor = Color.DarkGray)
+                                            )
                                         }
                                     }
                                 }
                             }
 
-                            // 1️⃣ 勿扰模式同步卡片 (100% 完整保留)
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("勿扰状态双向同步", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("开启后，手机切换勿扰模式时，手表将实时同步切换；在手表上操作同样可以反向控制手机。", fontSize = 13.sp, color = Color.LightGray)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("状态：", fontSize = 14.sp, color = Color.Gray)
-                                        Text("守护服务运行中", fontSize = 14.sp, color = Color(0xFF81C784), fontWeight = FontWeight.Medium)
+                            // 🧪 原有调试按钮：拉起远端相机控制 (100% 保持原样)
+                            Button(
+                                onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA") },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { 
+                                Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
+                            }
+
+                            // 🎯【相機單獨擴展區 - 絕不碰上方任何模塊】：新增退出後台拍照服務按鈕
+                            Button(
+                                onClick = {
+                                    try {
+                                        val stopIntent = Intent(requireContext(), PhoneSyncCameraService::class.java)
+                                        requireContext().stopService(stopIntent)
+                                        Log.d("WearSync_Main", "🛑 用戶手動點擊退出後台拍照服務，下發 stopService 訊令")
+                                    } catch (e: Exception) {
+                                        Log.e("WearSync_Main", "停止相機服務失敗", e)
                                     }
-                                }
-                            }
-
-                            // 2️⃣ 就寝/睡眠模式高级物理同步卡片 (100% 完整保留)
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("就寝/睡眠状态硬件同步", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("由于 WearOS 11+ 限制了非系统应用修改就寝模式的 API，系统将通过特权级无障碍辅助功能引擎，在手表端以物理宏指令全自动校准硬件选单状态。", fontSize = 13.sp, color = Color.LightGray)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("物理辅助引擎：", fontSize = 14.sp, color = Color.Gray)
-                                        Text("已就绪 (高级宏并发保护已开启)", fontSize = 14.sp, color = Color(0xFF81C784), fontWeight = FontWeight.Medium)
-                                    }
-                                }
-                            }
-
-                            // 3️⃣ 省电模式同步卡片 (100% 完整保留)
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("低电量/省电状态同步", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("当手机进入省电模式或电量低于阈值时，自动激活手表端的对应策略，全面优化整体电池寿命续航极限。", fontSize = 13.sp, color = Color.LightGray)
-                                }
-                            }
-
-                            // 4️⃣ 快捷磁贴 Tile 同步监控 (100% 完整保留)
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("手表快捷磁贴 (Tiles) 绑定", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("您可以长按手表表盘向左滑动，添加 WearSync 专属快捷控制磁贴，无需每次都进应用列表，抬手即可操作双端相机的快速启闭与勿扰管控。", fontSize = 13.sp, color = Color.LightGray)
-                                }
-                            }
-
-                            // 🎯【优化修改：远程相机多功能双控卡片 - 純簡中 UI】
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Text("远程相机控制卡片", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text(
-                                        text = "可一键向手表发送唤醒通知。如通讯中断或相机遗留后台，可手动点击强制关闭释放。",
-                                        fontSize = 12.sp,
-                                        color = Color.LightGray
-                                    )
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        // 按钮 1：拉起双端
-                                        Button(
-                                            onClick = { startCameraWorkflow() },
-                                            enabled = isCameraAllowed,
-                                            modifier = Modifier.weight(1f),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                                        ) {
-                                            Text("启动双端相机", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                        }
-
-                                        // 按钮 2：主动终止释放（彻底根治死卡后台问题）
-                                        Button(
-                                            onClick = { stopCameraServiceOnPhone() },
-                                            modifier = Modifier.weight(1f),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-                                        ) {
-                                            Text("强制关闭释放", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3B30)), // 醒目的紅色退出按鈕
+                                shape = RoundedCornerShape(12.dp)
+                            ) { 
+                                Text("🛑 關閉後台拍照服務", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White) 
                             }
                         }
                     }
                 }
             }
-        }
-    }
-
-    private fun startCameraWorkflow() {
-        val context = requireContext()
-        Thread {
-            try {
-                PhoneSyncCameraService.sendCameraControlToWatchLive(context, "START_CAMERA")
-            } catch (e: Exception) { 
-                Log.e("WearSync_Main", "拉起相机异常", e) 
-            }
-        }.start()
-    }
-
-// 🎯【手机端主动安全解锁与释放函数】
-    private fun stopCameraServiceOnPhone() {
-        try {
-            val context = requireContext()
-            // 1. 停止手机自身的相机采集前台服务
-            val intent = Intent(context, PhoneSyncCameraService::class.java).apply {
-                action = "STOP_CAMERA"
-            }
-            context.startService(intent)
-            
-            // 2. 向手表同步发送 STOP 指令（如果手表仍开着则会一并通知其 onDestroy 释放）
-            Thread {
-                try {
-                    PhoneSyncCameraService.sendCameraControlToWatchLive(context, "STOP_CAMERA")
-                } catch (e: Exception) {
-                    Log.e("WearSync_Main", "同步发送停止信令至手表失败", e)
-                }
-            }.start()
-            
-            Log.d("WearSync_Main", "🎯 手机端主动触发退出，已向双端管道发送全面销毁释放指令")
-        } catch (e: Exception) {
-            Log.e("WearSync_Main", "手机主动退出相机服务流程崩溃", e)
         }
     }
 
@@ -275,11 +254,7 @@ class PhoneSyncMainFragment : Fragment() {
         isCameraAllowedState.value = requireContext().checkSelfPermission(android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         registerConnectivityListener()
     }
-    
-    override fun onPause() { 
-        super.onPause()
-        unregisterConnectivityListener() 
-    }
+    override fun onPause() { super.onPause(); unregisterConnectivityListener() }
 
     private fun checkNotificationPermission() {
         val flat = Settings.Secure.getString(requireContext().contentResolver, "enabled_notification_listeners")
