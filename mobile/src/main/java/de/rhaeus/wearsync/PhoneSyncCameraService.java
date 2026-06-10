@@ -83,13 +83,20 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                         .setOngoing(true)
                         .build();
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
-                } else {
-                    startForeground(NOTIFICATION_ID, notification);
+                try {
+                    // 🎯【核心修正】：加入更安全的異常阻斷機制，確保遵守 Android 14 規範
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+                    } else {
+                        startForeground(NOTIFICATION_ID, notification);
+                    }
+                    Log.d(TAG, "✅ 成功以 FOREGROUND_SERVICE_TYPE_CAMERA 啟動前台服務");
+                    prepareChannelAndCamera();
+                } catch (SecurityException se) {
+                    Log.e(TAG, "❌ 權限或前台狀態校驗失敗！拒絕盲目啟動以防止 FC：", se);
+                    stopSelf();
+                    return START_NOT_STICKY;
                 }
-
-                prepareChannelAndCamera();
             }
         } else if (intent != null && "STOP_CAMERA".equals(intent.getAction())) {
             stopSelf();
@@ -99,35 +106,45 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
     /**
      * 🎯 靜態工具解耦方法：供 MainFragment 點擊按鈕時調用
-     * 點擊的當下即時動態抓取最新手錶 ID，完成點對點發送，避免耗電與設備騷擾
+     * 完美破局 Android 14 限制：在點擊時由活躍的 UI 立刻拉起本地 Service，隨後發射信令拉起手錶 UI！
      */
     public static void sendCameraControlToWatchLive(Context context, String action) {
+        // 1. 🎯【安全破局關鍵】：既然現在使用者正在點擊手機 UI，立刻由前台 UI 順暢啟動 Service，100% 免疫背景限制！
+        if ("START_CAMERA".equals(action)) {
+            try {
+                Intent serviceIntent = new Intent(context, PhoneSyncCameraService.class);
+                serviceIntent.setAction("START_CAMERA");
+                ContextCompat.startForegroundService(context, serviceIntent);
+                Log.d(TAG, "⚡ [Android 14 守護者機制] 已由前台 UI 點擊事件提前安全拉起 Service");
+            } catch (Exception e) {
+                Log.e(TAG, "前台 UI 啟動 Service 異常", e);
+            }
+        }
+
+        // 2. 非同步通知手錶端拉起 UI 畫面
         new Thread(() -> {
             try {
-                // 1. 組裝和手錶 WearCameraActivity 嚴格對齊的控制信令
                 JSONObject json = new JSONObject();
                 json.put("sender", "phone");
                 json.put("type", "camera_control");
-                json.put("action", action); // 手錶那端期待接收的就是 "START_CAMERA"
+                json.put("action", action); 
                 byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
 
-                // 2. 獲取當前在線的所有節點
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(context).getConnectedNodes());
-                
+
                 String realWatchNodeId = null;
                 for (Node node : nodes) {
-                    if (node.isNearby()) { // 過濾出真實靠在身邊的手錶
+                    if (node.isNearby()) { 
                         realWatchNodeId = node.getId();
                         break;
                     }
                 }
 
-                // 3. 定向定向發射，信令 Path 一字不差完美對齊：/wear-universal-sync
                 if (realWatchNodeId != null) {
                     Wearable.getMessageClient(context)
                             .sendMessage(realWatchNodeId, "/wear-universal-sync", data)
-                            .addOnSuccessListener(integer -> Log.d(TAG, "🚀 即時獲取手錶 ID 成功，已點對點拉起手錶端 UI"))
-                            .addOnFailureListener(e -> Log.e(TAG, "❌ 點對點發送信令失敗"));
+                            .addOnSuccessListener(integer -> Log.d(TAG, "🚀 已成功向手錶發送指令：" + action))
+                            .addOnFailureListener(e -> Log.e(TAG, "❌ 向手錶發送信令失敗"));
                 } else {
                     Log.e(TAG, "❌ 發送失敗：當下未偵測到任何有效的在線手錶設備！");
                 }
@@ -142,7 +159,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             try {
                 Log.d(TAG, "正在建立全局唯一 Channel 長連接管道...");
                 List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-                
+
                 String realWatchNodeId = null;
                 for (Node node : nodes) {
                     if (node.isNearby()) {
@@ -157,7 +174,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     mChannelOutputStream = Tasks.await(channelClient.getOutputStream(mActiveChannel));
                     Log.d(TAG, "🚀 全局 Channel 長連接管道建立成功，自來水管已接通！");
                 } else {
-                    Log.w(TAG, "⚠️ 未找到有效手錶節點，無法開通 Channel");
+                    Log.w(TAG, "⚠️ 未找到有效手錶節點，暫時掛起 Channel，等待手錶接入");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "建立 Channel 長連接管道失敗", e);
@@ -216,7 +233,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 return;
             }
 
-            // 🎯【核心修正】：在 image.close() 呼叫前，必須在同步區域內完整提取並轉化完位元組數據
             ByteBuffer yBuffer = image.getPlanes()[0].getBuffer();
             ByteBuffer uBuffer = image.getPlanes()[1].getBuffer();
             ByteBuffer vBuffer = image.getPlanes()[2].getBuffer();
@@ -238,7 +254,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         } catch (Exception e) {
             Log.e(TAG, "畫面分析採集崩潰", e);
         } finally {
-            // 🎯 確保立刻釋放影格硬體鎖，絕不引發 image already closed 崩潰，這才是解決黑屏的底層關鍵！
             image.close();
         }
 
@@ -252,7 +267,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                             mChannelOutputStream.flush();
                         }
                     } catch (Exception e) {
-                        Log.w(TAG, "手錶端已關閉，流寫入嘗試被安全忽略，無 FC 風險");
+                        Log.w(TAG, "手錶端已關閉，流寫入嘗試被安全忽略");
                     }
                 }
             });
