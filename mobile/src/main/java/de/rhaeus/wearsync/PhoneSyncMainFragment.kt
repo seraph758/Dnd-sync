@@ -214,39 +214,14 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
-                            // 🧪 調試按鈕：拉起本地前台相機服務
+                            // 🎯【排版修正】：按鈕已被安全地移入 Column 大括號的最底部，保證其正常滾動並渲染
                             Button(
-                                onClick = {
-                                    if (!isCameraAllowedState.value) {
-                                        requestCameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                                    } else {
-                                        val intent = Intent(requireContext(), PhoneSyncCameraService::class.java)
-                                        requireContext().startForegroundService(intent)
-                                    }
-                                },
+                                onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA") },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
                                 shape = RoundedCornerShape(12.dp)
                             ) { 
-                                Text("🧪 調試：拉起遠端相機控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
-                            }
-
-                            // 🛑 關閉手機端後台拍照服務按鈕
-                            Button(
-                                onClick = {
-                                    try {
-                                        val stopIntent = Intent(requireContext(), PhoneSyncCameraService::class.java)
-                                        requireContext().stopService(stopIntent)
-                                        Log.d("WearSync_Main", "🛑 用戶手動點擊退出後台拍照服務，下發 stopService 訊令")
-                                    } catch (e: Exception) {
-                                        Log.e("WearSync_Main", "停止相機服務失敗", e)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth().height(50.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3B30)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) { 
-                                Text("🛑 關閉後台拍照服務", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White) 
+                                Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
                             }
                         }
                     }
