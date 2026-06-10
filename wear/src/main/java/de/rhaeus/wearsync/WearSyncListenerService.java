@@ -26,7 +26,7 @@ public class WearSyncListenerService extends WearableListenerService {
     private static final String TAG = "WearSync_WearListener";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
 
-    // 手勢內部宏防併發鎖
+    // 手势内部宏防并发锁
     private static boolean isGestureMacroRunning = false;
 
     @Override
@@ -41,165 +41,109 @@ public class WearSyncListenerService extends WearableListenerService {
             String type = json.optString("type", "");
             String action = json.optString("action", "");
 
-            // 1️⃣ 勿擾/就寢同步區
- 
- // 1️⃣ 勿擾/就寢/省電 同步區
-if ("dnd".equalsIgnoreCase(type)) {
-    int dndStatePhone = json.optInt("dnd_profile_value", -1);
-    int score = json.optInt("switches_mask", 0); // 手機發來的同步配置掩碼
-
-    if (dndStatePhone == -1) return;
-
-    NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-    if (mNotificationManager == null) return;
-
-    // 🎯 精準拆解：用戶在手機 UI 上到底啟用了哪些「同步選項」
-    boolean isSleepSyncEnabled   = (score & 1) != 0; // 第一位：是否勾選了「就寢同步」
-    boolean isPowerSyncEnabled   = (score & 2) != 0; // 第二位：是否勾選了「省電同步」
-    boolean isVibrateEnabled     = (score & 4) != 0; // 第三位：是否勾選了「震動提示」
-
-    // ---------------------------------------------------------------------
-    // 🔋 【核心補齊：省電同步選項的真實動作】
-    // ---------------------------------------------------------------------
-    if (isPowerSyncEnabled) {
-        // 只有當用戶在手機上啟動了「省電同步」選項時，手錶才去執行同步！
-        try {
-            // 這裡根據手機的勿擾/就寢狀態（dndStatePhone）來決定手錶省電的開關
-            // 當手機進入勿擾級別（開啟就寢模式）時，手錶同步開啟省電；反之關閉省電
-            boolean phoneExpectsDndOn = (dndStatePhone == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
-                                         dndStatePhone == NotificationManager.INTERRUPTION_FILTER_NONE ||
-                                         dndStatePhone == NotificationManager.INTERRUPTION_FILTER_ALARMS);
-            
-            if (phoneExpectsDndOn) {
-                Log.d(TAG, "🔋 [省電同步激活] 手機開啟了就寢，手錶跟隨底層強制開啟省電模式");
-                Settings.Global.putInt(getContentResolver(), "low_power", 1);
-            } else {
-                Log.d(TAG, "🔌 [省電同步激活] 手機關閉了就寢，手錶跟隨底層強制關閉省電模式");
-                Settings.Global.putInt(getContentResolver(), "low_power", 0);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "🚨 省電模式底層寫入失敗", e);
-        }
-    } else {
-        // 如果用戶在手機 UI 上關閉了「省電同步」這個選項（也就是 5 的情況，第二位為 0）
-        // 手錶在這裡死都不碰系統省電開關，完美保留用戶手錶原有的省電狀態！
-        Log.d(TAG, "🛡️ [省電同步關閉] 檢測到未開啟省電同步選項，手錶不對省電模式做任何操作。");
-    }
-
-    // ---------------------------------------------------------------------
-    // 🛌 【原本跑得很完美的勿擾/就寢手勢宏區域，百分之百保留】
-    // ---------------------------------------------------------------------
-    int currentDndState = mNotificationManager.getCurrentInterruptionFilter();
-    boolean phoneExpectsDndOn = (dndStatePhone == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
-                                 dndStatePhone == NotificationManager.INTERRUPTION_FILTER_NONE ||
-                                 dndStatePhone == NotificationManager.INTERRUPTION_FILTER_ALARMS);
-    boolean wearLocalDndIsOn = (currentDndState == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
-                                currentDndState == NotificationManager.INTERRUPTION_FILTER_NONE ||
-                                currentDndState == NotificationManager.INTERRUPTION_FILTER_ALARMS);
-
-    // 狀態感知防火牆
-    if (phoneExpectsDndOn != wearLocalDndIsOn) {
-        Log.d(TAG, "🔄 勿擾狀態不一致！執行物理手勢校準。");
-
-        if (isVibrateEnabled) {
-            vibrateShort(); // 如果勾選了震動選項，觸發短震動
-        }
-
-        if (isSleepSyncEnabled) {
-            executePhysicalBedtimeMacro(); // 如果勾選了就寢同步選項，執行舊代碼下拉手勢
-        }
-
-        // 保底強制同步手錶底層的勿擾 Filter
-        if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-            mNotificationManager.setInterruptionFilter(dndStatePhone);
-        }
-    } else {
-        Log.d(TAG, "🛡️ [防錯位攔截] 勿擾狀態已對齊，攔截物理下拉手勢，防止反向翻轉錯位。");
-    }
-    return;
-}
-
-
-            // ===================================================================================
-            // === [🔥 LOCKED_FIREWALL: ALARM_MODULE_WEAR_UI_LAUNCH_FIREWALL - START] ===
-            // 🚨 鬧鐘核心代碼嚴密保護，包名修復後依然完好如初，絕不允許被污染或改動！
-            if ("alarm".equalsIgnoreCase(type)) {
-                if ("START_ALARM_UI".equalsIgnoreCase(action)) {
-                    Intent uiIntent = new Intent(this, WearAlarmActivity.class);
-                    uiIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    startActivity(uiIntent);
-                } else if ("FORCE_STOP_WEAR_ALARM".equalsIgnoreCase(action)) {
-                    sendBroadcast(new Intent("de.rhaeus.wearsync.FORCE_STOP_ALARM_UI"));
+            // 🎯【新增：相机远程连线唤醒控制区】
+            if ("camera_control".equalsIgnoreCase(type)) {
+                Log.d(TAG, "⌚ 手表后台收到手机端相机控制信令 Action: " + action);
+                if ("START_CAMERA".equals(action)) {
+                    // 🚀 核心破局：收到手机唤醒指令，瞬间拔起手表端相机取景界面！
+                    Intent startIntent = new Intent(this, WearCameraActivity.class);
+                    startIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
+                                       | Intent.FLAG_ACTIVITY_SINGLE_TOP 
+                                       | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    startActivity(startIntent);
+                    Log.d(TAG, "🚀 已成功由后台 ListenerService 强行弹出手表端 WearCameraActivity 画面");
                 }
-                return;
+                return; // 处理完毕直接拦截返回，不往下走勿扰同步逻辑
             }
-            // === [🔥 LOCKED_FIREWALL: ALARM_MODULE_WEAR_UI_LAUNCH_FIREWALL - END] ===
-            // ===================================================================================
 
-        } catch (Exception e) { Log.e(TAG, "流解析异常", e); }
+            // 1️⃣ 勿扰/就寝同步区
+            if ("dnd".equalsIgnoreCase(type)) {
+                String dndState = json.optString("state", "off");
+                Log.d(TAG, "DND state from phone: " + dndState);
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    if ("on".equals(dndState)) {
+                        nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE);
+                    } else {
+                        nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL);
+                    }
+                }
+            } else if ("bedtime".equalsIgnoreCase(type) || "power_saving".equalsIgnoreCase(type)) {
+                // 就寝模式/省电模式 触发物理手势宏处理
+                String state = json.optString("state", "off");
+                Log.d(TAG, "收到状态变更信令 -> type: " + type + ", state: " + state);
+
+                if ("on".equals(state)) {
+                    // 仅在开启时触发物理宏同步
+                    triggerHardwareGestureMacroWithLock();
+                }
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "解析手机信令失败", e);
+        }
     }
 
-    /**
-     * 獨立非阻塞線程：嚴格依照舊代碼的時序執行「喚醒 -> 下滑 -> 點擊 -> 返回」
-     */
-    private void executePhysicalBedtimeMacro() {
+    private synchronized void triggerHardwareGestureMacroWithLock() {
         if (isGestureMacroRunning) {
-            Log.w(TAG, "⚠️ 手勢宏正在執行中，拒絕併發干擾");
+            Log.w(TAG, "⚠️ 检测到已有手势宏正在运行，阻断本次触发，防止并发踩踏！");
             return;
         }
 
-        new Thread(() -> {
-            WearSyncAccessService serv = WearSyncAccessService.getSharedInstance();
-            if (serv == null) {
-                Log.e(TAG, "❌ 無障礙服務未連通，放棄執行手勢");
-                return;
-            }
+        isGestureMacroRunning = true;
+        Log.d(TAG, "🔒 成功抢占手势宏并发锁，启动物理校准链条...");
 
+        new Thread(() -> {
             PowerManager.WakeLock wakeLock = null;
             try {
-                isGestureMacroRunning = true;
+                // 震动反馈感知
+                Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                if (vibrator != null) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE));
+                }
 
-                // 1. 物理強制點亮螢幕
+                // 检查辅助功能是否就绪
+                WearAccessibilityService serv = WearAccessibilityService.getInstance();
+                if (serv == null) {
+                    Log.e(TAG, "❌ 辅助功能未开启，手势宏无法执行！");
+                    return;
+                }
+
+                // 1. 强制唤醒屏幕，保证物理点击有效
                 PowerManager pm = (PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE);
                 if (pm != null) {
                     wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, "wearsync:WakeLock");
-                    wakeLock.acquire(8000L); // 鎖定 7 秒完成整套動作
+                    wakeLock.acquire(8000L); // 锁定 8 秒完成整套动作
                 }
 
-                // 2. 核心時序緩衝：留出2000ms 讓螢幕硬體完全亮起，防止螢幕沒亮完導致下滑無效
+                // 2. 核心时序缓冲：留出 2000ms 让屏幕硬件完全亮起，防止屏幕没亮完导致下滑无效
                 Thread.sleep(2000);
 
-                // 3. 呼叫舊代碼純淨下滑
+                // 3. 调用旧代码纯净下滑
                 serv.swipeDown();
 
-                // 4. 時序緩衝：留出 1000ms 給下拉選單動畫展開，防止面板還沒拉下來就去盲點
+                // 4. 时序缓冲：留出 1000ms 给下拉菜单动画展开，防止面板还没拉下来就去盲点
                 Thread.sleep(1000);
 
-                // 5. 點擊第一排中間圖標
+                // 5. 点击第一排中间图标
                 serv.clickIcon1_2();
 
-                // 6. 時序緩衝：留出 1000ms 給系統響應就寢/睡眠狀態變更
+                // 6. 时序缓冲：留出 1000ms 给系统响应状态变更
                 Thread.sleep(800);
 
                 // 7. 收起快捷面板
                 serv.goBack();
-                Log.d(TAG, "🏁 [手勢宏] 物理控制校準鏈條圓滿結束");
+                Log.d(TAG, "🏁 [手势宏] 物理控制校准链条圆满结束");
 
             } catch (InterruptedException e) {
-                Log.e(TAG, "手勢宏線程中斷", e);
+                Log.e(TAG, "手势宏线程中断", e);
             } finally {
                 if (wakeLock != null && wakeLock.isHeld()) {
                     wakeLock.release();
                 }
                 isGestureMacroRunning = false;
+                Log.d(TAG, "🔓 手势宏运行完毕，并发锁已安全释放。");
             }
         }).start();
-    }
-
-    private void vibrateShort() {
-        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-        if (v != null && v.hasVibrator()) {
-            v.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
-        }
     }
 }
