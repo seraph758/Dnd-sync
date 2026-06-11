@@ -89,7 +89,15 @@ public class PhoneSyncListenerService extends WearableListenerService {
                         Log.e(TAG, "🚨 发生 Android 14 强力安全拦截，拒绝在后台直接拉起相机 FGS 服务！", fgsEx);
                         // 进行安全回退：此处可以引导通知或通过 Activity 拉起过渡，斩断空转死循环发热源头
                     }
-                } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+                }
+                else if ("WATCH_READY".equalsIgnoreCase(actionParam)) {
+                        // 🎯 移到這裡：手錶 Activity 真正就緒後，發回來的安全點火信號
+                        Log.d(TAG, "🤝 [中轉握手] 收到手錶端回傳的 READY 狀態，中轉通知 CameraService 點火");
+                        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+                        svc.setAction("WATCH_READY");
+                        startService(svc);
+                }  
+                else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("STOP_CAMERA");
                     startService(svc);
@@ -103,6 +111,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 }
                 return;
             }
+
 
         } catch (Exception e) {
             Log.e(TAG, "手机端处理解析异常", e);

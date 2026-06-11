@@ -215,13 +215,32 @@ class PhoneSyncMainFragment : Fragment() {
                             }
 
                             // 🎯【排版修正】：按鈕已被安全地移入 Column 大括號的最底部，保證其正常滾動並渲染
-                            Button(
-                                onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA") },
-                                modifier = Modifier.fillMaxWidth().height(50.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) { 
-                                Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
+// 找到你原本放 Button(onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(...) }) 的地方
+// 將其替換為雙按鈕控制（或並列增加關閉按鈕）：
+                            
+                            Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        // 點擊拉起服務並向手錶發送指令（此時手機端並未真正開啟 CameraX，處於安全待命狀態）
+                                        PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA")
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                                ) {
+                                    Text("拉起相機服務 & 手錶端")
+                                }
+                            
+                                Button(
+                                    onClick = {
+                                        // 🎯 新增：主動關閉本地相機服務，斬斷後台空轉發熱
+                                        val stopIntent = Intent(requireContext(), PhoneSyncCameraService::class.java)
+                                        stopIntent.action = "STOP_CAMERA"
+                                        requireContext().startService(stopIntent)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("🛑 主動關閉本地相機服務", color = Color.White)
+                                }
                             }
                         }
                     }

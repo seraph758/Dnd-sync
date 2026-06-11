@@ -40,11 +40,17 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+
+    
 public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private static final String TAG = "WearSync_CameraService";
     private static final String CHANNEL_ID = "wear_sync_camera_channel";
     private static final int NOTIFICATION_ID = 8899; 
-
+    
+    private final Handler mTimeoutHandler = new Handler(android.os.Looper.getMainLooper());
+    private Runnable mTimeoutRunnable = null;
+    private static final int WATCH_TIMEOUT_MS = 8000; // 8秒防空轉自毀防火牆
+    
     private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
     private ProcessCameraProvider cameraProvider;
     private volatile boolean isRunning = false;
@@ -54,6 +60,8 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private ChannelClient.Channel mActiveChannel = null;
     private OutputStream mChannelOutputStream = null;
     private final ExecutorService mStreamExecutor = Executors.newSingleThreadExecutor();
+    
+
 
     @NonNull
     @Override
@@ -70,37 +78,54 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && "START_CAMERA".equals(intent.getAction())) {
-            if (!isRunning) {
+        createNotificationChannel();
+        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("相機同步中")
+                .setContentText("正在等待手錶端響應...")
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
+        startForeground(1025, notification);
+    
+        if (intent != null && intent.getAction() != null) {
+            String action = intent.getAction();
+            Log.d(TAG, "📥 PhoneSyncCameraService 收到 Action: " + action);
+    
+            if ("START_CAMERA".equalsIgnoreCase(action)) {
                 isRunning = true;
-                lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
-
-                Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setContentTitle("WearSync 遠端取景器")
-                        .setContentText("正在為手錶端提供高性能影像傳輸...")
-                        .setSmallIcon(android.R.drawable.ic_menu_camera)
-                        .setPriority(NotificationCompat.PRIORITY_LOW)
-                        .setOngoing(true)
-                        .build();
-
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
-                    } else {
-                        startForeground(NOTIFICATION_ID, notification);
+                // 1. 異步建立管道，並向手錶發送通知
+                prepareChannelAndCamera(); 
+                
+                // ⚠️ 註意：此時把原本這裏的 startCameraPipeline(); 刪除或註釋掉！！！
+                // startCameraPipeline(); // 🛑 絕不在這裏盲目點火！
+    
+                // 2. 🎯 開啟 8 秒超時防死鎖自毀防火牆
+                if (mTimeoutRunnable != null) mTimeoutHandler.removeCallbacks(mTimeoutRunnable);
+                mTimeoutRunnable = () -> {
+                    if (isRunning && cameraProvider == null) { // 如果8秒內相機Pipeline還沒被正式點火
+                        Log.e(TAG, "🚨 [超時自毀] 手錶端 8 秒內未回傳 READY 握手信號，判定拉起失敗，自動關閉後台服務！");
+                        stopSelf();
                     }
-                    Log.d(TAG, "✅ 成功以 FOREGROUND_SERVICE_TYPE_CAMERA 啟動前台服務");
-                    prepareChannelAndCamera();
-                } catch (SecurityException se) {
-                    Log.e(TAG, "❌ 權限或前台狀態校驗失敗！拒絕盲目啟動以防止 FC：", se);
-                    stopSelf();
-                    return START_NOT_STICKY;
+                };
+                mTimeoutHandler.postDelayed(mTimeoutRunnable, WATCH_TIMEOUT_MS);
+    
+            } else if ("WATCH_READY".equalsIgnoreCase(action)) {
+                // 3. 🎯 核心雙向握手點火點：手錶端已經完全準備就緒，手機正式點火啟動 CameraX！
+                Log.d(TAG, "🔥 [雙向握手成功] 收到手錶端 READY 信號，手機相機 Pipeline 正式點火！");
+                if (mTimeoutRunnable != null) {
+                    mTimeoutHandler.removeCallbacks(mTimeoutRunnable); // 清除自毀定時器
                 }
+                startCameraPipeline();
+    
+            } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+                Log.d(TAG, "🛑 收到停止相機指令，主動銷毀服務。");
+                stopSelf();
+            } else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
+                // 你原本的拍照動作，保持不變
+                isCaptureRequested = true;
             }
-        } else if (intent != null && "STOP_CAMERA".equals(intent.getAction())) {
-            stopSelf();
         }
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 
     public static void sendCameraControlToWatchLive(Context context, String action) {
@@ -318,6 +343,9 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     public void onDestroy() {
         isRunning = false; 
         lifecycleRegistry.setCurrentState(Lifecycle.State.DESTROYED);
+        if (mTimeoutRunnable != null) {
+        mTimeoutHandler.removeCallbacks(mTimeoutRunnable);
+    }
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
         }
