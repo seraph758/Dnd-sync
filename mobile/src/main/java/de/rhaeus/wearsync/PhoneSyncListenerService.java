@@ -28,9 +28,9 @@ public class PhoneSyncListenerService extends WearableListenerService {
             String type = json.optString("type", "");
             String action = json.optString("action", "");
 
-            if ("phone".equalsIgnoreCase(sender)) return; // 过滤本端回环
+            if ("phone".equalsIgnoreCase(sender)) return; // 过滤回环
 
-            // 1️⃣ 勿扰板块：手表反向控制手机
+            // 1️⃣ 勿扰板块：保持原樣不動
             if ("dnd".equalsIgnoreCase(type)) {
                 int dndVal = json.optInt("dnd_profile_value", -1);
                 if (dndVal != -1) {
@@ -38,8 +38,6 @@ public class PhoneSyncListenerService extends WearableListenerService {
                     if (nm != null) {
                         isInternalUpdate = true;
                         nm.setInterruptionFilter(dndVal);
-                        Log.d(TAG, "📱 手机成功响应手表反向控制勿扰: " + dndVal);
-
                         new java.util.Timer().schedule(new java.util.TimerTask() {
                             @Override
                             public void run() { isInternalUpdate = false; }
@@ -49,59 +47,52 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 2️⃣ 闹钟控制板块：打破单向断层
+            // 2️⃣ 闹钟控制板块：保持原樣不動
             if ("alarm_control".equalsIgnoreCase(type)) {
-                Log.d(TAG, "⏰ 收到手表端传回的闹钟按键动作: " + action);
                 if ("DISMISS".equalsIgnoreCase(action)) {
                     if (PhoneSyncNotificationService.dismissPendingIntent != null) {
                         PhoneSyncNotificationService.dismissPendingIntent.send();
-                        Log.d(TAG, "🎯 [自动化成功] 已代用户点击手机通知栏「停止/关闭」按钮");
-                    } else {
-                        Log.w(TAG, "⚠️ 触发点击失败：手机端暂未捕获到合法的停止 PendingIntent");
                     }
                 } else if ("SNOOZE".equalsIgnoreCase(action)) {
                     if (PhoneSyncNotificationService.snoozePendingIntent != null) {
                         PhoneSyncNotificationService.snoozePendingIntent.send();
-                        Log.d(TAG, "🎯 [自动化成功] 已代用户点击手机通知栏「延后/稍后提醒」按钮");
-                    } else {
-                        Log.w(TAG, "⚠️ 触发点击失败：手机端暂未捕获到合法的延后 PendingIntent");
                     }
                 }
                 return;
             }
 
-            // 3️⃣ 🎯 相機模組控制鏈（手錶反向控制手機服務）
+            // 3️⃣ 📸 [全域相機控制模塊通訊咬合鏈]
             if ("camera_control".equalsIgnoreCase(type)) {
-                Log.d(TAG, "📸 [相機控制中轉] 收到 Action: " + action);
+                Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
 
                 if ("START_CAMERA".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "📸 收到手錶開啟相機指令，通過 BridgeActivity 進行前台豁免拉起...");
+                    // 透過引導跳板頂出前台豁免權
                     Intent bridgeIntent = new Intent(this, PhoneCameraBridgeActivity.class);
                     bridgeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                     startActivity(bridgeIntent);
                 }
-
                 else if ("WATCH_READY".equalsIgnoreCase(action)) {
-                    // 🎯 核心修正三：當收到手錶端傳回的 READY 狀態，中轉通知 CameraService 時，必須前台相容點火
-                    Log.d(TAG, "🤝 [中轉握手] 收到手錶端回傳的 READY 狀態，使用前台安全引導模式為 CameraService 點火");
+                    // 🎯 痛點二修復：必須把手錶發送端的節點 NodeId 提取出來傳遞下去，否則長連接通道因找不到藍牙對端而一片黑！
+                    String remoteNodeId = messageEvent.getSourceNodeId();
+                    Log.d(TAG, "🤝 [握手橋接] 提取到手錶端有效 NodeId: " + remoteNodeId + "，交由 Service 點火。");
+
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("WATCH_READY");
+                    svc.putExtra("node_id", remoteNodeId); // 注入 NodeId
                     
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        // Android 8.0+ / 14+ 必須前台啟動，否則後台攔截拍照
                         startForegroundService(svc); 
                     } else {
                         startService(svc);
                     }
                 }  
                 else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "🛑 [中轉接收] 收到手錶發來的關閉指令，通知本地 CameraService 銷毀");
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("STOP_CAMERA");
                     startService(svc);
                 } 
                 else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "📸 [核心接收] 接收到手表的拍照動作，準備投遞給本地 CameraService");
+                    // 🎯 痛點一修復：直接將拍照動作安全投遞給本地 CameraService
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("TAKE_PICTURE"); 
                     startService(svc);
@@ -110,7 +101,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "手机端处理解析异常", e);
+            Log.e(TAG, "手機中轉解析異常", e);
         }
     }
 }
