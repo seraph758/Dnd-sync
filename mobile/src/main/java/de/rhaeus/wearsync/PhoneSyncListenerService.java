@@ -49,7 +49,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 2️⃣ 🎯 闹钟控制板块：打破单向断层，响应手表按键点击事件
+            // 2️⃣ 闹钟控制板块：打破单向断层
             if ("alarm_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "⏰ 收到手表端传回的闹钟按键动作: " + action);
                 if ("DISMISS".equalsIgnoreCase(action)) {
@@ -70,7 +70,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-                        // 2️⃣ 相機模組控制鏈（手錶反向控制手機服務）
+            // 3️⃣ 🎯 相機模組控制鏈（手錶反向控制手機服務）
             if ("camera_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "📸 [相機控制中轉] 收到 Action: " + action);
 
@@ -82,13 +82,20 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 }
 
                 else if ("WATCH_READY".equalsIgnoreCase(action)) {
-                    // 🤝 完美咬合：全部用 action，手錶 Activity 真正就緒後，中轉通知 CameraService 點火
-                    Log.d(TAG, "🤝 [中轉握手] 收到手錶端回傳的 READY 狀態，中轉通知 CameraService 點火");
+                    // 🎯 核心修正三：當收到手錶端傳回的 READY 狀態，中轉通知 CameraService 時，必須前台相容點火
+                    Log.d(TAG, "🤝 [中轉握手] 收到手錶端回傳的 READY 狀態，使用前台安全引導模式為 CameraService 點火");
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("WATCH_READY");
-                    startService(svc);
+                    
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        // Android 8.0+ / 14+ 必須前台啟動，否則後台攔截拍照
+                        startForegroundService(svc); 
+                    } else {
+                        startService(svc);
+                    }
                 }  
                 else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+                    Log.d(TAG, "🛑 [中轉接收] 收到手錶發來的關閉指令，通知本地 CameraService 銷毀");
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("STOP_CAMERA");
                     startService(svc);
@@ -101,8 +108,6 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 }
                 return;
             }
-
-
 
         } catch (Exception e) {
             Log.e(TAG, "手机端处理解析异常", e);
