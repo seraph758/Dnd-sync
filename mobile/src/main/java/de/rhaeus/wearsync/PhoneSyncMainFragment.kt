@@ -213,11 +213,7 @@ class PhoneSyncMainFragment : Fragment() {
                                     }
                                 }
                             }
-
-                            // 🎯【排版修正】：按鈕已被安全地移入 Column 大括號的最底部，保證其正常滾動並渲染
-// 找到你原本放 Button(onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(...) }) 的地方
-// 將其替換為雙按鈕控制（或並列增加關閉按鈕）：
-                            
+// 🎯【排版與協議修正控制區】
                             Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
                                 Button(
                                     onClick = {
@@ -228,10 +224,14 @@ class PhoneSyncMainFragment : Fragment() {
                                 ) {
                                     Text("拉起相機服務 & 手錶端")
                                 }
-                            
+
                                 Button(
                                     onClick = {
-                                        // 🎯 新增：主動關閉本地相機服務，斬斷後台空轉發熱
+                                        // 1️⃣ 🎯 核心補丁：主動向手錶端發送 STOP_CAMERA 指令，打破單向斷層！
+                                        // 讓手錶端註冊的 setupMessageListener 能夠接到通知，進而執行 finish()
+                                        PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "STOP_CAMERA")
+
+                                        // 2️⃣ 主動關閉本地相機服務，斬斷後台空轉發熱
                                         val stopIntent = Intent(requireContext(), PhoneSyncCameraService::class.java)
                                         stopIntent.action = "STOP_CAMERA"
                                         requireContext().startService(stopIntent)
@@ -239,7 +239,7 @@ class PhoneSyncMainFragment : Fragment() {
                                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("🛑 主動關閉本地相機服務", color = Color.White)
+                                    Text("🛑 主動關閉本地相機服務並同步退出手錶", color = Color.White)
                                 }
                             }
                         }
