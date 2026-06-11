@@ -112,21 +112,37 @@ public class WearSyncListenerService extends WearableListenerService {
                 return; // 🎯 乾淨返回，結束 dnd 分支
             } 
             
-            // 2️⃣ 相機模組控制分支（精準對齊，點對點咬合）
-            else if ("camera_control".equalsIgnoreCase(type)) {
-                if ("START_CAMERA".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "📸 [手錶監聽] 收到手機端拉起相機指令，正在喚醒 WearCameraActivity...");
-                    
-                    Intent startCamIntent = new Intent(this, WearCameraActivity.class);
-                    startCamIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                    try {
-                        startActivity(startCamIntent);
-                    } catch (Exception e) {
-                        Log.e(TAG, "🚨 手錶端拉起 WearCameraActivity 失敗", e);
-                    }
-                }
-                return; // 🎯 乾淨返回，結束 camera_control 分支
+            // 2️⃣ 相機模組控制分支
+else if ("camera_control".equalsIgnoreCase(type)) {
+    if ("START_CAMERA".equalsIgnoreCase(action)) {
+        Log.d(TAG, "📸 [手錶監聽] 收到手機端拉起相機指令，執行強行物理亮屏保護...");
+
+        // 🎯 核心修正二：后台收到拉起命令时，先申请 3 秒 WakeLock 点亮硬件屏幕
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                PowerManager.WakeLock wl = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
+                    "WearSync:CameraWakeLock"
+                );
+                wl.acquire(3000L); // 唤醒 3 秒，足够给 Activity 完成转场和接管
             }
+        } catch (Exception e) {
+            Log.e(TAG, "🚨 后台物理亮屏唤醒失败", e);
+        }
+
+        // 唤醒后拉起唯一的 Activity
+        Intent startCamIntent = new Intent(this, WearCameraActivity.class);
+        startCamIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try {
+            startActivity(startCamIntent);
+        } catch (Exception e) {
+            Log.e(TAG, "🚨 手錶端拉起 WearCameraActivity 失敗", e);
+        }
+    }
+    return; 
+}
+
 
             // ===================================================================================
             // === [🔥 LOCKED_FIREWALL: ALARM_MODULE_WEAR_UI_LAUNCH_FIREWALL - START] ===
