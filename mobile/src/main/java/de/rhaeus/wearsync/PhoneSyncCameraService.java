@@ -119,6 +119,8 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     
             } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
                 Log.d(TAG, "🛑 收到停止相機指令，主動銷毀服務。");
+            // 🎯 核心補齊：在關閉管道前，先發送一條 STOP 訊息給手錶，讓手錶也同步關閉畫面           
+                sendStopSignalToWatch(); 
                 stopSelf();
             } else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
                 // 你原本的拍照動作，保持不變
