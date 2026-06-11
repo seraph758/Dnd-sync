@@ -116,6 +116,29 @@ if ("dnd".equalsIgnoreCase(type)) {
     } else {
         Log.d(TAG, "🛡️ [防錯位攔截] 勿擾狀態已對齊，攔截物理下拉手勢，防止反向翻轉錯位。");
     }
+    // ... 前面是你原本的 dnd 和 alarm 邏輯，保持原封不動 ...
+
+} else if ("alarm".equalsIgnoreCase(type)) {
+    // 你原本運作正常的鬧鐘代碼
+    long alarmTime = json.optLong("alarm_time", -1);
+    // ... 原代碼閉括號
+} 
+// 🎯 精準點對點補全：相機模組控制分支
+            else if ("camera_control".equalsIgnoreCase(type)) {
+                if ("START_CAMERA".equalsIgnoreCase(action)) {
+                    Log.d(TAG, "📸 [手錶監聽] 收到手機端拉起相機指令，正在喚醒 WearCameraActivity...");
+                    
+                    Intent startCamIntent = new Intent(this, WearCameraActivity.class);
+                    // WearableListenerService 屬於後台環境，必須加上 NEW_TASK 標記
+                    startCamIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    try {
+                        startActivity(startCamIntent);
+                    } catch (Exception e) {
+                        Log.e(TAG, "🚨 手錶端拉起 WearCameraActivity 失敗", e);
+                    }
+                }
+            }
+
     return;
 }
 
