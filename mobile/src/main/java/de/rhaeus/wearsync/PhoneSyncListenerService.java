@@ -75,18 +75,12 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 Log.d(TAG, "📸 [相機控制中轉] 收到 Action: " + action);
 
                 if ("START_CAMERA".equalsIgnoreCase(action)) {
-                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                    svc.setAction("START_CAMERA");
-                    try {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            startForegroundService(svc);
-                        } else {
-                            startService(svc);
-                        }
-                    } catch (Exception fgsEx) {
-                        Log.e(TAG, "🚨 發生 Android 14 強力安全攔截，拒絕在後台直接拉起相機 FGS 服務！", fgsEx);
-                    }
-                } 
+                    Log.d(TAG, "📸 收到手錶開啟相機指令，通過 BridgeActivity 進行前台豁免拉起...");
+                    Intent bridgeIntent = new Intent(this, PhoneCameraBridgeActivity.class);
+                    bridgeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    startActivity(bridgeIntent);
+                }
+
                 else if ("WATCH_READY".equalsIgnoreCase(action)) {
                     // 🤝 完美咬合：全部用 action，手錶 Activity 真正就緒後，中轉通知 CameraService 點火
                     Log.d(TAG, "🤝 [中轉握手] 收到手錶端回傳的 READY 狀態，中轉通知 CameraService 點火");
