@@ -82,7 +82,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("相機同步中")
                 .setContentText("正在等待手錶端響應...")
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.mipmap.ic_launcher)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
         startForeground(1025, notification);
