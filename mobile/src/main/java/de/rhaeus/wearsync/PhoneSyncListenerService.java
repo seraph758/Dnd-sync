@@ -70,13 +70,11 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 3️⃣ 相机联动板块：防崩溃、补齐拍照闭环
-            if ("camera_action".equalsIgnoreCase(type) || "camera_control".equalsIgnoreCase(type)) {
-                if ("START_CAMERA_UI".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "📸 收到手表端唤醒相机命令，准备启动手机端前台采集服务...");
+                        // 2️⃣ 相機模組控制鏈（手錶反向控制手機服務）
+            if ("camera_control".equalsIgnoreCase(type)) {
+                Log.d(TAG, "📸 [相機控制中轉] 收到 Action: " + action);
 
-                    // 🎯 核心防发热保护：由于 Android 14 严厉禁止后台直接启动前台相机服务（FGS）
-                    // 在正式启动服务前，必须发送一条唤醒 Activity 甚至赋予前台豁免的 Intent，防止系统爆引发热
+                if ("START_CAMERA".equalsIgnoreCase(action)) {
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("START_CAMERA");
                     try {
@@ -86,31 +84,30 @@ public class PhoneSyncListenerService extends WearableListenerService {
                             startService(svc);
                         }
                     } catch (Exception fgsEx) {
-                        Log.e(TAG, "🚨 发生 Android 14 强力安全拦截，拒绝在后台直接拉起相机 FGS 服务！", fgsEx);
-                        // 进行安全回退：此处可以引导通知或通过 Activity 拉起过渡，斩断空转死循环发热源头
+                        Log.e(TAG, "🚨 發生 Android 14 強力安全攔截，拒絕在後台直接拉起相機 FGS 服務！", fgsEx);
                     }
-                }
-                else if ("WATCH_READY".equalsIgnoreCase(actionParam)) {
-                        // 🎯 移到這裡：手錶 Activity 真正就緒後，發回來的安全點火信號
-                        Log.d(TAG, "🤝 [中轉握手] 收到手錶端回傳的 READY 狀態，中轉通知 CameraService 點火");
-                        Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                        svc.setAction("WATCH_READY");
-                        startService(svc);
+                } 
+                else if ("WATCH_READY".equalsIgnoreCase(action)) {
+                    // 🤝 完美咬合：全部用 action，手錶 Activity 真正就緒後，中轉通知 CameraService 點火
+                    Log.d(TAG, "🤝 [中轉握手] 收到手錶端回傳的 READY 狀態，中轉通知 CameraService 點火");
+                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
+                    svc.setAction("WATCH_READY");
+                    startService(svc);
                 }  
                 else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction("STOP_CAMERA");
                     startService(svc);
                 } 
-                // 🎯 核心闭环：手表 3 秒倒计时完美结束，手机本地执行抓拍
                 else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "📸 [核心接收] 接收到手表的拍照动作，准备投递给本地 CameraService");
+                    Log.d(TAG, "📸 [核心接收] 接收到手表的拍照動作，準備投遞給本地 CameraService");
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                    svc.setAction("TAKE_PICTURE"); // 直接传给 CameraService 让 CameraX 抓取
+                    svc.setAction("TAKE_PICTURE"); 
                     startService(svc);
                 }
                 return;
             }
+
 
 
         } catch (Exception e) {
