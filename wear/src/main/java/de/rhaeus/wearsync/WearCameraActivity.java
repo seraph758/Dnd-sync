@@ -1,13 +1,16 @@
 package de.rhaeus.wearsync;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -38,14 +41,27 @@ public class WearCameraActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);    
+        
+        // 🎯 核心修正四：让手表 Activity 一经创建就强行点亮屏幕，并锁死屏幕常亮防止熄屏
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        } else {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED 
+                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);    
+        
         setContentView(R.layout.activity_wear_camera);
 
         frameView = findViewById(R.id.frameView);
         tvCountdown = findViewById(R.id.tvCountdown);
         btnCapture = findViewById(R.id.btnCapture);
 
-        // 🎯 完美對齊：通知手機端拉起背景相機服務
+        // 🎯 核心修正一：补齐原本漏掉的方法调用！让手表能监听到手机发来的关闭指令
+        setupMessageListener();
+
+        // 通知手机端拉起背景相机服务
         notifyPhoneCameraService("START_CAMERA");
 
         // 啟動 Channel 監聽
@@ -58,8 +74,8 @@ public class WearCameraActivity extends Activity {
             });
         }
     }
-    
-     // 🎯 核心補齊：監聽手機端發來的關閉指令
+
+    // 🎯 核心補齊：監聽手機端發來的關閉指令
     private void setupMessageListener() {
         Wearable.getMessageClient(this).addListener((messageEvent) -> {
             if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
@@ -67,7 +83,7 @@ public class WearCameraActivity extends Activity {
                     String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
                     JSONObject json = new JSONObject(jsonStr);
                     String action = json.optString("action", "");
-                    
+
                     if ("STOP_CAMERA".equalsIgnoreCase(action)) {
                         Log.d(TAG, "🛑 收到手機端關閉相機信號，手錶 Activity 主動退出");
                         finish(); // 乾淨關閉手錶畫面
@@ -91,7 +107,6 @@ public class WearCameraActivity extends Activity {
                     try {
                         InputStream is = Tasks.await(channelClient.getInputStream(channel));
                         ByteArrayOutputStream frameBuffer = new ByteArrayOutputStream();
-                        // 🎯 優化：緩衝區大小提升至 16K，應對高速影格傳輸
                         byte[] buffer = new byte[16384]; 
                         int readBytes;
 
@@ -99,7 +114,6 @@ public class WearCameraActivity extends Activity {
                             for (int i = 0; i < readBytes; i++) {
                                 frameBuffer.write(buffer[i]);
                                 int size = frameBuffer.size();
-                                // 檢查 JPEG 結尾標識符 [0xFF, 0xD9]
                                 if (size > 4 && frameBuffer.toByteArray()[size - 2] == (byte) 0xFF 
                                         && frameBuffer.toByteArray()[size - 1] == (byte) 0xD9) {
                                     byte[] rawJpeg = frameBuffer.toByteArray();
@@ -136,7 +150,9 @@ public class WearCameraActivity extends Activity {
             public void run() {
                 countdown--;
                 if (countdown > 0) {
-                    if (tvCountdown != null) tvCountdown.setText(String.valueOf(countdown));
+                    if (tvCountdown != null) {
+                        tvCountdown.setText(String.valueOf(countdown));
+                    }
                     mainHandler.postDelayed(this, 1000);
                 } else {
                     if (tvCountdown != null) tvCountdown.setText("📸");
