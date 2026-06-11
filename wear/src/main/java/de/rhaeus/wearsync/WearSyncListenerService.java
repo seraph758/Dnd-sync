@@ -41,95 +41,83 @@ public class WearSyncListenerService extends WearableListenerService {
             String type = json.optString("type", "");
             String action = json.optString("action", "");
 
-            // 1️⃣ 勿擾/就寢同步區
- 
- // 1️⃣ 勿擾/就寢/省電 同步區
-if ("dnd".equalsIgnoreCase(type)) {
-    int dndStatePhone = json.optInt("dnd_profile_value", -1);
-    int score = json.optInt("switches_mask", 0); // 手機發來的同步配置掩碼
+            // 1️⃣ 勿擾/就寢/省電 同步區
+            if ("dnd".equalsIgnoreCase(type)) {
+                int dndStatePhone = json.optInt("dnd_profile_value", -1);
+                int score = json.optInt("switches_mask", 0); // 🎯 完美保留：手機發來的同步配置掩碼
 
-    if (dndStatePhone == -1) return;
+                if (dndStatePhone == -1) return;
 
-    NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-    if (mNotificationManager == null) return;
+                NotificationManager mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (mNotificationManager == null) return;
 
-    // 🎯 精準拆解：用戶在手機 UI 上到底啟用了哪些「同步選項」
-    boolean isSleepSyncEnabled   = (score & 1) != 0; // 第一位：是否勾選了「就寢同步」
-    boolean isPowerSyncEnabled   = (score & 2) != 0; // 第二位：是否勾選了「省電同步」
-    boolean isVibrateEnabled     = (score & 4) != 0; // 第三位：是否勾選了「震動提示」
+                // 🎯 完美保留：精準拆解用戶在手機 UI 上到底啟用了哪些「同步選項」
+                boolean isSleepSyncEnabled   = (score & 1) != 0; // 第一位：是否勾選了「就寢同步」
+                boolean isPowerSyncEnabled   = (score & 2) != 0; // 第二位：是否勾選了「省電同步」
+                boolean isVibrateEnabled     = (score & 4) != 0; // 第三位：是否勾選了「震動提示」
 
-    // ---------------------------------------------------------------------
-    // 🔋 【核心補齊：省電同步選項的真實動作】
-    // ---------------------------------------------------------------------
-    if (isPowerSyncEnabled) {
-        // 只有當用戶在手機上啟動了「省電同步」選項時，手錶才去執行同步！
-        try {
-            // 這裡根據手機的勿擾/就寢狀態（dndStatePhone）來決定手錶省電的開關
-            // 當手機進入勿擾級別（開啟就寢模式）時，手錶同步開啟省電；反之關閉省電
-            boolean phoneExpectsDndOn = (dndStatePhone == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
-                                         dndStatePhone == NotificationManager.INTERRUPTION_FILTER_NONE ||
-                                         dndStatePhone == NotificationManager.INTERRUPTION_FILTER_ALARMS);
+                // ---------------------------------------------------------------------
+                // 🔋 【完美保留：省電同步選項的真實動作】
+                // ---------------------------------------------------------------------
+                if (isPowerSyncEnabled) {
+                    try {
+                        boolean phoneExpectsDndOn = (dndStatePhone == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
+                                                     dndStatePhone == NotificationManager.INTERRUPTION_FILTER_NONE ||
+                                                     dndStatePhone == NotificationManager.INTERRUPTION_FILTER_ALARMS);
+                        
+                        if (phoneExpectsDndOn) {
+                            Log.d(TAG, "🔋 [省電同步激活] 手機開啟了就寢，手錶跟隨底層強制開啟省電模式");
+                            Settings.Global.putInt(getContentResolver(), "low_power", 1);
+                        } else {
+                            Log.d(TAG, "🔌 [省電同步激活] 手機關閉了就寢，手錶跟隨底層強制關閉省電模式");
+                            Settings.Global.putInt(getContentResolver(), "low_power", 0);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "🚨 省電模式底層寫入失敗", e);
+                    }
+                } else {
+                    Log.d(TAG, "🛡️ [省電同步關閉] 檢測到未開啟省電同步選項，手錶不對省電模式做任何操作。");
+                }
+
+                // ---------------------------------------------------------------------
+                // 🛌 【完美保留：原本跑得很完美的勿擾/就寢手勢宏區域】
+                // ---------------------------------------------------------------------
+                int currentDndState = mNotificationManager.getCurrentInterruptionFilter();
+                boolean phoneExpectsDndOn = (dndStatePhone == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
+                                             dndStatePhone == NotificationManager.INTERRUPTION_FILTER_NONE ||
+                                             dndStatePhone == NotificationManager.INTERRUPTION_FILTER_ALARMS);
+                boolean wearLocalDndIsOn = (currentDndState == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
+                                            currentDndState == NotificationManager.INTERRUPTION_FILTER_NONE ||
+                                            currentDndState == NotificationManager.INTERRUPTION_FILTER_ALARMS);
+
+                // 狀態感知防火牆
+                if (phoneExpectsDndOn != wearLocalDndIsOn) {
+                    Log.d(TAG, "🔄 勿擾狀態不一致！執行物理手勢校準。");
+
+                    if (isVibrateEnabled) {
+                        vibrateShort(); // 如果勾選了震動選項，觸發短震動
+                    }
+
+                    if (isSleepSyncEnabled) {
+                        executePhysicalBedtimeMacro(); // 如果勾選了就寢同步選項，執行下拉手勢
+                    }
+
+                    // 保底強制同步手錶底層的勿擾 Filter
+                    if (mNotificationManager.isNotificationPolicyAccessGranted()) {
+                        mNotificationManager.setInterruptionFilter(dndStatePhone);
+                    }
+                } else {
+                    Log.d(TAG, "🛡️ [防錯位攔截] 勿擾狀態已對齊，攔截物理下拉手勢，防止反向翻轉錯位。");
+                }
+                return; // 🎯 乾淨返回，結束 dnd 分支
+            } 
             
-            if (phoneExpectsDndOn) {
-                Log.d(TAG, "🔋 [省電同步激活] 手機開啟了就寢，手錶跟隨底層強制開啟省電模式");
-                Settings.Global.putInt(getContentResolver(), "low_power", 1);
-            } else {
-                Log.d(TAG, "🔌 [省電同步激活] 手機關閉了就寢，手錶跟隨底層強制關閉省電模式");
-                Settings.Global.putInt(getContentResolver(), "low_power", 0);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "🚨 省電模式底層寫入失敗", e);
-        }
-    } else {
-        // 如果用戶在手機 UI 上關閉了「省電同步」這個選項（也就是 5 的情況，第二位為 0）
-        // 手錶在這裡死都不碰系統省電開關，完美保留用戶手錶原有的省電狀態！
-        Log.d(TAG, "🛡️ [省電同步關閉] 檢測到未開啟省電同步選項，手錶不對省電模式做任何操作。");
-    }
-
-    // ---------------------------------------------------------------------
-    // 🛌 【原本跑得很完美的勿擾/就寢手勢宏區域，百分之百保留】
-    // ---------------------------------------------------------------------
-    int currentDndState = mNotificationManager.getCurrentInterruptionFilter();
-    boolean phoneExpectsDndOn = (dndStatePhone == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
-                                 dndStatePhone == NotificationManager.INTERRUPTION_FILTER_NONE ||
-                                 dndStatePhone == NotificationManager.INTERRUPTION_FILTER_ALARMS);
-    boolean wearLocalDndIsOn = (currentDndState == NotificationManager.INTERRUPTION_FILTER_PRIORITY || 
-                                currentDndState == NotificationManager.INTERRUPTION_FILTER_NONE ||
-                                currentDndState == NotificationManager.INTERRUPTION_FILTER_ALARMS);
-
-    // 狀態感知防火牆
-    if (phoneExpectsDndOn != wearLocalDndIsOn) {
-        Log.d(TAG, "🔄 勿擾狀態不一致！執行物理手勢校準。");
-
-        if (isVibrateEnabled) {
-            vibrateShort(); // 如果勾選了震動選項，觸發短震動
-        }
-
-        if (isSleepSyncEnabled) {
-            executePhysicalBedtimeMacro(); // 如果勾選了就寢同步選項，執行舊代碼下拉手勢
-        }
-
-        // 保底強制同步手錶底層的勿擾 Filter
-        if (mNotificationManager.isNotificationPolicyAccessGranted()) {
-            mNotificationManager.setInterruptionFilter(dndStatePhone);
-        }
-    } else {
-        Log.d(TAG, "🛡️ [防錯位攔截] 勿擾狀態已對齊，攔截物理下拉手勢，防止反向翻轉錯位。");
-    }
-    // ... 前面是你原本的 dnd 和 alarm 邏輯，保持原封不動 ...
-
-} else if ("alarm".equalsIgnoreCase(type)) {
-    // 你原本運作正常的鬧鐘代碼
-    long alarmTime = json.optLong("alarm_time", -1);
-    // ... 原代碼閉括號
-} 
-// 🎯 精準點對點補全：相機模組控制分支
+            // 2️⃣ 相機模組控制分支（精準對齊，點對點咬合）
             else if ("camera_control".equalsIgnoreCase(type)) {
                 if ("START_CAMERA".equalsIgnoreCase(action)) {
                     Log.d(TAG, "📸 [手錶監聽] 收到手機端拉起相機指令，正在喚醒 WearCameraActivity...");
                     
                     Intent startCamIntent = new Intent(this, WearCameraActivity.class);
-                    // WearableListenerService 屬於後台環境，必須加上 NEW_TASK 標記
                     startCamIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                     try {
                         startActivity(startCamIntent);
@@ -137,15 +125,12 @@ if ("dnd".equalsIgnoreCase(type)) {
                         Log.e(TAG, "🚨 手錶端拉起 WearCameraActivity 失敗", e);
                     }
                 }
+                return; // 🎯 乾淨返回，結束 camera_control 分支
             }
-
-    return;
-}
-
 
             // ===================================================================================
             // === [🔥 LOCKED_FIREWALL: ALARM_MODULE_WEAR_UI_LAUNCH_FIREWALL - START] ===
-            // 🚨 鬧鐘核心代碼嚴密保護，包名修復後依然完好如初，絕不允許被污染或改動！
+            // 🚨 完美保留：鬧鐘核心代碼嚴密保護，包名修復後依然完好如初，絕不允許被污染或改動！
             if ("alarm".equalsIgnoreCase(type)) {
                 if ("START_ALARM_UI".equalsIgnoreCase(action)) {
                     Intent uiIntent = new Intent(this, WearAlarmActivity.class);
@@ -159,7 +144,9 @@ if ("dnd".equalsIgnoreCase(type)) {
             // === [🔥 LOCKED_FIREWALL: ALARM_MODULE_WEAR_UI_LAUNCH_FIREWALL - END] ===
             // ===================================================================================
 
-        } catch (Exception e) { Log.e(TAG, "流解析异常", e); }
+        } catch (Exception e) { 
+            Log.e(TAG, "流解析异常", e); 
+        }
     }
 
     /**
