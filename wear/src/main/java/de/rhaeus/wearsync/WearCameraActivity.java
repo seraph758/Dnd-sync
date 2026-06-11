@@ -38,6 +38,7 @@ public class WearCameraActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);    
         setContentView(R.layout.activity_wear_camera);
 
         frameView = findViewById(R.id.frameView);
@@ -56,6 +57,26 @@ public class WearCameraActivity extends Activity {
                 startCountdown();
             });
         }
+    }
+    
+     // 🎯 核心補齊：監聽手機端發來的關閉指令
+    private void setupMessageListener() {
+        Wearable.getMessageClient(this).addListener((messageEvent) -> {
+            if (UNIVERSAL_SYNC_PATH.equalsIgnoreCase(messageEvent.getPath())) {
+                try {
+                    String jsonStr = new String(messageEvent.getData(), StandardCharsets.UTF_8);
+                    JSONObject json = new JSONObject(jsonStr);
+                    String action = json.optString("action", "");
+                    
+                    if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+                        Log.d(TAG, "🛑 收到手機端關閉相機信號，手錶 Activity 主動退出");
+                        finish(); // 乾淨關閉手錶畫面
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "手錶監聽指令異常", e);
+                }
+            }
+        });
     }
 
     private void startChannelStreamListener() {
