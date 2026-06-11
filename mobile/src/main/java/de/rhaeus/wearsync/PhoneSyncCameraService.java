@@ -50,7 +50,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private final Handler mTimeoutHandler = new Handler(android.os.Looper.getMainLooper());
     private Runnable mTimeoutRunnable = null;
     private static final int WATCH_TIMEOUT_MS = 8000; // 8秒防空轉自毀防火牆
-    
+    private boolean isCaptureRequested = false; 
     private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
     private ProcessCameraProvider cameraProvider;
     private volatile boolean isRunning = false;
