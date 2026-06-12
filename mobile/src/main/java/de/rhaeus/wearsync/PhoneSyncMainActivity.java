@@ -12,12 +12,11 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // 全面相容 Android 12+ 系統動態配色調色盤
         com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this);
         super.onCreate(savedInstanceState);
 
         if (getSupportActionBar() != null) {
-            getSupportActionBar().hide(); // 徹底隱藏頂部 ActionBar
+            getSupportActionBar().hide();
         }
 
         setContentView(R.layout.activity_main);
@@ -50,7 +49,6 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         Log.d(TAG, "🏁 手機主 UI 退出，執行聯動清理，徹底關閉相機服務...");
-        // 🎯 痛點解決：主 UI 被銷毀（用戶手動劃掉或點擊退出）時，必須乾淨利落地掐斷相機服務
         Intent stopIntent = new Intent(this, PhoneSyncCameraService.class);
         stopIntent.setAction("STOP_CAMERA");
         startService(stopIntent);

@@ -76,14 +76,12 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         String action = intent.getAction();
         Log.d(TAG, "🎬 Service 收到指令: " + action);
 
-        // 1️⃣ 拍照分流：設置旗標，絕不干擾穩定性
         if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
             Log.d(TAG, "📸 收到拍照信號，將在下一影格執行捕獲...");
             mShouldCaptureNextFrame = true;
             return START_NOT_STICKY; 
         }
 
-        // 2️⃣ 關閉指令：安全且迅速釋放所有資源
         if ("STOP_CAMERA".equalsIgnoreCase(action)) {
             Log.d(TAG, "🛑 執行主動關閉：安全釋放相機與管道");
             isRunning = false;
@@ -95,7 +93,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             return START_NOT_STICKY;
         }
 
-        // 3️⃣ 啟動與點火
         if ("START_CAMERA".equalsIgnoreCase(action) || "WATCH_READY".equalsIgnoreCase(action)) {
             createNotificationChannel();
             Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
@@ -121,7 +118,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             isRunning = true;
             lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
 
-            // 🎯 優化響應速度：長連接建立與 CameraX 初始化並行開跑
             setupActiveChannel();
             startCameraXDataStream();
         }
@@ -176,10 +172,8 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         }
 
         try {
-            // 🎯 修正原版缺失：在第一行補上盲讀轉換，並將 jpegData 餵入後續發送區
             byte[] jpegData = convertYuvToJpeg(image);
             if (jpegData != null) {
-                // ✅ 改用最穩固的手工位移，強制以大端序寫入 4 位元組長度頭
                 byte[] header = new byte[4];
                 int len = jpegData.length;
                 header[0] = (byte) ((len >> 24) & 0xFF);
@@ -191,7 +185,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 mChannelOutputStream.write(jpegData);
                 mChannelOutputStream.flush();
 
-                // 🎯 拍照動作：寫入成功後廣播整理
                 if (mShouldCaptureNextFrame) {
                     mShouldCaptureNextFrame = false;
                     Log.d(TAG, "📸 捕捉影格成功，正在寫入手機相簿...");
@@ -200,12 +193,11 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             }
         } catch (Exception e) {
             Log.e(TAG, "數據傳輸失敗", e);
-        } final {
+        } finally {
             image.close();
         }
     }
 
-    // 🎯 完美還原：歷史成功的 YUV 盲讀轉換函數
     private byte[] convertYuvToJpeg(ImageProxy image) {
         try {
             ImageProxy.PlaneProxy[] planes = image.getPlanes();
@@ -254,7 +246,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                         Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
                         mediaScanIntent.setData(itemUri);
                         sendBroadcast(mediaScanIntent);
-                        Log.d(TAG, "📢 已成功向系統廣播刷新媒體庫，相簿此時會顯示照片！");
+                        Log.d(TAG, "📢 已成功向系統廣播刷新媒體庫！");
                     }
                 }
             }
@@ -284,7 +276,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private void closeChannelSafely() {
         isRunning = false;
         try {
-            // 🎯 痛點解決：先 flush 再強制 close 輸出流。這能將 EOF (-1) 信號瞬間推送到手錶端，解開 is.read() 線程死鎖！
             if (mChannelOutputStream != null) { 
                 mChannelOutputStream.flush();
                 mChannelOutputStream.close(); 

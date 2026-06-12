@@ -28,9 +28,9 @@ public class PhoneSyncListenerService extends WearableListenerService {
             String type = json.optString("type", "");
             String action = json.optString("action", "");
 
-            if ("phone".equalsIgnoreCase(sender)) return; // 过滤本端回环
+            if ("phone".equalsIgnoreCase(sender)) return;
 
-            // 1️⃣ 勿扰板块：手表反向控制手机 (原封不動保留)
+            // 1️⃣ 勿扰板块 (完全保留不碰)
             if ("dnd".equalsIgnoreCase(type)) {
                 int dndVal = json.optInt("dnd_profile_value", -1);
                 if (dndVal != -1) {
@@ -44,7 +44,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 2️⃣ 自動化板塊：點擊延後按鈕 (原封不動保留)
+            // 2️⃣ 自动化板块 (完全保留不碰)
             if ("notification_action".equalsIgnoreCase(type)) {
                 if ("SNOOZE".equalsIgnoreCase(action)) {
                     if (PhoneSyncNotificationListenerService.snoozePendingIntent != null) {
@@ -57,13 +57,12 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 3️⃣ 相機板塊：優化拉起架構，繞過高版本背景啟動限制
+            // 3️⃣ 相机控制板块
             if ("camera_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
 
                 if ("START_CAMERA".equalsIgnoreCase(action)) {
                     Log.d(TAG, "⚡ [換思路] 接收到 START_CAMERA，正在強制拉起手機前台 UI 以獲取前台豁免權...");
-                    
                     Intent mainIntent = new Intent(this, PhoneSyncMainActivity.class);
                     mainIntent.setAction("ACTION_SHOW_CAMERA_UI");
                     mainIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
@@ -72,7 +71,6 @@ public class PhoneSyncListenerService extends WearableListenerService {
                     startActivity(mainIntent);
                 } 
                 else {
-                    // 其餘動作（WATCH_READY, TAKE_PICTURE, STOP_CAMERA）直接投遞給 Service
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction(action);
                     startService(svc);
