@@ -24,6 +24,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.io.DataInputStream;
 
 public class WearCameraActivity extends Activity {
     private ChannelClient.ChannelCallback mChannelCallback = null;
@@ -89,42 +90,33 @@ public class WearCameraActivity extends Activity {
     }
 
     private void readStreamDataAsync(ChannelClient.Channel channel) {
-        new Thread(() -> {
-            try (InputStream is = Tasks.await(Wearable.getChannelClient(this).getInputStream(channel))) {
-                byte[] headerBuffer = new byte[4];
-                
-                while (isListening) {
-                    // 1. 讀取前4個字節的影格長度
-                    int readHeader = is.read(headerBuffer);
-                    if (readHeader == -1) break;
-                    
-                    int frameLength = ByteBuffer.wrap(headerBuffer).getInt();
-                    if (frameLength <= 0 || frameLength > 2048 * 1024) continue; // 安全邊界過濾
+    new Thread(() -> {
+        // 封裝成 DataInputStream，利用 readFully 強制對齊字節
+        try (DataInputStream dis = new DataInputStream(Tasks.await(Wearable.getChannelClient(this).getInputStream(channel)))) {
+            
+            while (isListening) {
+                // 1. 強制讀滿 4 個字節的長度頭，少一個字節都會阻塞等待，絕不跑偏
+                int frameLength = dis.readInt();
+                if (frameLength <= 0 || frameLength > 2048 * 1024) continue; 
 
-                    // 2. 循環讀取完整的 JPEG 數據
-                    byte[] jpegBuffer = new byte[frameLength];
-                    int totalRead = 0;
-                    while (totalRead < frameLength) {
-                        int read = is.read(jpegBuffer, totalRead, frameLength - totalRead);
-                        if (read == -1) break;
-                        totalRead += read;
-                    }
+                // 2. 強制讀滿指定長度的 JPEG 數據
+                byte[] jpegBuffer = new byte[frameLength];
+                dis.readFully(jpegBuffer); // 👈 核心修復：不讀滿絕不返回
 
-                    if (totalRead == frameLength) {
-                        // 3. 解析為流暢的位圖並投遞到主線程 UI 刷新
-                        Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBuffer, 0, jpegBuffer.length);
-                        if (bitmap != null) {
-                            mainHandler.post(() -> {
-                                if (frameView != null) frameView.setImageBitmap(bitmap);
-                            });
-                        }
-                    }
+                // 3. 投遞到主線程 UI
+                Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBuffer, 0, jpegBuffer.length);
+                if (bitmap != null) {
+                    mainHandler.post(() -> {
+                        if (frameView != null) frameView.setImageBitmap(bitmap);
+                    });
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "異步影格流讀取解析異常", e);
             }
-        }).start();
-    }
+        } catch (Exception e) {
+            Log.e(TAG, "🔒 傳輸通道關閉或讀取異常: " + e.getMessage());
+            mainHandler.post(this::finish); // 異常時安全退出
+        }
+    }).start();
+}
 
     private void startCountdown() {
         btnCapture.setEnabled(false);
