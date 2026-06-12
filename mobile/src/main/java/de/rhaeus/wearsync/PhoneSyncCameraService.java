@@ -179,14 +179,18 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
         try {
             // 🎯 完美還原：當初成功時的「盲讀轉換邏輯」，確保手錶預覽清晰不花屏！
-            byte[] jpegData = convertYuvToJpeg(image);
-            if (jpegData != null) {
-                // 發送給手錶預覽
-                ByteBuffer header = ByteBuffer.allocate(4);
-                header.putInt(jpegData.length);
-                mChannelOutputStream.write(header.array());
-                mChannelOutputStream.write(jpegData);
-                mChannelOutputStream.flush();
+  // ✅ 改用最穩固的手工位移，強制以大端序寫入 4 位元組長度頭
+byte[] header = new byte[4];
+int len = jpegData.length;
+header[0] = (byte) ((len >> 24) & 0xFF);
+header[1] = (byte) ((len >> 16) & 0xFF);
+header[2] = (byte) ((len >> 8) & 0xFF);
+header[3] = (byte) (len & 0xFF);
+
+mChannelOutputStream.write(header);
+mChannelOutputStream.write(jpegData);
+mChannelOutputStream.flush();
+
 
                 // 🎯 拍照動作：與以前完全相同，只是在寫入完成後多了一步廣播通知
                 if (mShouldCaptureNextFrame) {
