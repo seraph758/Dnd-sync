@@ -86,7 +86,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         String action = intent.getAction();
         Log.d(TAG, "🎬 Service 收到拍照模塊指令: " + action);
 
-        // 🎯 痛點三修復方案：如果是關閉指令，第一時間原地安全退出，絕不碰頂部 startForeground
+        // 🎯 1. 關閉指令：第一時間原地安全退出
         if ("STOP_CAMERA".equalsIgnoreCase(action)) {
             Log.d(TAG, "🛑 執行主動關閉：安全釋放 CameraX 與藍牙長連接管道");
             isRunning = false;
@@ -99,7 +99,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             return START_NOT_STICKY;
         }
 
-        // 🎯 痛點一修復方案：如果是手錶發來的拍照指令，直接扔給内部拍照線程，絕不重新頂前台
+        // 🎯 2. 拍照指令：直接分流，絕不觸發前台挂載
         if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
             Log.d(TAG, "📸 完美攔截分流：觸發後台拍照採集流程...");
             takePictureInternal();
@@ -107,7 +107,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         }
 
         // --------------------------------------------------------------------------------
-        // 🛡️ 只有 START_CAMERA 與 WATCH_READY 這兩個「初始化」指令，才允許建立並掛載前台通知
+        // 🛡️ 只有 START_CAMERA 核心初始化指令，才允許建立並掛載前台通知
         // --------------------------------------------------------------------------------
         createNotificationChannel();
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
@@ -125,7 +125,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             }
             Log.d(TAG, "✅ 成功頂起 TYPE_CAMERA 前台相機安全防護盾");
 
-            // 🎯 痛點二修復：通知 BridgeActivity 權限已綁定成功，跳板可以放心 finish() 了
+            // 告知本地廣播（原 Bridge 残留可以保留相容，不會影響系統）
             Intent readyIntent = new Intent("de.rhaeus.wearsync.ACTION_SERVICE_READY");
             readyIntent.setPackage(getPackageName());
             sendBroadcast(readyIntent);
@@ -136,22 +136,22 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             return START_NOT_STICKY;
         }
 
-           if ("START_CAMERA".equalsIgnoreCase(action)) {
-        isRunning = true;
-        lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
-        mTimeoutHandler.removeCallbacks(mTimeoutRunnable);
-        mTimeoutHandler.postDelayed(mTimeoutRunnable, 45000); 
-        
-        // 🎯 核心補齊：既然沒有跳板了，服務啟動後立刻主動通知手錶：「手機前台服務已頂起，手錶可以開闢 Channel 管道了！」
-        Log.d(TAG, "📢 手機端前台服務已著陸，反向通知手錶對齊通道...");
-        sendCameraControlToWatchLive(this, "PHONE_SERVICE_READY");
-    } 
-
-        else if ("WATCH_READY".equalsIgnoreCase(action)) {
+        if ("START_CAMERA".equalsIgnoreCase(action)) {
+            isRunning = true;
+            lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
+            mTimeoutHandler.removeCallbacks(mTimeoutRunnable);
+            mTimeoutHandler.postDelayed(mTimeoutRunnable, 45000); 
+    
+            // 🎯 核心咬合：直接從傳入的 Intent 裡拿到手錶的 NodeId，原地直接開闢通道，破除死鎖！
             String nodeId = intent.getStringExtra("node_id");
-            Log.d(TAG, "🤝 握手成功！開始與手錶端節點 [" + nodeId + "] 建立長連接畫面傳輸管道");
-            setupCameraAndChannel(nodeId);
-        }
+            if (nodeId != null && !nodeId.isEmpty()) {
+                Log.d(TAG, "🤝 收到點火指令，主動與手錶端節點 [" + nodeId + "] 建立長連接畫面傳輸管道");
+                setupCameraAndChannel(nodeId);
+            } else {
+                Log.e(TAG, "❌ 啟動失敗：未獲取到有效的手錶 NodeId");
+                stopSelf();
+            }
+        } 
 
         return START_NOT_STICKY;
     }
@@ -218,7 +218,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 mChannelOutputStream.flush();
             }
 
-            // 🎯 痛點一方案：如果手錶點了拍照，捕獲當前影格寫入手機本地相簿
+            // 如果手錶點了拍照，捕獲當前影格寫入手機本地相簿
             if (mShouldCaptureNextFrame) {
                 mShouldCaptureNextFrame = false;
                 if (jpegData != null) {
@@ -234,7 +234,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     }
 
     private void takePictureInternal() {
-        // 激活旗標，下一影格進來時直接執行本地磁碟寫入
         mShouldCaptureNextFrame = true;
     }
 
