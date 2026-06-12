@@ -61,44 +61,54 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 3️⃣ 📸 [全域相機控制模塊通訊咬合鏈]
-            if ("camera_control".equalsIgnoreCase(type)) {
-                Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
+            
+// 3️⃣ 📸 [全域相機控制模塊通訊咬合鏈]
+if ("camera_control".equalsIgnoreCase(type)) {
+    Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
 
-                if ("START_CAMERA".equalsIgnoreCase(action)) {
-                    // 透過引導跳板頂出前台豁免權
-                    Intent bridgeIntent = new Intent(this, PhoneCameraBridgeActivity.class);
-                    bridgeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                    startActivity(bridgeIntent);
-                }
-                else if ("WATCH_READY".equalsIgnoreCase(action)) {
-                    // 🎯 痛點二修復：必須把手錶發送端的節點 NodeId 提取出來傳遞下去，否則長連接通道因找不到藍牙對端而一片黑！
-                    String remoteNodeId = messageEvent.getSourceNodeId();
-                    Log.d(TAG, "🤝 [握手橋接] 提取到手錶端有效 NodeId: " + remoteNodeId + "，交由 Service 點火。");
+    if ("START_CAMERA".equalsIgnoreCase(action)) {
+        Log.d(TAG, "🚀 [後台直接點火] 繞過跳板，直接啟動相機前台服務...");
+        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+        svc.setAction("START_CAMERA");
+        
+        // 🎯 注入 Android 14+ 最高級別的後台前台啟動豁免權限
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            svc.addFlags(Intent.FLAG_RECEIVER_FOREGROUND); 
+        }
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(svc);
+        } else {
+            startService(svc);
+        }
+    }
+    else if ("WATCH_READY".equalsIgnoreCase(action)) {
+        String remoteNodeId = messageEvent.getSourceNodeId();
+        Log.d(TAG, "🤝 [握手橋接] 提取到手錶端有效 NodeId: " + remoteNodeId + "，交由 Service 建立通道。");
 
-                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                    svc.setAction("WATCH_READY");
-                    svc.putExtra("node_id", remoteNodeId); // 注入 NodeId
-                    
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        startForegroundService(svc); 
-                    } else {
-                        startService(svc);
-                    }
-                }  
-                else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                    svc.setAction("STOP_CAMERA");
-                    startService(svc);
-                } 
-                else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
-                    // 🎯 痛點一修復：直接將拍照動作安全投遞給本地 CameraService
-                    Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                    svc.setAction("TAKE_PICTURE"); 
-                    startService(svc);
-                }
-                return;
-            }
+        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+        svc.setAction("WATCH_READY");
+        svc.putExtra("node_id", remoteNodeId);
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(svc); 
+        } else {
+            startService(svc);
+        }
+    }  
+    else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+        svc.setAction("STOP_CAMERA");
+        startService(svc);
+    } 
+    else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
+        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+        svc.setAction("TAKE_PICTURE"); 
+        startService(svc);
+    }
+    return;
+}
+
 
         } catch (Exception e) {
             Log.e(TAG, "手機中轉解析異常", e);
