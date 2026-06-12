@@ -136,12 +136,17 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             return START_NOT_STICKY;
         }
 
-        if ("START_CAMERA".equalsIgnoreCase(action)) {
-            isRunning = true;
-            lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
-            mTimeoutHandler.removeCallbacks(mTimeoutRunnable);
-            mTimeoutHandler.postDelayed(mTimeoutRunnable, 45000); 
-        } 
+           if ("START_CAMERA".equalsIgnoreCase(action)) {
+        isRunning = true;
+        lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
+        mTimeoutHandler.removeCallbacks(mTimeoutRunnable);
+        mTimeoutHandler.postDelayed(mTimeoutRunnable, 45000); 
+        
+        // 🎯 核心補齊：既然沒有跳板了，服務啟動後立刻主動通知手錶：「手機前台服務已頂起，手錶可以開闢 Channel 管道了！」
+        Log.d(TAG, "📢 手機端前台服務已著陸，反向通知手錶對齊通道...");
+        sendCameraControlToWatchLive(this, "PHONE_SERVICE_READY");
+    } 
+
         else if ("WATCH_READY".equalsIgnoreCase(action)) {
             String nodeId = intent.getStringExtra("node_id");
             Log.d(TAG, "🤝 握手成功！開始與手錶端節點 [" + nodeId + "] 建立長連接畫面傳輸管道");
