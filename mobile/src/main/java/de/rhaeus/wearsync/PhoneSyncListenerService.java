@@ -70,33 +70,35 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 3️⃣ 🎯 相機模組控制鏈（手錶反向控制手機服務）
-// 3️⃣ 📸 [全域相機控制模塊通訊咬合鏈]
-        if ("camera_control".equalsIgnoreCase(type)) {
+            if ("camera_control".equalsIgnoreCase(type)) {
     Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
 
-    if ("START_CAMERA".equalsIgnoreCase(action)) {
-        String remoteNodeId = messageEvent.getSourceNodeId();
-        Log.d(TAG, "⚡ [喚醒防禦] 喚醒透明跳板 Activity 以獲取 Android 14 前台豁免權...");
-        
-        // 🎯 核心修正：改為拉起 Activity，由 Activity 去點火 Service
-        Intent bridge = new Intent(this, PhoneCameraBridgeActivity.class);
-        bridge.putExtra("node_id", remoteNodeId);
-        bridge.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        startActivity(bridge);
+    if ("START_CAMERA".equalsIgnoreCase(action) || "WATCH_READY".equalsIgnoreCase(action)) {
+        // 🎯 繞過任何 Activity 跳板，直接將握手信號送給相機服務
+        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+        svc.setAction(action); 
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(svc);
+        } else {
+            startService(svc);
+        }
     }
     else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+        Log.d(TAG, "🛑 [中轉接收] 收到關閉指令，通知本地 CameraService 銷毀");
         Intent svc = new Intent(this, PhoneSyncCameraService.class);
         svc.setAction("STOP_CAMERA");
         startService(svc);
     } 
     else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
+        Log.d(TAG, "📸 [核心接收] 接收到手錶的拍照動作，準備投遞給本地 CameraService");
         Intent svc = new Intent(this, PhoneSyncCameraService.class);
         svc.setAction("TAKE_PICTURE"); 
-        startService(svc);
+        startService(svc); // 👈 拍照直接投遞給 Service 設置旗標
     }
     return;
 }
+
 
         
 
