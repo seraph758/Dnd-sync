@@ -50,7 +50,7 @@ public class WearCameraActivity extends Activity {
 
         btnCapture.setOnClickListener(v -> startCountdown());
 
-        // 🎯 核心補齊：監聽手機端斷開事件，實現雙向聯動退出
+ // 🎯 修正後的 ChannelCallback 區塊
         mChannelCallback = new ChannelClient.ChannelCallback() {
             @Override
             public void onChannelOpened(@NonNull ChannelClient.Channel channel) {
@@ -60,17 +60,17 @@ public class WearCameraActivity extends Activity {
                     Log.d(TAG, "🚀 [/wear-camera-stream] 長連接數據管道已對齊，開始異步接收影格...");
                     readStreamDataAsync(channel);
                     
-                    // 管道建立成功，向手機回發 READY 握手信號，通知手機可以綁定 CameraX 開始推流了
+                    // 管道建立成功，向手機回發 READY 握手信號
                     notifyPhoneCameraService("WATCH_READY");
                 }
             }
-
+        
+            // 🎯 精準修復編譯報錯：補齊為 3 個參數，並移除 super 呼叫以相容編譯環境
             @Override
-            public void onInputClosed(@NonNull ChannelClient.Channel channel, int closeReason) {
-                super.onInputClosed(channel, closeReason);
-                Log.w(TAG, "🛑 手機端已主動關閉相機或管道異常中斷，原因代碼: " + closeReason);
+            public void onInputClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
+                Log.w(TAG, "🛑 手機端已主動關閉相機或管道異常中斷，原因代碼: " + closeReason + ", 錯誤碼: " + appSpecificErrorCode);
                 
-                // 🎯 核心體驗優化：當手機端關閉時，手錶端觀景窗立刻自動 finish() 退出，防止畫面凍結空轉
+                // 聯動體驗優化：當手機端關閉時，手錶端觀景窗立刻自動 finish() 退出
                 mainHandler.post(() -> {
                     if (!isFinishing()) {
                         Log.d(TAG, "🏁 聯動退出手錶端觀景窗。");
@@ -79,6 +79,7 @@ public class WearCameraActivity extends Activity {
                 });
             }
         };
+        
 
         Wearable.getChannelClient(this).registerChannelCallback(mChannelCallback);
         isListening = true;
