@@ -52,13 +52,12 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
     private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
     private final ExecutorService mStreamExecutor = Executors.newSingleThreadExecutor();
-    
+
     private ProcessCameraProvider cameraProvider;
     private ChannelClient.Channel mActiveChannel;
     private OutputStream mChannelOutputStream;
-    
+
     private boolean isRunning = false;
-    // 🎯 拍照旗標：點拍照時手錶發 TAKE_PICTURE 指令，只把這個開關打開，動作和以前完全一樣
     private volatile boolean mShouldCaptureNextFrame = false; 
 
     @NonNull
@@ -77,14 +76,12 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         String action = intent.getAction();
         Log.d(TAG, "🎬 Service 收到指令: " + action);
 
-        // 1️⃣ 拍照分流：只設置旗標，絕不驚動原本穩定的生命週期
         if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
             Log.d(TAG, "📸 收到拍照信號，將在下一影格執行捕獲...");
             mShouldCaptureNextFrame = true;
             return START_NOT_STICKY; 
         }
 
-        // 2️⃣ 關閉指令
         if ("STOP_CAMERA".equalsIgnoreCase(action)) {
             Log.d(TAG, "🛑 執行主動關閉：安全釋放相機與管道");
             isRunning = false;
@@ -96,7 +93,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             return START_NOT_STICKY;
         }
 
-        // 3️⃣ 完美還原：當時成功的啟動與雙端握手（WATCH_READY）點火核心
         if ("START_CAMERA".equalsIgnoreCase(action) || "WATCH_READY".equalsIgnoreCase(action)) {
             createNotificationChannel();
             Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
@@ -121,8 +117,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
             isRunning = true;
             lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
-            
-            // 握手成功後直接建立 Channel
             setupActiveChannel();
         }
 
@@ -178,21 +172,20 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         }
 
         try {
-            // 🎯 完美還原：當初成功時的「盲讀轉換邏輯」，確保手錶預覽清晰不花屏！
-  // ✅ 改用最穩固的手工位移，強制以大端序寫入 4 位元組長度頭
-byte[] header = new byte[4];
-int len = jpegData.length;
-header[0] = (byte) ((len >> 24) & 0xFF);
-header[1] = (byte) ((len >> 16) & 0xFF);
-header[2] = (byte) ((len >> 8) & 0xFF);
-header[3] = (byte) (len & 0xFF);
+            byte[] jpegData = convertYuvToJpeg(image);
+            if (jpegData != null) {
+                // ✅ 精準修復：大括號結構閉合，並強制以大端序手動位移寫入 4 位元組長度頭
+                byte[] header = new byte[4];
+                int len = jpegData.length;
+                header[0] = (byte) ((len >> 24) & 0xFF);
+                header[1] = (byte) ((len >> 16) & 0xFF);
+                header[2] = (byte) ((len >> 8) & 0xFF);
+                header[3] = (byte) (len & 0xFF);
 
-mChannelOutputStream.write(header);
-mChannelOutputStream.write(jpegData);
-mChannelOutputStream.flush();
+                mChannelOutputStream.write(header);
+                mChannelOutputStream.write(jpegData);
+                mChannelOutputStream.flush();
 
-
-                // 🎯 拍照動作：與以前完全相同，只是在寫入完成後多了一步廣播通知
                 if (mShouldCaptureNextFrame) {
                     mShouldCaptureNextFrame = false;
                     Log.d(TAG, "📸 捕捉影格成功，正在寫入手機相簿...");
@@ -206,7 +199,6 @@ mChannelOutputStream.flush();
         }
     }
 
-    // 🎯 完美還原：歷史成功的 YUV 盲讀轉換函數
     private byte[] convertYuvToJpeg(ImageProxy image) {
         try {
             ImageProxy.PlaneProxy[] planes = image.getPlanes();
@@ -232,7 +224,6 @@ mChannelOutputStream.flush();
         }
     }
 
-    // 🎯 僅在當初寫入磁碟的程式碼結尾，定點補上 MediaScanner 廣播，通知一加相簿刷新
     private void saveToGalleryInternal(byte[] jpegData) {
         try {
             String fileName = "WearSync_" + System.currentTimeMillis() + ".jpg";
@@ -253,7 +244,6 @@ mChannelOutputStream.flush();
                         os.flush();
                         Log.d(TAG, "🎯 照片二進位字節已成功寫入儲存區。");
 
-                        // 🔥 僅在此處定點修復：向系統媒體庫發送廣播。當初相簿沒反應就是少了他
                         Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
                         mediaScanIntent.setData(itemUri);
                         sendBroadcast(mediaScanIntent);
