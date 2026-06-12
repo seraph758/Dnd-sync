@@ -89,21 +89,42 @@ public class WearCameraActivity extends Activity {
         notifyPhoneCameraService("START_CAMERA");
     }
 
-    private void readStreamDataAsync(ChannelClient.Channel channel) {
+   private void readStreamDataAsync(ChannelClient.Channel channel) {
     new Thread(() -> {
-        // 封裝成 DataInputStream，利用 readFully 強制對齊字節
-        try (DataInputStream dis = new DataInputStream(Tasks.await(Wearable.getChannelClient(this).getInputStream(channel)))) {
-            
+        try (InputStream is = Tasks.await(Wearable.getChannelClient(this).getInputStream(channel))) {
+            byte[] headerBuffer = new byte[4];
+
             while (isListening) {
-                // 1. 強制讀滿 4 個字節的長度頭，少一個字節都會阻塞等待，絕不跑偏
-                int frameLength = dis.readInt();
-                if (frameLength <= 0 || frameLength > 2048 * 1024) continue; 
+                // 1. 讀取 4 位元組長度頭，確保讀滿
+                int bytesRead = 0;
+                while (bytesRead < 4) {
+                    int read = is.read(headerBuffer, bytesRead, 4 - bytesRead);
+                    if (read == -1) throw new Exception("流已斷開");
+                    bytesRead += read;
+                }
 
-                // 2. 強制讀滿指定長度的 JPEG 數據
+                // 2. 用與手機端完美對齊的大端序手動還原 int 長度
+                int frameLength = ((headerBuffer[0] & 0xFF) << 24)
+                                | ((headerBuffer[1] & 0xFF) << 16)
+                                | ((headerBuffer[2] & 0xFF) << 8)
+                                | (headerBuffer[3] & 0xFF);
+
+                // 異常長度安全閥
+                if (frameLength <= 0 || frameLength > 2048 * 1024) {
+                    Log.e(TAG, "🚨 讀到異常影格長度: " + frameLength + "，執行跳過...");
+                    continue; 
+                }
+
+                // 3. 強制讀滿指定長度的 JPEG 數據
                 byte[] jpegBuffer = new byte[frameLength];
-                dis.readFully(jpegBuffer); // 👈 核心修復：不讀滿絕不返回
+                int imgBytesRead = 0;
+                while (imgBytesRead < frameLength) {
+                    int read = is.read(jpegBuffer, imgBytesRead, frameLength - imgBytesRead);
+                    if (read == -1) throw new Exception("數據流在中途斷開");
+                    imgBytesRead += read;
+                }
 
-                // 3. 投遞到主線程 UI
+                // 4. 順利解碼並投遞到 UI 觀景窗
                 Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBuffer, 0, jpegBuffer.length);
                 if (bitmap != null) {
                     mainHandler.post(() -> {
@@ -113,10 +134,13 @@ public class WearCameraActivity extends Activity {
             }
         } catch (Exception e) {
             Log.e(TAG, "🔒 傳輸通道關閉或讀取異常: " + e.getMessage());
-            mainHandler.post(this::finish); // 異常時安全退出
+            mainHandler.post(() -> {
+                if (!isFinishing()) finish();
+            });
         }
     }).start();
 }
+
 
     private void startCountdown() {
         btnCapture.setEnabled(false);
