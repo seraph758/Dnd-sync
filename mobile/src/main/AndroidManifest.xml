@@ -31,10 +31,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity 
-            android:name=".PhoneCameraBridgeActivity"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" 
-            android:exported="false"/>
+       
 
         <service
             android:name=".PhoneSyncNotificationService"
@@ -46,10 +43,11 @@
         </service>
         
         <service 
-            android:name=".PhoneSyncCameraService"
+          android:name=".PhoneSyncCameraService"
             android:enabled="true"   
             android:foregroundServiceType="camera"
             android:exported="false" />
+
     
         <service
             android:name=".PhoneSyncListenerService"
