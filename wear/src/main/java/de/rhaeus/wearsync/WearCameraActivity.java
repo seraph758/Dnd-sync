@@ -49,7 +49,7 @@ public class WearCameraActivity extends Activity {
 
         btnCapture.setOnClickListener(v -> startCountdown());
 
-        // 🎯 完美對齊當前 SDK 版本的 ChannelCallback 區塊
+        // 🎯 完美適配 GitHub 環境中要求 3 個參數的 ChannelCallback 區塊
         mChannelCallback = new ChannelClient.ChannelCallback() {
             @Override
             public void onChannelOpened(@NonNull ChannelClient.Channel channel) {
@@ -64,11 +64,10 @@ public class WearCameraActivity extends Activity {
                 }
             }
 
-            // 🎯 完美修復：還原為標準 1 個參數，徹底拔除不相容的 closeReason 變數
+            // 🎯 根據日誌要求，精準提供 (Channel, int, int) 3 個參數，並移除可能衝突的 super 呼叫
             @Override
-            public void onInputClosed(@NonNull ChannelClient.Channel channel) {
-                super.onInputClosed(channel);
-                Log.w(TAG, "🛑 手機端已主動關閉相機或管道異常中斷。");
+            public void onInputClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
+                Log.w(TAG, "🛑 手機端已主動關閉相機或管道異常中斷。原因代碼: " + closeReason + ", 錯誤碼: " + appSpecificErrorCode);
 
                 // 聯動體驗優化：當手機端關閉時，手錶端觀景窗立刻自動 finish() 退出
                 mainHandler.post(() -> {
@@ -101,7 +100,7 @@ public class WearCameraActivity extends Activity {
                         bytesRead += read;
                     }
 
-                    // 2. 用與手機端手工位移對齊的大端序還原 int 長度
+                    // 2. 用與手機端手工位移完美對齊的大端序還原 int 長度
                     int frameLength = ((headerBuffer[0] & 0xFF) << 24)
                                     | ((headerBuffer[1] & 0xFF) << 16)
                                     | ((headerBuffer[2] & 0xFF) << 8)
