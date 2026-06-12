@@ -57,6 +57,7 @@ public class WearCameraActivity extends Activity {
                 if ("/wear-camera-stream".equals(channel.getPath())) {
                     mOpenedChannel = channel;
                     Log.d(TAG, "🚀 [/wear-camera-stream] 長連接數據管道已對齊，開始異步接收影格...");
+                    isListening = true;
                     readStreamDataAsync(channel);
 
                     // 管道建立成功，向手機回發 READY 握手信號
@@ -64,10 +65,10 @@ public class WearCameraActivity extends Activity {
                 }
             }
 
-            // 🎯 根據日誌要求，精準提供 (Channel, int, int) 3 個參數，並移除可能衝突的 super 呼叫
+            // 🎯 根據高版本編譯環境要求，精準提供 (Channel, int, int) 3 個參數
             @Override
             public void onInputClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
-                Log.w(TAG, "🛑 手機端已主動關閉相機或管道異常中斷。原因代碼: " + closeReason + ", 錯誤碼: " + appSpecificErrorCode);
+                Log.w(TAG, "🛑 手機端已主動關閉相機或管道異常中斷。原因代碼: " + closeReason);
 
                 // 聯動體驗優化：當手機端關閉時，手錶端觀景窗立刻自動 finish() 退出
                 mainHandler.post(() -> {
@@ -80,7 +81,6 @@ public class WearCameraActivity extends Activity {
         };
 
         Wearable.getChannelClient(this).registerChannelCallback(mChannelCallback);
-        isListening = true;
 
         Log.d(TAG, "⌚ 手錶端觀景窗就緒，發送 START_CAMERA 點火信號...");
         notifyPhoneCameraService("START_CAMERA");
@@ -108,7 +108,6 @@ public class WearCameraActivity extends Activity {
 
                     // 異常長度安全閥
                     if (frameLength <= 0 || frameLength > 2048 * 1024) {
-                        Log.e(TAG, "🚨 讀到異常影格長度: " + frameLength + "，執行跳過...");
                         continue; 
                     }
 
@@ -132,7 +131,10 @@ public class WearCameraActivity extends Activity {
             } catch (Exception e) {
                 Log.e(TAG, "🔒 傳輸通道關閉或讀取異常: " + e.getMessage());
                 mainHandler.post(() -> {
-                    if (!isFinishing()) finish();
+                    if (!isFinishing()) {
+                        Log.d(TAG, "🏁 管道已斷開，手錶觀景窗同步徹底退出關閉");
+                        finish();
+                    }
                 });
             }
         }).start();
@@ -141,7 +143,7 @@ public class WearCameraActivity extends Activity {
     private void startCountdown() {
         btnCapture.setEnabled(false);
         countdown = 3;
-        tvCountdown.setVisibility(View.VISIBLE);
+        tvCountdown.setVisibility(View.bold ? View.VISIBLE : View.VISIBLE);
         tvCountdown.setText(String.valueOf(countdown));
 
         Runnable r = new Runnable() {
