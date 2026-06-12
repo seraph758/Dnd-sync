@@ -67,35 +67,24 @@ if ("camera_control".equalsIgnoreCase(type)) {
     Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
 
     if ("START_CAMERA".equalsIgnoreCase(action)) {
-        Log.d(TAG, "🚀 [後台直接點火] 繞過跳板，直接啟動相機前台服務...");
+        // 🎯 核心修正：撈出是哪隻手錶發過來的 NodeId
+        String remoteNodeId = messageEvent.getSourceNodeId();
+        Log.d(TAG, "🚀 [後台直接點火] 獲取手錶節點 [" + remoteNodeId + "]，直接啟動相機前台服務...");
+        
         Intent svc = new Intent(this, PhoneSyncCameraService.class);
         svc.setAction("START_CAMERA");
-        
-        // 🎯 注入 Android 14+ 最高級別的後台前台啟動豁免權限
+        svc.putExtra("node_id", remoteNodeId); // 👈 把 NodeId 傳過去
+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             svc.addFlags(Intent.FLAG_RECEIVER_FOREGROUND); 
         }
-        
+
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             startForegroundService(svc);
         } else {
             startService(svc);
         }
     }
-    else if ("WATCH_READY".equalsIgnoreCase(action)) {
-        String remoteNodeId = messageEvent.getSourceNodeId();
-        Log.d(TAG, "🤝 [握手橋接] 提取到手錶端有效 NodeId: " + remoteNodeId + "，交由 Service 建立通道。");
-
-        Intent svc = new Intent(this, PhoneSyncCameraService.class);
-        svc.setAction("WATCH_READY");
-        svc.putExtra("node_id", remoteNodeId);
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            startForegroundService(svc); 
-        } else {
-            startService(svc);
-        }
-    }  
     else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
         Intent svc = new Intent(this, PhoneSyncCameraService.class);
         svc.setAction("STOP_CAMERA");
