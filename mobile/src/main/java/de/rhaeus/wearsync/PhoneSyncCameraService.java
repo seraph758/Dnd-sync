@@ -87,9 +87,15 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         Log.d(TAG, "🎬 Service 收到拍照模塊指令: " + action);
 
         // 🎯 1. 關閉指令：第一時間原地安全退出
+                // 🎯 修正：當收到關閉指令（不管是手機點的，還是手錶傳過來的）
         if ("STOP_CAMERA".equalsIgnoreCase(action)) {
             Log.d(TAG, "🛑 執行主動關閉：安全釋放 CameraX 與藍牙長連接管道");
             isRunning = false;
+            
+         
+            // 這樣哪怕 Channel 斷開信號丟失，手錶也能通過常規消息協議百分百退出！
+            sendCameraControlToWatchLive(this, "STOP_CAMERA");
+            
             if (cameraProvider != null) {
                 cameraProvider.unbindAll();
             }
@@ -98,6 +104,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             stopSelf();
             return START_NOT_STICKY;
         }
+
 
         // 🎯 2. 拍照指令：直接分流，絕不觸發前台挂載
         if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
