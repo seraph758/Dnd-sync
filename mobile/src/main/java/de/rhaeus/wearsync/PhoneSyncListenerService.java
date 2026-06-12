@@ -73,39 +73,31 @@ public class PhoneSyncListenerService extends WearableListenerService {
             // 3️⃣ 🎯 相機模組控制鏈（手錶反向控制手機服務）
 // 3️⃣ 📸 [全域相機控制模塊通訊咬合鏈]
         if ("camera_control".equalsIgnoreCase(type)) {
-            Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
+    Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
+
+    if ("START_CAMERA".equalsIgnoreCase(action)) {
+        String remoteNodeId = messageEvent.getSourceNodeId();
+        Log.d(TAG, "⚡ [喚醒防禦] 喚醒透明跳板 Activity 以獲取 Android 14 前台豁免權...");
         
-            if ("START_CAMERA".equalsIgnoreCase(action)) {
-                // 🎯 完美：撈出是哪隻手錶發過來的 NodeId
-                String remoteNodeId = messageEvent.getSourceNodeId();
-                Log.d(TAG, "🚀 [後台直接點火] 獲取手錶節點 [" + remoteNodeId + "]，直接啟動相機前台服務...");
-                
-                Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                svc.setAction("START_CAMERA");
-                svc.putExtra("node_id", remoteNodeId); // 👈 成功透傳
-        
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                    svc.addFlags(Intent.FLAG_RECEIVER_FOREGROUND); 
-                }
-        
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    startForegroundService(svc);
-                } else {
-                    startService(svc);
-                }
-            }
-            else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-                Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                svc.setAction("STOP_CAMERA");
-                startService(svc);
-            } 
-            else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
-                Intent svc = new Intent(this, PhoneSyncCameraService.class);
-                svc.setAction("TAKE_PICTURE"); 
-                startService(svc);
-            }
-            return;
-        }
+        // 🎯 核心修正：改為拉起 Activity，由 Activity 去點火 Service
+        Intent bridge = new Intent(this, PhoneCameraBridgeActivity.class);
+        bridge.putExtra("node_id", remoteNodeId);
+        bridge.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(bridge);
+    }
+    else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+        svc.setAction("STOP_CAMERA");
+        startService(svc);
+    } 
+    else if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
+        Intent svc = new Intent(this, PhoneSyncCameraService.class);
+        svc.setAction("TAKE_PICTURE"); 
+        startService(svc);
+    }
+    return;
+}
+
         
 
         } catch (Exception e) {
