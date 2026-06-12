@@ -49,7 +49,6 @@ public class WearCameraActivity extends Activity {
 
         btnCapture.setOnClickListener(v -> startCountdown());
 
-        // 🎯 完美適配 GitHub 環境中要求 3 個參數的 ChannelCallback 區塊
         mChannelCallback = new ChannelClient.ChannelCallback() {
             @Override
             public void onChannelOpened(@NonNull ChannelClient.Channel channel) {
@@ -60,17 +59,13 @@ public class WearCameraActivity extends Activity {
                     isListening = true;
                     readStreamDataAsync(channel);
 
-                    // 管道建立成功，向手機回發 READY 握手信號
                     notifyPhoneCameraService("WATCH_READY");
                 }
             }
 
-            // 🎯 根據高版本編譯環境要求，精準提供 (Channel, int, int) 3 個參數
             @Override
             public void onInputClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
                 Log.w(TAG, "🛑 手機端已主動關閉相機或管道異常中斷。原因代碼: " + closeReason);
-
-                // 聯動體驗優化：當手機端關閉時，手錶端觀景窗立刻自動 finish() 退出
                 mainHandler.post(() -> {
                     if (!isFinishing()) {
                         Log.d(TAG, "🏁 聯動退出手錶端觀景窗。");
@@ -92,7 +87,6 @@ public class WearCameraActivity extends Activity {
                 byte[] headerBuffer = new byte[4];
 
                 while (isListening) {
-                    // 1. 讀取 4 位元組長度頭，確保讀滿
                     int bytesRead = 0;
                     while (bytesRead < 4) {
                         int read = is.read(headerBuffer, bytesRead, 4 - bytesRead);
@@ -100,18 +94,15 @@ public class WearCameraActivity extends Activity {
                         bytesRead += read;
                     }
 
-                    // 2. 用與手機端手工位移完美對齊的大端序還原 int 長度
                     int frameLength = ((headerBuffer[0] & 0xFF) << 24)
                                     | ((headerBuffer[1] & 0xFF) << 16)
                                     | ((headerBuffer[2] & 0xFF) << 8)
                                     | (headerBuffer[3] & 0xFF);
 
-                    // 異常長度安全閥
                     if (frameLength <= 0 || frameLength > 2048 * 1024) {
                         continue; 
                     }
 
-                    // 3. 強制讀滿指定長度的 JPEG 數據
                     byte[] jpegBuffer = new byte[frameLength];
                     int imgBytesRead = 0;
                     while (imgBytesRead < frameLength) {
@@ -120,7 +111,6 @@ public class WearCameraActivity extends Activity {
                         imgBytesRead += read;
                     }
 
-                    // 4. 順利解碼並投遞到 UI 觀景窗
                     Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBuffer, 0, jpegBuffer.length);
                     if (bitmap != null) {
                         mainHandler.post(() -> {
@@ -143,7 +133,7 @@ public class WearCameraActivity extends Activity {
     private void startCountdown() {
         btnCapture.setEnabled(false);
         countdown = 3;
-        tvCountdown.setVisibility(View.bold ? View.VISIBLE : View.VISIBLE);
+        tvCountdown.setVisibility(View.VISIBLE);
         tvCountdown.setText(String.valueOf(countdown));
 
         Runnable r = new Runnable() {
@@ -156,7 +146,6 @@ public class WearCameraActivity extends Activity {
                 } else {
                     if (tvCountdown != null) tvCountdown.setText("📸");
 
-                    // 倒數結束，精準向手機端發送遠程拍照信號
                     notifyPhoneCameraService("TAKE_PICTURE");
 
                     mainHandler.postDelayed(() -> {
@@ -197,7 +186,6 @@ public class WearCameraActivity extends Activity {
         }
         mainHandler.removeCallbacksAndMessages(null);
 
-        // 如果手錶端 Activity 是自己滑動返回或主動點關閉銷毀的，通知手機端卸載相機硬體
         notifyPhoneCameraService("STOP_CAMERA"); 
         super.onDestroy();
     }
