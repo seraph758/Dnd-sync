@@ -19,6 +19,8 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
             getSupportActionBar().hide();
         }
 
+// 🎯 [手機端核心防禦]：防止手機端彈出 Activity 提權後，因無人觸控自動熄屏導致相機被一加系統強行凍結
+getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
 
         if (savedInstanceState == null) {
