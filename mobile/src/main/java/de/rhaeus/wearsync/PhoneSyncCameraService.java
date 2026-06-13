@@ -43,190 +43,154 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private static final String TAG = "WearSync_CameraService";
     private static final String CHANNEL_ID = "wear_camera_sync_channel";
     private static final String UNIVERSAL_SYNC_PATH = "/wear-universal-sync";
+    private static final String CHANNEL_PATH = "/wear-camera-frame-stream";
 
     private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
-    private ProcessCameraProvider cameraProvider = null;
+    private ProcessCameraProvider cameraProvider;
     private ExecutorService mStreamExecutor;
-
+    
+    private final Object mLock = new Object();
     private ChannelClient.Channel mActiveChannel = null;
     private OutputStream mChannelOutputStream = null;
-    private ChannelClient.ChannelCallback mChannelCallback = null;
-
-    private final Object mLock = new Object();
     private boolean isRunning = false;
+
+    @NonNull
+    @Override
+    public Lifecycle getLifecycle() { return lifecycleRegistry; }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        mStreamExecutor = Executors.newSingleThreadExecutor();
         lifecycleRegistry.setCurrentState(Lifecycle.State.CREATED);
+        mStreamExecutor = Executors.newSingleThreadExecutor();
         createNotificationChannel();
-        Log.d(TAG, "✅ [服務啟動] PhoneSyncCameraService 建立成功");
-    }
-
-    @NonNull
-    @Override
-    public Lifecycle getLifecycle() {
-        return lifecycleRegistry;
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) return START_NOT_STICKY;
+        lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
+        if (intent == null || intent.getAction() == null) return START_NOT_STICKY;
         String action = intent.getAction();
-        Log.d(TAG, "🎬 Service 收到運行動作: " + action);
 
         if ("START_CAMERA".equalsIgnoreCase(action)) {
             if (!isRunning) {
                 isRunning = true;
-                lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
-                
-                // 立即掛上前台，防禦高版本系統強殺
+                // 构建前台通知並將小圖標修正為 R.mipmap.ic_launcher
                 Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setContentTitle("相機同步中")
-                        .setContentText("正在與 WearOS 設備同步影像畫面...")
-                        .setSmallIcon(R.drawable.ic_launcher_foreground)
+                        .setContentTitle("WearSync 相機同步中")
+                        .setContentText("正在為手錶端提供即時相機畫面流...")
+                        .setSmallIcon(R.mipmap.ic_launcher) 
                         .setPriority(NotificationCompat.PRIORITY_LOW)
                         .build();
-                startForeground(8848, notification);
-
-                setupChannelAndCameraX();
+                startForeground(8888, notification);
+                startCameraXDataFlow();
             }
         } else if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-            executeServiceShutdown();
+            stopSelf();
         }
-
         return START_NOT_STICKY;
     }
 
-    private void setupChannelAndCameraX() {
-        new Thread(() -> {
+    private void startCameraXDataFlow() {
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+        cameraProviderFuture.addListener(() -> {
             try {
-                Log.d(TAG, "⏳ 正在尋找活躍的手錶節點並建立長連接管道...");
-                List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-                if (nodes.isEmpty()) {
-                    Log.e(TAG, "❌ 未能找到任何活躍的手錶節點");
-                    return;
-                }
-                String targetNodeId = nodes.get(0).getId();
-
-                mActiveChannel = Tasks.await(Wearable.getChannelClient(this).openChannel(targetNodeId, UNIVERSAL_SYNC_PATH));
-                Log.d(TAG, "⚡ 藍牙 Channel 建立完畢，正在獲取傳輸輸出流...");
-                mChannelOutputStream = Tasks.await(Wearable.getChannelClient(this).getOutputStream(mActiveChannel));
-
-                mChannelCallback = new ChannelClient.ChannelCallback() {
-                    @Override
-                    public void onChannelClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCodeCode) {
-                        Log.w(TAG, "🛑 手錶端主動斷開了 Channel 管道，外部原因碼: " + closeReason);
-                        executeServiceShutdown();
-                    }
-                };
-                Wearable.getChannelClient(this).registerChannelCallback(mActiveChannel, mChannelCallback);
-
-                // 管道通了，點火相機
-                initCameraX();
-
-            } catch (Exception e) {
-                Log.e(TAG, "建立傳輸通道或點火相機失敗", e);
-                executeServiceShutdown();
-            }
-        }).start();
-    }
-
-    private void initCameraX() {
-        mainThreadInvoke(() -> {
-            try {
-                ListenableFuture<ProcessCameraProvider> providerFuture = ProcessCameraProvider.getInstance(this);
-                cameraProvider = providerFuture.get();
+                cameraProvider = cameraProviderFuture.get();
+                CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
 
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                         .setTargetResolution(new Size(320, 320))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build();
 
-                imageAnalysis.setAnalyzer(mStreamExecutor, this::processFrameAndStream);
-
-                CameraSelector cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA;
+                imageAnalysis.setAnalyzer(mStreamExecutor, this::processImageProxyFrame);
                 cameraProvider.unbindAll();
                 cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis);
-                Log.d(TAG, "🚀 CameraX 採集點火成功！開始向手錶噴射數據流...");
-
+                lifecycleRegistry.setCurrentState(Lifecycle.State.RESUMED);
+                Log.d(TAG, "✅ CameraX 核心資料流與分析器已成功與 Service 生命週期綁定。");
             } catch (Exception e) {
-                Log.e(TAG, "CameraX 初始化異常", e);
+                Log.e(TAG, "啟動 CameraX 失敗", e);
             }
-        });
+        }, ContextCompat.getMainExecutor(this));
     }
 
-    private void processFrameAndStream(@NonNull ImageProxy image) {
-        if (!isRunning) {
-            image.close();
-            return;
-        }
-
+    private void processImageProxyFrame(@NonNull ImageProxy image) {
+        if (!isRunning) { image.close(); return; }
         try {
-            if (image.getFormat() == ImageFormat.YUV_420_888) {
-                ImageProxy.PlaneProxy[] planes = image.getPlanes();
-                ByteBuffer yBuffer = planes[0].getBuffer();
-                ByteBuffer uBuffer = planes[1].getBuffer();
-                ByteBuffer vBuffer = planes[2].getBuffer();
-
-                int ySize = yBuffer.remaining();
-                int uSize = uBuffer.remaining();
-                int vSize = vBuffer.remaining();
-
-                byte[] nv21 = new byte[ySize + uSize + vSize];
-                yBuffer.get(nv21, 0, ySize);
-                vBuffer.get(nv21, ySize, vSize);
-                uBuffer.get(nv21, ySize + vSize, uSize);
-
-                YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                // 保持原汁原味的高畫質壓縮
-                yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 85, out);
-                byte[] jpegData = out.toByteArray();
-
-                synchronized (mLock) {
-                    if (mChannelOutputStream != null && isRunning) {
-                        // ✨ 對齊能亮屏的版本：直接寫入原始 JPEG 字節，沒有任何多餘的長度頭
-                        mChannelOutputStream.write(jpegData);
-                        mChannelOutputStream.flush();
+            if (mChannelOutputStream == null) {
+                initChannelConnectionSync();
+            }
+            if (mChannelOutputStream != null) {
+                byte[] jpegBytes = convertYuvToJpeg(image);
+                if (jpegBytes != null && jpegBytes.length > 0) {
+                    synchronized (mLock) {
+                        if (mChannelOutputStream != null) {
+                            ByteBuffer buffer = ByteBuffer.allocate(4 + jpegBytes.length);
+                            buffer.putInt(jpegBytes.length);
+                            buffer.put(jpegBytes);
+                            mChannelOutputStream.write(buffer.array());
+                            mChannelOutputStream.flush();
+                        }
                     }
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "傳輸影像影格失敗", e);
+            Log.e(TAG, "寫入 Channel 資料流發生異常，主動斷開連線以觸發重連", e);
+            closeChannelSafely();
         } finally {
             image.close();
         }
     }
 
-    private void executeServiceShutdown() {
-        isRunning = false;
-        mainThreadInvoke(() -> {
+    private void initChannelConnectionSync() {
+        synchronized (mLock) {
+            if (mChannelOutputStream != null) return;
             try {
-                lifecycleRegistry.setCurrentState(Lifecycle.State.DESTROYED);
-                if (cameraProvider != null) {
-                    cameraProvider.unbindAll();
-                    cameraProvider = null;
-                }
-                closeChannelSafely();
-                stopForeground(true);
-                stopSelf();
-                Log.d(TAG, "🛑 相機背景採集服務已完全安全退出，硬體資源全部釋放。");
+                List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
+                if (nodes.isEmpty()) return;
+                String targetNodeId = nodes.get(0).getId();
+
+                mActiveChannel = Tasks.await(Wearable.getChannelClient(this).openChannel(targetNodeId, CHANNEL_PATH));
+                mChannelOutputStream = Tasks.await(Wearable.getChannelClient(this).getOutputStream(mActiveChannel));
+                Log.d(TAG, "🚀 唯一的 Channel 長連接管道已在同步鎖內初始化成功！");
             } catch (Exception e) {
-                Log.e(TAG, "執行銷毀流程異常", e);
+                Log.e(TAG, "建立 Channel 長連接失敗，等待下一訊框重試", e);
+                closeChannelSafely();
             }
-        });
+        }
+    }
+
+    private byte[] convertYuvToJpeg(ImageProxy image) {
+        try {
+            ImageProxy.PlaneProxy[] planes = image.getPlanes();
+            ByteBuffer yBuffer = planes[0].getBuffer();
+            ByteBuffer uBuffer = planes[1].getBuffer();
+            ByteBuffer vBuffer = planes[2].getBuffer();
+
+            int ySize = yBuffer.remaining();
+            int uSize = uBuffer.remaining();
+            int vSize = vBuffer.remaining();
+
+            byte[] nv21 = new byte[ySize + uSize + vSize];
+            yBuffer.get(nv21, 0, ySize);
+            vBuffer.get(nv21, ySize, vSize);
+            uBuffer.get(nv21, ySize + vSize, uSize);
+
+            YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 65, out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            Log.e(TAG, "YUV 轉換 JPEG 失敗", e);
+            return null;
+        }
     }
 
     private void closeChannelSafely() {
         synchronized (mLock) {
             try {
-                if (mChannelCallback != null) {
-                    Wearable.getChannelClient(this).unregisterChannelCallback(mChannelCallback);
-                    mChannelCallback = null;
-                }
                 if (mChannelOutputStream != null) {
+                    mChannelOutputStream.flush();
                     mChannelOutputStream.close();
                     mChannelOutputStream = null;
                 }
@@ -234,18 +198,23 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     Wearable.getChannelClient(this).close(mActiveChannel);
                     mActiveChannel = null;
                 }
+                Log.d(TAG, "🔒 唯一的 Channel 長連接管道已在同步鎖內安全釋放。");
             } catch (Exception e) {
-                Log.e(TAG, "釋放管道組件失敗", e);
+                Log.e(TAG, "關閉通道失敗", e);
             }
         }
     }
 
     @Override
     public void onDestroy() {
-        executeServiceShutdown();
-        if (mStreamExecutor != null) {
-            mStreamExecutor.shutdownNow();
+        isRunning = false; 
+        lifecycleRegistry.setCurrentState(Lifecycle.State.DESTROYED);
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
         }
+
+        mStreamExecutor.shutdownNow(); 
+        closeChannelSafely();
         super.onDestroy();
     }
 
@@ -260,9 +229,5 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) manager.createNotificationChannel(channel);
         }
-    }
-
-    private void mainThreadInvoke(Runnable r) {
-        new android.os.Handler(android.os.Looper.getMainLooper()).post(r);
     }
 }
