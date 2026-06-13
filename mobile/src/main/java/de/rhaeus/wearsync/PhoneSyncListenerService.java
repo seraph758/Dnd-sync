@@ -59,23 +59,21 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // ================= 3️⃣ 相機模塊：解決氧OS後台啟動被默默丟棄的致命傷 =================
+// ================= 3️⃣ 相機模塊：解決氧OS後台啟動被默默丟棄的致命傷（嚴格保留原本邏輯） =================
             if ("camera_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "📸 [中轉接收] 收到動作 Action: " + action);
-
+            
                 if ("START_CAMERA".equalsIgnoreCase(action)) {
                     Log.d(TAG, "🚀 [穿透啟動] 正在喚醒手機前台 Activity 以獲取 OxygenOS 前台啟動豁免權...");
                     
-                    // 🎯 核心解法：後台直接開服務會被 OxygenOS 默默殺死，必須先拉起 Activity 提權到前台！
                     Intent intent = new Intent(this, PhoneSyncMainActivity.class);
                     intent.setAction("ACTION_START_CAMERA_FLOW");
-                    // 注入頂級強勢 Flags，確保在鎖屏或後台狀態下能強制頂出
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
                                   | Intent.FLAG_ACTIVITY_CLEAR_TOP 
                                   | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     startActivity(intent);
                 } else {
-                    // WATCH_READY, TAKE_PICTURE, STOP_CAMERA 在 Activity 已經起來後，可以由後台直接傳遞給服務
+                    // WATCH_READY, TAKE_PICTURE, STOP_CAMERA 在 Activity 已經起來後，直接安全傳遞給 CameraService
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction(action);
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -85,6 +83,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
                     }
                 }
             }
+            
         } catch (Exception e) {
             Log.e(TAG, "解析手錶訊息失敗", e);
         }
