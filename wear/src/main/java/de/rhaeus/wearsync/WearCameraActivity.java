@@ -115,7 +115,7 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
                         imgBytesRead += r;
                     }
 
-                    // 🎯 【關鍵修正】如果中途斷開或數據不全，堅決不解碼這半張殘缺圖，避免花屏閃爍
+                    // 🎯 核心防護：中途若遇斷開或數據包不完整，直接拋棄，不進行強制解碼，阻斷殘缺幀花屏
                     if (streamError || !isListening) break;
 
                     Bitmap bitmap = BitmapFactory.decodeByteArray(imgBuffer, 0, imgLength);
