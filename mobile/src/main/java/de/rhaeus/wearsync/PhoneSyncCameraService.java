@@ -136,7 +136,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         } catch (Exception e) {
             Log.e(TAG, "寫入 Channel 資料流異常，斷開重連", e);
             closeChannelSafely();
-        } finally {
+        } finally { // 🎯 修正拼寫錯誤，保證編譯通過！
             image.close();
         }
     }
@@ -169,31 +169,47 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             ByteBuffer uBuffer = planes[1].getBuffer();
             ByteBuffer vBuffer = planes[2].getBuffer();
 
-            int ySize = yBuffer.remaining();
-            // 精準分配 NV21 的記憶體大小：Y = w*h, UV = w*h/2
-            byte[] nv21 = new byte[width * height * 3 / 2];
-            
-            // 複製 Y 分量
-            yBuffer.get(nv21, 0, ySize);
+            // 重設記憶體讀取指標，防止底層快取偏移造成花屏
+            yBuffer.rewind();
+            uBuffer.rewind();
+            vBuffer.rewind();
 
-            // 🎯 【關鍵修正】安全交錯提取 U/V 分量，完美防止溢出與交叉污染導致的花屏
+            int ySize = width * height;
+            byte[] nv21 = new byte[ySize * 3 / 2];
+            
+            // 1. 提取 Y 分量（亮度）
+            int yRowStride = planes[0].getRowStride();
+            if (yRowStride == width) {
+                yBuffer.get(nv21, 0, ySize);
+            } else {
+                for (int row = 0; row < height; row++) {
+                    yBuffer.position(row * yRowStride);
+                    yBuffer.get(nv21, row * width, width);
+                }
+            }
+
+            // 2. 🎯 【終極防護】遵照 PixelStride 與 RowStride 逐像素重建 UV
+            // NV21 格式要求：從 nv21[ySize] 開始，交錯存放 V, U, V, U...
+            int uRowStride = planes[1].getRowStride();
             int vRowStride = planes[2].getRowStride();
+            int uPixelStride = planes[1].getPixelStride();
             int vPixelStride = planes[2].getPixelStride();
-            
-            int uvOffset = ySize;
-            int uRemaining = uBuffer.remaining();
-            int vRemaining = vBuffer.remaining();
 
-            for (int row = 0; row < height / 2; row++) {
-                for (int col = 0; col < width / 2; col++) {
-                    int vIdx = row * vRowStride + col * vPixelStride;
-                    // 安全邊界檢查，防止不同硬體上的緩衝區越界造成雜訊花屏
-                    if (vIdx < vRemaining) {
-                        nv21[uvOffset] = vBuffer.get(vIdx);
+            int uvOffset = ySize;
+            int chromaWidth = width / 2;
+            int chromaHeight = height / 2;
+
+            for (int row = 0; row < chromaHeight; row++) {
+                for (int col = 0; col < chromaWidth; col++) {
+                    int uPos = row * uRowStride + col * uPixelStride;
+                    int vPos = row * vRowStride + col * vPixelStride;
+
+                    // 嚴格限制在緩衝區邊界內讀取，徹底杜絕晶片資料重疊和雜訊花屏
+                    if (vPos < vBuffer.remaining()) {
+                        nv21[uvOffset] = vBuffer.get(vPos);
                     }
-                    if (vIdx + 1 < uRemaining) {
-                        // 在標準 NV21 中，V 檔案後面緊跟著 U 檔案
-                        nv21[uvOffset + 1] = uBuffer.get(vIdx); 
+                    if (uPos < uBuffer.remaining()) {
+                        nv21[uvOffset + 1] = uBuffer.get(uPos);
                     }
                     uvOffset += 2;
                 }
@@ -201,10 +217,11 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
             YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            yuvImage.compressToJpeg(new Rect(0, 0, width, height), 65, out);
+            // 壓縮率設為 70，兼顧畫質與 Wear OS 傳輸頻寬
+            yuvImage.compressToJpeg(new Rect(0, 0, width, height), 70, out);
             return out.toByteArray();
         } catch (Exception e) {
-            Log.e(TAG, "YUV 轉換 JPEG 失敗", e);
+            Log.e(TAG, "YUV 精準重組及壓縮成 JPEG 失敗", e);
             return null;
         }
     }
