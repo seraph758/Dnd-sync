@@ -32,7 +32,6 @@ import androidx.lifecycle.LifecycleRegistry;
 
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.ChannelClient;
-import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 import com.google.common.util.concurrent.ListenableFuture;
 
@@ -41,7 +40,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -52,7 +50,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
     private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
     private final ExecutorService mStreamExecutor = Executors.newSingleThreadExecutor();
-    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private ChannelClient.ChannelCallback mChannelCallback;
 
     private ProcessCameraProvider cameraProvider;
     private ChannelClient.Channel mActiveChannel;
@@ -69,20 +67,50 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     public void onCreate() {
         super.onCreate();
         lifecycleRegistry.setCurrentState(Lifecycle.State.CREATED);
-        Log.d(TAG, "✅ [🎉 點火成功] PhoneSyncCameraService 已成功創建！");
+        
+        // 🎯 監聽手錶端主動開啟通道的事件
+        setupPhoneChannelListener();
+        Wearable.getChannelClient(this).registerChannelCallback(mChannelCallback);
+        Log.d(TAG, "✅ [🎉 服務啟動] PhoneSyncCameraService 建立成功，等待手錶端通道接入...");
+    }
+
+    private void setupPhoneChannelListener() {
+        mChannelCallback = new ChannelClient.ChannelCallback() {
+            @Override
+            public void onChannelOpened(@NonNull ChannelClient.Channel channel) {
+                if ("/wear-camera-stream".equals(channel.getPath())) {
+                    mActiveChannel = channel;
+                    mStreamExecutor.execute(() -> {
+                        try {
+                            mChannelOutputStream = Tasks.await(Wearable.getChannelClient(PhoneSyncCameraService.this).getOutputStream(channel));
+                            Log.d(TAG, "🎯 [通道對齊成功] 已成功獲取傳輸輸出流！");
+                        } catch (Exception e) {
+                            Log.e(TAG, "🚨 獲取通道輸出流失敗", e);
+                        }
+                    });
+                }
+            }
+
+            @Override
+            public void onChannelClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
+                if (channel == mActiveChannel) {
+                    Log.d(TAG, "🛑 手錶端關閉了傳輸通道");
+                    stopSelf();
+                }
+            }
+        };
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) return START_NOT_STICKY;
         String action = intent.getAction();
-        Log.d(TAG, "🎬 Service 收到運作指令: " + action);
+        Log.d(TAG, "🎬 Service 收到運行動作: " + action);
 
         if ("START_CAMERA".equalsIgnoreCase(action)) {
             showNotificationAndStartForeground();
             isRunning = true;
             lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
-            setupActiveChannel();
         }
 
         if ("WATCH_READY".equalsIgnoreCase(action)) {
@@ -92,14 +120,13 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         }
 
         if ("TAKE_PICTURE".equalsIgnoreCase(action)) {
+            Log.d(TAG, "📸 收到拍照信號，準備切換至 95 高清保存...");
             mIsCaptureRequested = true;
         }
 
         if ("STOP_CAMERA".equalsIgnoreCase(action)) {
             isRunning = false;
-            if (cameraProvider != null) {
-                cameraProvider.unbindAll();
-            }
+            if (cameraProvider != null) cameraProvider.unbindAll();
             sendCameraControlToWatchLive(this, "STOP_CAMERA");
             closeChannelSafely();
             stopForeground(true);
@@ -129,21 +156,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         }
     }
 
-    private void setupActiveChannel() {
-        mStreamExecutor.execute(() -> {
-            try {
-                List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
-                if (nodes.isEmpty()) return;
-                String nodeId = nodes.get(0).getId();
-                mActiveChannel = Tasks.await(Wearable.getChannelClient(this).openChannel(nodeId, "/wear-camera-stream"));
-                mChannelOutputStream = Tasks.await(Wearable.getChannelClient(this).getOutputStream(mActiveChannel));
-                Log.d(TAG, "🚀 [/wear-camera-stream] 傳輸通道開通成功，等待手錶回應 WATCH_READY");
-            } catch (Exception e) {
-                Log.e(TAG, "🚨 建立通道失敗", e);
-            }
-        });
-    }
-
     private void startCameraXDataStream() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(() -> {
@@ -151,7 +163,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 cameraProvider = cameraProviderFuture.get();
                 cameraProvider.unbindAll();
 
-                // 🎯 採用標準 4:3 高相容性解析度，徹底避開硬體不支持 1:1 分辨率引起的抽樣混亂
                 ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                         .setTargetResolution(new Size(640, 480))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -200,12 +211,11 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             }
         } catch (Exception e) {
             Log.e(TAG, "傳輸影像影格失敗", e);
-        } final {
+        } finally {
             image.close();
         }
     }
 
-    // 🎯 根治手錶端實時預覽花屏的核心：逐行修剪記憶體步長，完美還原純淨 YUV 流
     private byte[] convertYuvToJpeg(ImageProxy image, int quality) {
         try {
             int width = image.getWidth();
@@ -217,27 +227,24 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             ByteBuffer vBuffer = planes[2].getBuffer();
 
             int yRowStride = planes[0].getRowStride();
-            int uRowStride = planes[1].getRowStride();
             int vRowStride = planes[2].getRowStride();
             int uvPixelStride = planes[1].getPixelStride();
 
-            // 建立標準的緊湊 NV21 陣列空間
             byte[] nv21 = new byte[width * height * 3 / 2];
 
-            // 1. 逐行複製 Y 分量，嚴格剔除每行末尾一加 12 硬體產生的補零字節（Padding）
+            // 1. 逐行複製 Y，剔除一加 12 尾部的 Padding
             for (int i = 0; i < height; i++) {
                 yBuffer.position(i * yRowStride);
                 yBuffer.get(nv21, i * width, width);
             }
 
-            // 2. 逐行逐像素精確提取 U/V 分量，徹底抹平 Stride 錯位引起的花屏綠條
+            // 2. 逐像素精確還原 U/V 分量
             int uvIdx = width * height;
             for (int row = 0; row < height / 2; row++) {
                 int vPos = row * vRowStride;
-                int uPos = row * uRowStride;
                 for (int col = 0; col < width / 2; col++) {
                     nv21[uvIdx++] = vBuffer.get(vPos + col * uvPixelStride);
-                    nv21[uvIdx++] = uBuffer.get(uPos + col * uvPixelStride);
+                    nv21[uvIdx++] = uBuffer.get(vPos + col * uvPixelStride - 1); // U分量緊鄰
                 }
             }
 
@@ -286,13 +293,8 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 json.put("type", "camera_control");
                 json.put("action", action);
                 byte[] data = json.toString().getBytes(StandardCharsets.UTF_8);
-                List<Node> nodes = Tasks.await(Wearable.getNodeClient(context).getConnectedNodes());
-                for (Node n : nodes) {
-                    Wearable.getMessageClient(context).sendMessage(n.getId(), UNIVERSAL_SYNC_PATH, data);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "向手錶發信失敗", e);
-            }
+                Wearable.getMessageClient(context).sendMessage("NO_MATTER_WHICH_NODE", UNIVERSAL_SYNC_PATH, data);
+            } catch (Exception e) { Log.e(TAG, "發信失敗", e); }
         }).start();
     }
 
@@ -307,6 +309,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     public void onDestroy() {
         isRunning = false;
         lifecycleRegistry.setCurrentState(Lifecycle.State.DESTROYED);
+        if (mChannelCallback != null) Wearable.getChannelClient(this).unregisterChannelCallback(mChannelCallback);
         if (cameraProvider != null) cameraProvider.unbindAll();
         closeChannelSafely();
         mStreamExecutor.shutdownNow();
