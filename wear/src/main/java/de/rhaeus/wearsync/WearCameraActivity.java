@@ -37,7 +37,7 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     
     private ChannelClient.ChannelCallback mChannelCallback;
-    private ChannelClient.Channel mOpenedChannel = null;
+    private ChannelClient.Channel mActiveChannel = null;
     private volatile boolean isListening = false;
 
     @Override
@@ -50,17 +50,40 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
         tvCountdown = findViewById(R.id.tvCountdown);
         btnCapture = findViewById(R.id.btnCapture);
 
+        btnCapture.setEnabled(false);
+        btnCapture.setText("連線中...");
         btnCapture.setOnClickListener(v -> startCountdown());
 
-        // 註冊 Message 控制監聽器
         Wearable.getMessageClient(this).addListener(this);
 
-        // 註冊 Channel 接收通道監聽器
+        // 1. 註冊通道回調
         setupChannelCallback();
         Wearable.getChannelClient(this).registerChannelCallback(mChannelCallback);
 
-        Log.d(TAG, "⌚ 手錶觀景窗就緒，發送 START_CAMERA 信號...");
+        // 2. 🎯 先發送 START_CAMERA 讓手機端 Listener 和 MainActivity 提權準備好
+        Log.d(TAG, "⌚ 手錶端啟動，通知手機相機服務提權準備...");
         notifyPhoneCameraService("START_CAMERA");
+
+        // 3. 🎯 核心修正：延時 300 毫秒，由手錶端主動發起通道建立，打破氧OS後台丟棄死結
+        mainHandler.postDelayed(this::openStreamChannelFromWatch, 300);
+    }
+
+    private void openStreamChannelFromWatch() {
+        new Thread(() -> {
+            try {
+                List<Node> nodes = Tasks.await(Wearable.getNodeClient(this).getConnectedNodes());
+                if (nodes.isEmpty()) {
+                    Log.e(TAG, "❌ 未找到配對的手機節點");
+                    return;
+                }
+                String nodeId = nodes.get(0).getId();
+                Log.d(TAG, "🚀 手錶端主動向手機開通傳輸通道: /wear-camera-stream");
+                // 這裡會觸發兩端的 onChannelOpened 回調
+                Tasks.await(Wearable.getChannelClient(this).openChannel(nodeId, "/wear-camera-stream"));
+            } catch (Exception e) {
+                Log.e(TAG, "🚨 手錶主動建立通道失敗", e);
+            }
+        }).start();
     }
 
     @Override
@@ -72,14 +95,16 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
             String action = json.optString("action", "");
 
             if ("STOP_CAMERA".equalsIgnoreCase(action)) {
-                Log.w(TAG, "🛑 收到手機端主動關閉信號，滑順退出");
                 mainHandler.post(this::finish);
             } else if ("TAKE_PICTURE_DONE".equalsIgnoreCase(action)) {
                 mainHandler.post(() -> {
                     if (tvCountdown != null) tvCountdown.setText("✅ 已存檔");
                     mainHandler.postDelayed(() -> {
                         if (tvCountdown != null) tvCountdown.setVisibility(View.GONE);
-                        if (btnCapture != null) btnCapture.setEnabled(true);
+                        if (btnCapture != null) {
+                            btnCapture.setEnabled(true);
+                            btnCapture.setText("拍照");
+                        }
                     }, 1000);
                 });
             }
@@ -93,21 +118,18 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
             @Override
             public void onChannelOpened(@NonNull ChannelClient.Channel channel) {
                 if ("/wear-camera-stream".equals(channel.getPath())) {
-                    mOpenedChannel = channel;
+                    Log.d(TAG, "⚡ 通道已雙向打通，準備讀取影像流...");
+                    mActiveChannel = channel;
                     isListening = true;
-                    Log.d(TAG, "🤝 [/wear-camera-stream] 管道已捕獲，開始獲取輸入流...");
-                    
-                    // 異步啟動不阻塞的流解碼執行緒
                     new Thread(() -> readAndDecodeCameraStream(channel)).start();
                 }
             }
 
             @Override
             public void onChannelClosed(@NonNull ChannelClient.Channel channel, int closeReason, int appSpecificErrorCode) {
-                if (channel == mOpenedChannel) {
-                    Log.d(TAG, "🔒 管道關閉");
+                if (channel == mActiveChannel) {
                     isListening = false;
-                    mOpenedChannel = null;
+                    mActiveChannel = null;
                     mainHandler.post(() -> finish());
                 }
             }
@@ -116,23 +138,49 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
 
     private void readAndDecodeCameraStream(ChannelClient.Channel channel) {
         try (InputStream is = Tasks.await(Wearable.getChannelClient(this).getInputStream(channel))) {
-            Log.d(TAG, "✅ 步驟 2：手錶端 InputStream 已完全就緒！立刻發回安全點火信號 WATCH_READY...");
+            // 通道一開，立刻通知手機端：手錶準備好了，手機可以噴射 CameraX 數據流了！
             notifyPhoneCameraService("WATCH_READY");
 
-            // 🎯 核心回歸：不再用大端序計算長度去拆包！直接利用 decodeStream 自動捕捉 JPEG 幀
+            byte[] headerBuffer = new byte[4];
+            
             while (isListening) {
-                Bitmap bitmap = BitmapFactory.decodeStream(is);
-                if (bitmap == null) {
-                    // 如果流斷開或為空，安全跳出，絕不產生執行緒死鎖
-                    break;
+                int headerBytesRead = 0;
+                while (headerBytesRead < 4 && isListening) {
+                    int read = is.read(headerBuffer, headerBytesRead, 4 - headerBytesRead);
+                    if (read == -1) { isListening = false; break; }
+                    headerBytesRead += read;
                 }
-                
-                mainHandler.post(() -> {
-                    if (frameView != null) frameView.setImageBitmap(bitmap);
-                });
+                if (!isListening) break;
+
+                int frameLength = ((headerBuffer[0] & 0xFF) << 24)
+                                | ((headerBuffer[1] & 0xFF) << 16)
+                                | ((headerBuffer[2] & 0xFF) << 8)
+                                | (headerBuffer[3] & 0xFF);
+
+                if (frameLength <= 0 || frameLength > 2 * 1024 * 1024) continue;
+
+                byte[] imgBytes = new byte[frameLength];
+                int imgBytesRead = 0;
+                while (imgBytesRead < frameLength && isListening) {
+                    int read = is.read(imgBytes, imgBytesRead, frameLength - imgBytesRead);
+                    if (read == -1) { isListening = false; break; }
+                    imgBytesRead += read;
+                }
+                if (!isListening) break;
+
+                Bitmap bitmap = BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.length);
+                if (bitmap != null) {
+                    mainHandler.post(() -> {
+                        if (btnCapture != null && !btnCapture.isEnabled() && "連線中...".equals(btnCapture.getText())) {
+                            btnCapture.setEnabled(true);
+                            btnCapture.setText("拍照");
+                        }
+                        if (frameView != null) frameView.setImageBitmap(bitmap);
+                    });
+                }
             }
         } catch (Exception e) {
-            Log.e(TAG, "流式解碼影像異常", e);
+            Log.e(TAG, "影像流拆包解碼異常", e);
         }
     }
 
@@ -185,15 +233,10 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
             Wearable.getChannelClient(this).unregisterChannelCallback(mChannelCallback);
         }
         mainHandler.removeCallbacksAndMessages(null);
-        
-        // 通知手機端迅速釋放相機
         notifyPhoneCameraService("STOP_CAMERA");
-        
-        if (mOpenedChannel != null) {
-            try {
-                Wearable.getChannelClient(this).close(mOpenedChannel);
-            } catch (Exception ignored) {}
-            mOpenedChannel = null;
+        if (mActiveChannel != null) {
+            try { Wearable.getChannelClient(this).close(mActiveChannel); } catch (Exception ignored) {}
+            mActiveChannel = null;
         }
         super.onDestroy();
     }
