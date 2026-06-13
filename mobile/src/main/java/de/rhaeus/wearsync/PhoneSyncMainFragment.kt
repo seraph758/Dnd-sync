@@ -214,9 +214,23 @@ class PhoneSyncMainFragment : Fragment() {
                                 }
                             }
 
-                            // 🧪 偵錯功能：拉起遠端相機控制
+                            // 🧪 偵錯功能：拉起遠端相機控制（改用標準 Intent 路由投遞，避免調用不存在的靜態方法）
                             Button(
-                                onClick = { PhoneSyncCameraService.sendCameraControlToWatchLive(requireContext(), "START_CAMERA") },
+                                onClick = {
+                                    try {
+                                        val context = requireContext()
+                                        val svcIntent = Intent(context, PhoneSyncCameraService::class.java)
+                                        svcIntent.action = "START_CAMERA"
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                            context.startForegroundService(svcIntent)
+                                        } else {
+                                            context.startService(svcIntent)
+                                        }
+                                        Log.d("WearSync_Main", "🧪 用户点击测试按钮，发送 START_CAMERA 启动背景相机流")
+                                    } catch (e: Exception) {
+                                        Log.e("WearSync_Main", "通过控制台启动相机服务失败", e)
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
                                 shape = RoundedCornerShape(12.dp)
@@ -224,7 +238,7 @@ class PhoneSyncMainFragment : Fragment() {
                                 Text("🧪 调试：拉起远端相机控制", fontSize = 15.sp, fontWeight = FontWeight.Bold) 
                             }
 
-                            // 🎯【新增紅色安全按鈕】：當相機已授權時，在控制台最底部提供一鍵強制釋放手機相機硬體與背景服務的開關
+                            // 🎯【紅色安全按鈕】：當相機已授權時，在控制台最底部提供一鍵強制釋放手機相機硬體與背景服務的開關
                             if (isCameraAllowedState.value) {
                                 Button(
                                     onClick = {
@@ -242,7 +256,7 @@ class PhoneSyncMainFragment : Fragment() {
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.fillMaxWidth().height(50.dp)
                                 ) {
-                                    Text("❌ 强制关闭手机相機背景服务", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold) 
+                                    Text("❌ 强制关闭手机相机背景服务", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold) 
                                 }
                             }
                         }
