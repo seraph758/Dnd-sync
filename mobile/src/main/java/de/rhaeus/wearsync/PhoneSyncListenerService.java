@@ -30,7 +30,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
 
             if ("phone".equalsIgnoreCase(sender)) return;
 
-            // 1️⃣ 勿扰板块 (原生逻辑，完全不动)
+            // 1️⃣ 勿擾板塊
             if ("dnd".equalsIgnoreCase(type)) {
                 int dndVal = json.optInt("dnd_profile_value", -1);
                 if (dndVal != -1) {
@@ -38,39 +38,37 @@ public class PhoneSyncListenerService extends WearableListenerService {
                     if (nm != null) {
                         isInternalUpdate = true;
                         nm.setInterruptionFilter(dndVal);
-                        Log.d(TAG, "🌙 [同步成功] 已同步手錶端的勿擾狀態值: " + dndVal);
+                        Log.d(TAG, "🌙 勿擾狀態值同步: " + dndVal);
                     }
                 }
                 return;
             }
 
-            // 2️⃣ 自动化板块 (🎯 已经精准对接你真正的类名: PhoneSyncNotificationService)
+            // 2️⃣ 自動化板塊
             if ("notification_action".equalsIgnoreCase(type)) {
                 if ("SNOOZE".equalsIgnoreCase(action)) {
                     if (PhoneSyncNotificationService.snoozePendingIntent != null) {
                         PhoneSyncNotificationService.snoozePendingIntent.send();
-                        Log.d(TAG, "🎯 [自动化成功] 已代用户点击手机通知栏「延后/稍后提醒」按钮");
-                    } else {
-                        Log.w(TAG, "⚠️ 触发点击失败：手机端暂未捕获到合法的延后 PendingIntent");
                     }
                 }
                 return;
             }
 
-            // 3️⃣ 相机控制板块 (配合 Android 14+ 前台拉起豁免)
+            // 3️⃣ 相機控制板塊（嚴格走 Activity 前台跳板，突破 Android 14 後台 FGS 限制）
             if ("camera_control".equalsIgnoreCase(type)) {
-                Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
+                Log.d(TAG, "📸 [中轉接收] 收到動作 Action: " + action);
 
                 if ("START_CAMERA".equalsIgnoreCase(action)) {
-                    Log.d(TAG, "⚡ [換思路] 接收到 START_CAMERA，正在強制拉起手機前台 UI 以獲取前台豁免權...");
+                    // 拉起 Activity 獲取前台權限
                     Intent mainIntent = new Intent(this, PhoneSyncMainActivity.class);
-                    mainIntent.setAction("ACTION_SHOW_CAMERA_UI");
+                    mainIntent.setAction("ACTION_START_CAMERA_FLOW");
+                    mainIntent.putExtra("camera_action", action);
                     mainIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
                                       | Intent.FLAG_ACTIVITY_CLEAR_TOP 
                                       | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     startActivity(mainIntent);
-                } 
-                else {
+                } else {
+                    // WATCH_READY, TAKE_PICTURE, STOP_CAMERA 直接送至 Service 處理
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction(action);
                     startService(svc);
