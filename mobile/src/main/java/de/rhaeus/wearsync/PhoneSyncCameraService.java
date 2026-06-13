@@ -136,7 +136,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         } catch (Exception e) {
             Log.e(TAG, "寫入 Channel 資料流異常，斷開重連", e);
             closeChannelSafely();
-        } finaly {
+        } finally {
             image.close();
         }
     }
