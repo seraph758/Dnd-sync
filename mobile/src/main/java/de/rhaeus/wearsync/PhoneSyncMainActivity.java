@@ -38,26 +38,12 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
     }
 
     private void handleIncomingIntent(Intent intent) {
-        if (intent != null && "ACTION_SHOW_CAMERA_UI".equals(intent.getAction())) {
-            Log.d(TAG, "🚀 手機前台 UI 激活就緒，名正言順啟動相機前台服務...");
+        if (intent != null && "ACTION_START_CAMERA_FLOW".equals(intent.getAction())) {
+            String cameraAction = intent.getStringExtra("camera_action");
+            Log.d(TAG, "🚀 手機主 UI 已位於前台，合法拉起相機 FGS 服務...");
             Intent serviceIntent = new Intent(this, PhoneSyncCameraService.class);
-            serviceIntent.setAction("START_CAMERA");
+            serviceIntent.setAction(cameraAction);
             ContextCompat.startForegroundService(this, serviceIntent);
         }
     }
-
-    @Override
-    protected void onDestroy() {
-        Log.d(TAG, "🏁 手機主 UI 退出，執行聯動清理，徹底關閉相機服務...");
-        Intent stopIntent = new Intent(this, PhoneSyncCameraService.class);
-        stopIntent.setAction("STOP_CAMERA");
-        startService(stopIntent);
-        super.onDestroy();
-    }
-
-    @Override
-    protected void onResume() { super.onResume(); }
-
-    @Override
-    protected void onPause() { super.onPause(); }
 }
