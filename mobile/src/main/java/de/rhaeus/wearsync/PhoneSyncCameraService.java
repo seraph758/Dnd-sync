@@ -48,7 +48,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
     private final LifecycleRegistry lifecycleRegistry = new LifecycleRegistry(this);
     private ProcessCameraProvider cameraProvider;
     private ExecutorService mStreamExecutor;
-    
+
     private final Object mLock = new Object();
     private ChannelClient.Channel mActiveChannel = null;
     private OutputStream mChannelOutputStream = null;
@@ -75,7 +75,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         if ("START_CAMERA".equalsIgnoreCase(action)) {
             if (!isRunning) {
                 isRunning = true;
-                // 构建前台通知並將小圖標修正為 R.mipmap.ic_launcher
                 Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                         .setContentTitle("WearSync 相機同步中")
                         .setContentText("正在為手錶端提供即時相機畫面流...")
@@ -107,7 +106,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 cameraProvider.unbindAll();
                 cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis);
                 lifecycleRegistry.setCurrentState(Lifecycle.State.RESUMED);
-                Log.d(TAG, "✅ CameraX 核心資料流與分析器已成功與 Service 生命週期綁定。");
+                Log.d(TAG, "✅ CameraX 核心資料流與分析器已綁定。");
             } catch (Exception e) {
                 Log.e(TAG, "啟動 CameraX 失敗", e);
             }
@@ -135,9 +134,9 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "寫入 Channel 資料流發生異常，主動斷開連線以觸發重連", e);
+            Log.e(TAG, "寫入 Channel 資料流異常，斷開重連", e);
             closeChannelSafely();
-        } finally {
+        } finaly {
             image.close();
         }
     }
@@ -152,9 +151,9 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
                 mActiveChannel = Tasks.await(Wearable.getChannelClient(this).openChannel(targetNodeId, CHANNEL_PATH));
                 mChannelOutputStream = Tasks.await(Wearable.getChannelClient(this).getOutputStream(mActiveChannel));
-                Log.d(TAG, "🚀 唯一的 Channel 長連接管道已在同步鎖內初始化成功！");
+                Log.d(TAG, "🚀 Channel 長連接管道初始化成功！");
             } catch (Exception e) {
-                Log.e(TAG, "建立 Channel 長連接失敗，等待下一訊框重試", e);
+                Log.e(TAG, "建立 Channel 失敗", e);
                 closeChannelSafely();
             }
         }
@@ -162,23 +161,47 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
     private byte[] convertYuvToJpeg(ImageProxy image) {
         try {
+            int width = image.getWidth();
+            int height = image.getHeight();
             ImageProxy.PlaneProxy[] planes = image.getPlanes();
+            
             ByteBuffer yBuffer = planes[0].getBuffer();
             ByteBuffer uBuffer = planes[1].getBuffer();
             ByteBuffer vBuffer = planes[2].getBuffer();
 
             int ySize = yBuffer.remaining();
-            int uSize = uBuffer.remaining();
-            int vSize = vBuffer.remaining();
-
-            byte[] nv21 = new byte[ySize + uSize + vSize];
+            // 精準分配 NV21 的記憶體大小：Y = w*h, UV = w*h/2
+            byte[] nv21 = new byte[width * height * 3 / 2];
+            
+            // 複製 Y 分量
             yBuffer.get(nv21, 0, ySize);
-            vBuffer.get(nv21, ySize, vSize);
-            uBuffer.get(nv21, ySize + vSize, uSize);
 
-            YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, image.getWidth(), image.getHeight(), null);
+            // 🎯 【關鍵修正】安全交錯提取 U/V 分量，完美防止溢出與交叉污染導致的花屏
+            int vRowStride = planes[2].getRowStride();
+            int vPixelStride = planes[2].getPixelStride();
+            
+            int uvOffset = ySize;
+            int uRemaining = uBuffer.remaining();
+            int vRemaining = vBuffer.remaining();
+
+            for (int row = 0; row < height / 2; row++) {
+                for (int col = 0; col < width / 2; col++) {
+                    int vIdx = row * vRowStride + col * vPixelStride;
+                    // 安全邊界檢查，防止不同硬體上的緩衝區越界造成雜訊花屏
+                    if (vIdx < vRemaining) {
+                        nv21[uvOffset] = vBuffer.get(vIdx);
+                    }
+                    if (vIdx + 1 < uRemaining) {
+                        // 在標準 NV21 中，V 檔案後面緊跟著 U 檔案
+                        nv21[uvOffset + 1] = uBuffer.get(vIdx); 
+                    }
+                    uvOffset += 2;
+                }
+            }
+
+            YuvImage yuvImage = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            yuvImage.compressToJpeg(new Rect(0, 0, image.getWidth(), image.getHeight()), 65, out);
+            yuvImage.compressToJpeg(new Rect(0, 0, width, height), 65, out);
             return out.toByteArray();
         } catch (Exception e) {
             Log.e(TAG, "YUV 轉換 JPEG 失敗", e);
@@ -198,7 +221,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
                     Wearable.getChannelClient(this).close(mActiveChannel);
                     mActiveChannel = null;
                 }
-                Log.d(TAG, "🔒 唯一的 Channel 長連接管道已在同步鎖內安全釋放。");
+                Log.d(TAG, "🔒 Channel 長連接管道安全釋放。");
             } catch (Exception e) {
                 Log.e(TAG, "關閉通道失敗", e);
             }
@@ -212,7 +235,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
         }
-
         mStreamExecutor.shutdownNow(); 
         closeChannelSafely();
         super.onDestroy();
