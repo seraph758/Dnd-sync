@@ -30,7 +30,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
 
             if ("phone".equalsIgnoreCase(sender)) return;
 
-            // 1️⃣ 勿扰板块 (完全保留不碰)
+            // 1️⃣ 勿扰板块 (原生逻辑，完全不动)
             if ("dnd".equalsIgnoreCase(type)) {
                 int dndVal = json.optInt("dnd_profile_value", -1);
                 if (dndVal != -1) {
@@ -44,11 +44,11 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 2️⃣ 自动化板块 (完全保留不碰)
+            // 2️⃣ 自动化板块 (🎯 已经精准对接你真正的类名: PhoneSyncNotificationService)
             if ("notification_action".equalsIgnoreCase(type)) {
                 if ("SNOOZE".equalsIgnoreCase(action)) {
-                    if (PhoneSyncNotificationListenerService.snoozePendingIntent != null) {
-                        PhoneSyncNotificationListenerService.snoozePendingIntent.send();
+                    if (PhoneSyncNotificationService.snoozePendingIntent != null) {
+                        PhoneSyncNotificationService.snoozePendingIntent.send();
                         Log.d(TAG, "🎯 [自动化成功] 已代用户点击手机通知栏「延后/稍后提醒」按钮");
                     } else {
                         Log.w(TAG, "⚠️ 触发点击失败：手机端暂未捕获到合法的延后 PendingIntent");
@@ -57,7 +57,7 @@ public class PhoneSyncListenerService extends WearableListenerService {
                 return;
             }
 
-            // 3️⃣ 相机控制板块
+            // 3️⃣ 相机控制板块 (配合 Android 14+ 前台拉起豁免)
             if ("camera_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "📸 [中轉接收] 收到手錶端相機動作 Action: " + action);
 
