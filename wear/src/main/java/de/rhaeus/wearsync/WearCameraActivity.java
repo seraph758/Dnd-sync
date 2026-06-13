@@ -12,7 +12,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
-import androidx.annotation.NonNull; // 🎯 補上了這個核心引包，解決編譯報錯
+import androidx.annotation.NonNull;
 
 import com.google.android.gms.tasks.Tasks;
 import com.google.android.gms.wearable.ChannelClient;
@@ -35,7 +35,7 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     private Button btnCapture;
     private int countdown = 3;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    
+
     private ChannelClient.ChannelCallback mChannelCallback;
     private ChannelClient.Channel mActiveChannel = null;
     private volatile boolean isListening = false;
@@ -52,13 +52,8 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
 
         btnCapture.setOnClickListener(v -> startCountdownFlow());
 
-        // 註冊 Wearable 訊息監聽器
         Wearable.getMessageClient(this).addListener(this);
-
-        // 初始化長連接 Channel 監聽回調
         setupChannelStreamListener();
-
-        // 喚醒手機端相機
         notifyPhoneCameraService("START_CAMERA");
     }
 
@@ -93,7 +88,6 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
                 byte[] lengthBuffer = new byte[4];
 
                 while (isListening && mActiveChannel != null) {
-                    // 讀取 JPEG 數據長度
                     int bytesRead = 0;
                     while (bytesRead < 4) {
                         int r = is.read(lengthBuffer, bytesRead, 4 - bytesRead);
@@ -108,19 +102,29 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
 
                     if (imgLength <= 0 || imgLength > 2000000) continue;
 
-                    // 讀取 JPEG 實體數據
                     byte[] imgBuffer = new byte[imgLength];
                     int imgBytesRead = 0;
+                    boolean streamError = false;
+                    
                     while (imgBytesRead < imgLength) {
                         int r = is.read(imgBuffer, imgBytesRead, imgLength - imgBytesRead);
-                        if (r == -1) throw new Exception("Stream EOF mid-frame");
+                        if (r == -1) {
+                            streamError = true;
+                            break;
+                        }
                         imgBytesRead += r;
                     }
 
-                    // 解碼影像並在主線程渲染
+                    // 🎯 【關鍵修正】如果中途斷開或數據不全，堅決不解碼這半張殘缺圖，避免花屏閃爍
+                    if (streamError || !isListening) break;
+
                     Bitmap bitmap = BitmapFactory.decodeByteArray(imgBuffer, 0, imgLength);
-                    if (bitmap != null) {
-                        mainHandler.post(() -> frameView.setImageBitmap(bitmap));
+                    if (bitmap != null && isListening) {
+                        mainHandler.post(() -> {
+                            if (isListening) {
+                                frameView.setImageBitmap(bitmap);
+                            }
+                        });
                     }
                 }
             } catch (Exception e) {
