@@ -108,11 +108,17 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
         String action = intent.getAction();
         Log.d(TAG, "🎬 Service 收到運行動作: " + action);
 
-        if ("START_CAMERA".equalsIgnoreCase(action)) {
+        // 🎯 [鋼鐵防禦]：不論是什麼 Action 進來，只要服務還沒轉入前台，第一時間掛上通知欄，
+        // 徹底根治 ForegroundServiceDidNotStartInTimeException 系統強殺！
+        if (!isRunning && !"STOP_CAMERA".equalsIgnoreCase(action)) {
             showNotificationAndStartForeground();
             isRunning = true;
             lifecycleRegistry.setCurrentState(Lifecycle.State.STARTED);
-            // ⚠️ [通行證協議核心]：這裡只拉起前台服務，絕對不點火相機，不向緩衝區噴射任何數據！
+        }
+
+        if ("START_CAMERA".equalsIgnoreCase(action)) {
+            // 提示：狀態已在上方防禦中安全建立，此時相機硬體保持熄火，等待手錶通行證
+            Log.d(TAG, "ℹ️ 服務前台環境已就緒，等待手錶端發送 WATCH_READY 通行證...");
         }
 
         if ("WATCH_READY".equalsIgnoreCase(action)) {
@@ -130,7 +136,6 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
         if ("STOP_CAMERA".equalsIgnoreCase(action)) {
             isRunning = false;
-            // 🎯 [空指針防禦]：防止異步加載未完成時調用導致進程崩潰
             if (cameraProvider != null) {
                 cameraProvider.unbindAll();
             }
@@ -142,6 +147,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
 
         return START_NOT_STICKY;
     }
+
 
     private void showNotificationAndStartForeground() {
         createNotificationChannel();
