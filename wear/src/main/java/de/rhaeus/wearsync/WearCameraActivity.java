@@ -22,6 +22,7 @@ import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.Wearable;
 
 import org.json.JSONObject;
+import java.io.DataInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -52,19 +53,22 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
 
         btnCapture.setEnabled(false);
         btnCapture.setText("連線中...");
+        
+        // 🎯 點擊拍照按鈕執行倒數
         btnCapture.setOnClickListener(v -> startCountdown());
+
+        // 🎯 如果畫面有設計「關閉」按鈕，可以綁定此點擊事件直接整體退出
+        // findViewById(R.id.btnClose).setOnClickListener(v -> finish());
 
         Wearable.getMessageClient(this).addListener(this);
 
-        // 1. 註冊通道回調
         setupChannelCallback();
         Wearable.getChannelClient(this).registerChannelCallback(mChannelCallback);
 
-        // 2. 🎯 先發送 START_CAMERA 讓手機端 Listener 和 MainActivity 提權準備好
         Log.d(TAG, "⌚ 手錶端啟動，通知手機相機服務提權準備...");
         notifyPhoneCameraService("START_CAMERA");
 
-        // 3. 🎯 核心修正：延時 300 毫秒，由手錶端主動發起通道建立，打破氧OS後台丟棄死結
+        // 延時 300 毫秒由手錶端主動開闢通道
         mainHandler.postDelayed(this::openStreamChannelFromWatch, 300);
     }
 
@@ -78,7 +82,6 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
                 }
                 String nodeId = nodes.get(0).getId();
                 Log.d(TAG, "🚀 手錶端主動向手機開通傳輸通道: /wear-camera-stream");
-                // 這裡會觸發兩端的 onChannelOpened 回調
                 Tasks.await(Wearable.getChannelClient(this).openChannel(nodeId, "/wear-camera-stream"));
             } catch (Exception e) {
                 Log.e(TAG, "🚨 手錶主動建立通道失敗", e);
@@ -95,6 +98,7 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
             String action = json.optString("action", "");
 
             if ("STOP_CAMERA".equalsIgnoreCase(action)) {
+                // 🎯 收到停止信號，整體調用 finish() 退出
                 mainHandler.post(this::finish);
             } else if ("TAKE_PICTURE_DONE".equalsIgnoreCase(action)) {
                 mainHandler.post(() -> {
@@ -137,36 +141,22 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
     }
 
     private void readAndDecodeCameraStream(ChannelClient.Channel channel) {
-        try (InputStream is = Tasks.await(Wearable.getChannelClient(this).getInputStream(channel))) {
-            // 通道一開，立刻通知手機端：手錶準備好了，手機可以噴射 CameraX 數據流了！
+        try (InputStream is = Tasks.await(Wearable.getChannelClient(this).getInputStream(channel));
+             DataInputStream dis = new DataInputStream(is)) { // 🎯 用 DataInputStream 進行鐵壁包裝
+             
+            // 🎯 [通行證協議核心]：手錶端此時 Input 管道和介面已完全就緒，正式發放通行證通知手機點火相機！
+            Log.d(TAG, "🎫 手錶端就緒，向手機發送通行證：WATCH_READY");
             notifyPhoneCameraService("WATCH_READY");
 
-            byte[] headerBuffer = new byte[4];
-            
             while (isListening) {
-                int headerBytesRead = 0;
-                while (headerBytesRead < 4 && isListening) {
-                    int read = is.read(headerBuffer, headerBytesRead, 4 - headerBytesRead);
-                    if (read == -1) { isListening = false; break; }
-                    headerBytesRead += read;
-                }
-                if (!isListening) break;
-
-                int frameLength = ((headerBuffer[0] & 0xFF) << 24)
-                                | ((headerBuffer[1] & 0xFF) << 16)
-                                | ((headerBuffer[2] & 0xFF) << 8)
-                                | (headerBuffer[3] & 0xFF);
+                // 🎯 使用 readFully 嚴格死等 4 字節頭部，指針絕對不發生錯位
+                int frameLength = dis.readInt();
 
                 if (frameLength <= 0 || frameLength > 2 * 1024 * 1024) continue;
 
                 byte[] imgBytes = new byte[frameLength];
-                int imgBytesRead = 0;
-                while (imgBytesRead < frameLength && isListening) {
-                    int read = is.read(imgBytes, imgBytesRead, frameLength - imgBytesRead);
-                    if (read == -1) { isListening = false; break; }
-                    imgBytesRead += read;
-                }
-                if (!isListening) break;
+                // 🎯 使用 readFully 嚴格死等指定長度的圖片字節，徹底解決半包、錯位黑屏問題
+                dis.readFully(imgBytes);
 
                 Bitmap bitmap = BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.length);
                 if (bitmap != null) {
@@ -180,7 +170,7 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "影像流拆包解碼異常", e);
+            Log.e(TAG, "影像流拆包解碼異常或通道正常關閉", e);
         }
     }
 
@@ -233,7 +223,10 @@ public class WearCameraActivity extends Activity implements MessageClient.OnMess
             Wearable.getChannelClient(this).unregisterChannelCallback(mChannelCallback);
         }
         mainHandler.removeCallbacksAndMessages(null);
+        
+        // 🎯 退出時通知手機關閉相機
         notifyPhoneCameraService("STOP_CAMERA");
+        
         if (mActiveChannel != null) {
             try { Wearable.getChannelClient(this).close(mActiveChannel); } catch (Exception ignored) {}
             mActiveChannel = null;
