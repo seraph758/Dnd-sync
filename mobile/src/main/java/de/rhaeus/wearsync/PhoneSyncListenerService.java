@@ -73,16 +73,14 @@ public class PhoneSyncListenerService extends WearableListenerService {
                                   | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     startActivity(intent);
                 } else {
-                    // WATCH_READY, TAKE_PICTURE, STOP_CAMERA 在 Activity 已經起來後，直接安全傳遞給 CameraService
+                    // 🎯 核心修正：WATCH_READY, TAKE_PICTURE, STOP_CAMERA 只是後續控制指令，
+                    // 必須使用最普通的 startService 投遞！否則會反覆觸發系統前台計時器導致崩潰！
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction(action);
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        startForegroundService(svc);
-                    } else {
-                        startService(svc);
-                    }
+                    startService(svc); 
                 }
             }
+
             
         } catch (Exception e) {
             Log.e(TAG, "解析手錶訊息失敗", e);
