@@ -218,7 +218,7 @@ public class PhoneSyncCameraService extends Service implements LifecycleOwner {
             }
         } catch (Exception e) {
             Log.e(TAG, "傳輸影像影格失敗", e);
-        } finaly {
+        } finally {
             image.close();
         }
     }
