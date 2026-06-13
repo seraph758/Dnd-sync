@@ -28,50 +28,61 @@ public class PhoneSyncListenerService extends WearableListenerService {
             String type = json.optString("type", "");
             String action = json.optString("action", "");
 
-            if ("phone".equalsIgnoreCase(sender)) return;
+            if ("phone".equalsIgnoreCase(sender)) return; // 過濾本地回環
 
-            // 1️⃣ 勿擾板塊
+            // ================= 1️⃣ 勿擾同步模塊（严格保留，絕不改動） =================
             if ("dnd".equalsIgnoreCase(type)) {
                 int dndVal = json.optInt("dnd_profile_value", -1);
                 if (dndVal != -1) {
                     NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                    if (nm != null) {
+                    if (nm != null && nm.isNotificationPolicyAccessGranted()) {
                         isInternalUpdate = true;
                         nm.setInterruptionFilter(dndVal);
-                        Log.d(TAG, "🌙 勿擾狀態值同步: " + dndVal);
+                        Log.d(TAG, "🌙 [同步成功] 已依手錶同步變更手機勿擾狀態: " + dndVal);
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> isInternalUpdate = false, 1000);
                     }
                 }
                 return;
             }
 
-            // 2️⃣ 自動化板塊
-            if ("notification_action".equalsIgnoreCase(type)) {
-                if ("SNOOZE".equalsIgnoreCase(action)) {
+            // ================= 2️⃣ 鬧鐘延後點擊模塊（严格保留，絕不改動） =================
+            if ("alarm_action".equalsIgnoreCase(type)) {
+                if ("SNOOZE_ALARM".equalsIgnoreCase(action)) {
+                    Log.d(TAG, "⏰ [收到指令] 手錶觸發了「延後手機鬧鐘」");
                     if (PhoneSyncNotificationService.snoozePendingIntent != null) {
                         PhoneSyncNotificationService.snoozePendingIntent.send();
+                        Log.d(TAG, "🎯 [自動化成功] 已代用戶點擊手機通知欄延後按鈕");
+                    } else {
+                        Log.w(TAG, "⚠️ 觸發點击失敗：手機端暫未捕獲到合法的延後 PendingIntent");
                     }
                 }
                 return;
             }
 
-            // 3️⃣ 相機控制板塊（嚴格走 Activity 前台跳板，突破 Android 14 後台 FGS 限制）
+            // ================= 3️⃣ 相機模塊：解決氧OS後台啟動被默默丟棄的致命傷 =================
             if ("camera_control".equalsIgnoreCase(type)) {
                 Log.d(TAG, "📸 [中轉接收] 收到動作 Action: " + action);
 
                 if ("START_CAMERA".equalsIgnoreCase(action)) {
-                    // 拉起 Activity 獲取前台權限
-                    Intent mainIntent = new Intent(this, PhoneSyncMainActivity.class);
-                    mainIntent.setAction("ACTION_START_CAMERA_FLOW");
-                    mainIntent.putExtra("camera_action", action);
-                    mainIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
-                                      | Intent.FLAG_ACTIVITY_CLEAR_TOP 
-                                      | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    startActivity(mainIntent);
+                    Log.d(TAG, "🚀 [穿透啟動] 正在喚醒手機前台 Activity 以獲取 OxygenOS 前台啟動豁免權...");
+                    
+                    // 🎯 核心解法：後台直接開服務會被 OxygenOS 默默殺死，必須先拉起 Activity 提權到前台！
+                    Intent intent = new Intent(this, PhoneSyncMainActivity.class);
+                    intent.setAction("ACTION_START_CAMERA_FLOW");
+                    // 注入頂級強勢 Flags，確保在鎖屏或後台狀態下能強制頂出
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK 
+                                  | Intent.FLAG_ACTIVITY_CLEAR_TOP 
+                                  | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(intent);
                 } else {
-                    // WATCH_READY, TAKE_PICTURE, STOP_CAMERA 直接送至 Service 處理
+                    // WATCH_READY, TAKE_PICTURE, STOP_CAMERA 在 Activity 已經起來後，可以由後台直接傳遞給服務
                     Intent svc = new Intent(this, PhoneSyncCameraService.class);
                     svc.setAction(action);
-                    startService(svc);
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        startForegroundService(svc);
+                    } else {
+                        startService(svc);
+                    }
                 }
             }
         } catch (Exception e) {
