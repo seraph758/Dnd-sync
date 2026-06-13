@@ -1,14 +1,14 @@
 package de.rhaeus.wearsync;
 
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentTransaction;
 
 public class PhoneSyncMainActivity extends AppCompatActivity {
-    private static final String TAG = "WearSync_MainActivity";
+    private static final String TAG = "WearSync_PhoneMain";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,6 +27,7 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
             ft.commit();
         }
 
+        // 🎯 處理第一次創建 Activity 時的拉起指令
         handleIncomingIntent(getIntent());
     }
 
@@ -34,16 +35,24 @@ public class PhoneSyncMainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        // 🎯 處理 Activity 已經在後台存活時，再次被複用拉起時的指令
         handleIncomingIntent(intent);
     }
 
     private void handleIncomingIntent(Intent intent) {
-        if (intent != null && "ACTION_START_CAMERA_FLOW".equals(intent.getAction())) {
-            String cameraAction = intent.getStringExtra("camera_action");
-            Log.d(TAG, "🚀 手機主 UI 已位於前台，合法拉起相機 FGS 服務...");
-            Intent serviceIntent = new Intent(this, PhoneSyncCameraService.class);
-            serviceIntent.setAction(cameraAction);
-            ContextCompat.startForegroundService(this, serviceIntent);
+        if (intent == null) return;
+        String action = intent.getAction();
+        Log.d(TAG, "📥 MainActivity 收到意圖 Action: " + action);
+
+        if ("ACTION_START_CAMERA_FLOW".equalsIgnoreCase(action)) {
+            Log.d(TAG, "🎬 [前台合法接力] 已經處於前台活躍狀態，正在開啟相機前台服務...");
+            Intent svc = new Intent(this, PhoneSyncCameraService.class);
+            svc.setAction("START_CAMERA");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
         }
     }
 }
